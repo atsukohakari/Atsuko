@@ -1,17 +1,16 @@
 --[[
-	atsuko hub v1.0.1
+	atsuko hub v1.0.3
 	by atsukohakari
-
-	loadstring(game:HttpGet("https://raw.githubusercontent.com/atsukohakari/Atsuko/main/Hub/AtsukoHub.lua"))()
 
 	icons from lucide.dev (ISC), license in Hub/LUCIDE_LICENSE.txt
 ]]
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 
-local HUB_VERSION = "1.0.1"
+local HUB_VERSION = "1.0.3"
 local HUB_DIR = "Hub"
-local HOME_REPO = "https://raw.githubusercontent.com/atsukohakari/Atsuko/main/"
+local SRC = { owner = "atsukohakari", repo = "Atsuko", branch = "main" }
+local HOME_REPO = "https://raw.githubusercontent.com/" .. SRC.owner .. "/" .. SRC.repo .. "/" .. SRC.branch .. "/"
 local LOCAL_DIR = "AtsukoHub"
 local SCRIPT_EXT = { lua = true, luau = true, txt = true }
 
@@ -48,6 +47,7 @@ local X = {
 	isfolder = F(isfolder),
 	makefolder = F(makefolder),
 	delfile = F(delfile),
+	listfiles = F(listfiles),
 	getcustomasset = F(getcustomasset) or F(getsynasset),
 	setclipboard = F(setclipboard) or F(toclipboard) or libf(Clipboard, "set"),
 	request = libf(syn, "request") or libf(http, "request") or F(http_request) or libf(fluxus, "request") or F(request),
@@ -113,6 +113,14 @@ function Util.fmtSize(bytes)
 	if bytes < 1024 then return bytes .. " B" end
 	if bytes < 1024 * 1024 then return string.format("%.1f KB", bytes / 1024) end
 	return string.format("%.1f MB", bytes / 1048576)
+end
+
+function Util.shortTime(h24)
+	local t = os.date("*t")
+	if h24 then return string.format("%02d:%02d", t.hour, t.min) end
+	local h = t.hour % 12
+	if h == 0 then h = 12 end
+	return string.format("%d:%02d %s", h, t.min, t.hour < 12 and "AM" or "PM")
 end
 
 function Util.clock()
@@ -198,6 +206,50 @@ function Util.b64decode(data)
 	return table.concat(out)
 end
 
+function Util.b64encode(data)
+	local out, n = table.create(math.ceil(#data / 3) * 4), 0
+	local function ch(v)
+		return string.sub(B64, v + 1, v + 1)
+	end
+	for i = 1, #data, 3 do
+		local a, b, c = string.byte(data, i, i + 2)
+		local v = a * 65536 + (b or 0) * 256 + (c or 0)
+		out[n + 1] = ch(v // 262144 % 64)
+		out[n + 2] = ch(v // 4096 % 64)
+		out[n + 3] = b and ch(v // 64 % 64) or "="
+		out[n + 4] = c and ch(v % 64) or "="
+		n += 4
+	end
+	return table.concat(out)
+end
+
+function Util.urlEncode(s)
+	return (string.gsub(tostring(s), "[^%w%-%._~]", function(c)
+		return string.format("%%%02X", string.byte(c))
+	end))
+end
+
+function Util.urlDecode(s)
+	s = string.gsub(tostring(s), "+", " ")
+	return (string.gsub(s, "%%(%x%x)", function(h)
+		return string.char(tonumber(h, 16))
+	end))
+end
+
+function Util.form(list)
+	local parts = table.create(#list)
+	for i, kv in ipairs(list) do
+		parts[i] = Util.urlEncode(kv[1]) .. "=" .. Util.urlEncode(kv[2])
+	end
+	return table.concat(parts, "&")
+end
+
+function Util.mmss(ms)
+	local sec = math.max(0, math.floor((tonumber(ms) or 0) / 1000))
+	if sec >= 3600 then return string.format("%d:%02d:%02d", sec // 3600, (sec % 3600) // 60, sec % 60) end
+	return string.format("%d:%02d", sec // 60, sec % 60)
+end
+
 local FS = {}
 
 function FS.folder(path)
@@ -264,6 +316,24 @@ function Net.get(url, headers)
 	return false, Util.firstLine(body)
 end
 
+function Net.request(method, url, headers, body)
+	if not X.request then return 0, "no request function", {} end
+	local opts = { Url = url, Method = method, Headers = headers or {} }
+	if body ~= nil then opts.Body = body end
+	local ok, res = pcall(X.request, opts)
+	if not ok then return 0, Util.firstLine(res), {} end
+	if type(res) ~= "table" then return 0, "no response", {} end
+	return tonumber(res.StatusCode) or 0, type(res.Body) == "string" and res.Body or "", type(res.Headers) == "table" and res.Headers or {}
+end
+
+function Net.header(headers, name)
+	name = string.lower(name)
+	for k, v in pairs(headers or {}) do
+		if type(k) == "string" and string.lower(k) == name then return v end
+	end
+	return nil
+end
+
 local Bus = { map = {} }
 
 function Bus.on(name, f)
@@ -305,10 +375,6 @@ local DEFAULTS = {
 	oneAtATime = false,
 	smartStop = true,
 	capturePrints = true,
-	owner = "atsukohakari",
-	repo = "Atsuko",
-	branch = "main",
-	logo = "",
 	favorites = {},
 	recent = {},
 	perScript = {},
@@ -328,11 +394,29 @@ local DEFAULTS = {
 	cmdNotify = true,
 	fpsCap = 0,
 	autoRefresh = true,
-	showTesting = true,
+	musicBar = true,
+	font = "Gotham",
+	openOnLoad = false,
+	startPage = "last",
+	barClock = false,
+	clock24 = false,
+	uiSounds = false,
+	toastSound = false,
+	sfxVolume = 0.5,
+	panicKey = "",
+	playerKey = "",
+	playerNextKey = "",
+	quickCmds = {},
 	windows = {},
 	cmd = {},
 	lastVersion = "",
-	ownerCache = false,
+}
+local QUICK_DEFAULT = { "fly", "noclip", "infjump", "fullbright" }
+local FONT_SETS = {
+	Gotham = { Enum.Font.GothamMedium, Enum.Font.GothamBold },
+	Builder = { Enum.Font.BuilderSansMedium, Enum.Font.BuilderSansBold },
+	Arimo = { Enum.Font.Arimo, Enum.Font.ArimoBold },
+	Fredoka = { Enum.Font.Nunito, Enum.Font.FredokaOne },
 }
 local S = {}
 
@@ -363,9 +447,16 @@ local function normalizeSettings()
 	for k, v in pairs(S.perScript) do
 		if type(k) ~= "string" or type(v) ~= "table" then S.perScript[k] = nil end
 	end
-	for _, k in ipairs({ "owner", "repo", "branch" }) do
-		if Util.trim(S[k]) == "" then S[k] = DEFAULTS[k] end
+	if S.lastPage == "dev" then S.lastPage = "home" end
+	if not FONT_SETS[S.font] then S.font = "Gotham" end
+	if S.startPage ~= "home" and S.startPage ~= "last" then S.startPage = "last" end
+	S.sfxVolume = math.clamp(tonumber(S.sfxVolume) or 0.5, 0, 1)
+	local quick = {}
+	for _, id in ipairs(S.quickCmds) do
+		if type(id) == "string" and #quick < 4 and not table.find(quick, id) then quick[#quick + 1] = id end
 	end
+	if #quick == 0 then quick = table.clone(QUICK_DEFAULT) end
+	S.quickCmds = quick
 end
 
 local function loadSettings()
@@ -445,52 +536,1144 @@ local function notify(title, text, kind, dur)
 	Bus.fire("notify", title, text, kind, dur)
 end
 
-local Owner = { is = S.ownerCache == true, checked = false }
-function Owner.check()
+local SPOT_FILE = LOCAL_DIR .. "/spotify.json"
+local SPOT_DIR = LOCAL_DIR .. "/spotify"
+local SPOT_API = "https://api.spotify.com/v1"
+local SPOT_REDIRECT = "http://127.0.0.1:8888/callback"
+local SPOT_SCOPES = "user-read-playback-state user-modify-playback-state user-read-currently-playing"
+local Spot = {
+	cfg = { id = "", secret = "", refresh = "", token = "", exp = 0 },
+	state = nil,
+	err = nil,
+	seq = 0,
+	polling = false,
+	refreshing = false,
+	lastPoll = -100,
+	holdUntil = 0,
+	artUrl = nil,
+	artId = nil,
+	artCache = {},
+	artFiles = {},
+	loginState = nil,
+}
+
+function Spot.load()
+	local data = jsonDecode(FS.read(SPOT_FILE))
+	if type(data) ~= "table" then return end
+	for k, d in pairs(Spot.cfg) do
+		if type(data[k]) == type(d) then Spot.cfg[k] = data[k] end
+	end
+end
+
+function Spot.save()
+	local s = jsonEncode(Spot.cfg)
+	if s then FS.write(SPOT_FILE, s) end
+end
+
+function Spot.hasApp()
+	return Spot.cfg.id ~= "" and Spot.cfg.secret ~= ""
+end
+
+function Spot.connected()
+	return Spot.cfg.refresh ~= ""
+end
+
+function Spot.loginUrl()
+	Spot.loginState = Spot.loginState or string.lower(string.sub(string.gsub(HttpService:GenerateGUID(false), "-", ""), 1, 16))
+	return "https://accounts.spotify.com/authorize?" .. Util.form({
+		{ "client_id", Spot.cfg.id },
+		{ "response_type", "code" },
+		{ "redirect_uri", SPOT_REDIRECT },
+		{ "scope", SPOT_SCOPES },
+		{ "state", Spot.loginState },
+		{ "show_dialog", "true" },
+	})
+end
+
+function Spot.tokenCall(form)
+	local code, raw = Net.request("POST", "https://accounts.spotify.com/api/token", {
+		["Content-Type"] = "application/x-www-form-urlencoded",
+		Authorization = "Basic " .. Util.b64encode(Spot.cfg.id .. ":" .. Spot.cfg.secret),
+	}, Util.form(form))
+	return code, jsonDecode(raw), raw
+end
+
+function Spot.useToken(data)
+	Spot.cfg.token = data.access_token
+	Spot.cfg.exp = os.time() + (tonumber(data.expires_in) or 3600)
+	if type(data.refresh_token) == "string" and data.refresh_token ~= "" then Spot.cfg.refresh = data.refresh_token end
+	Spot.save()
+end
+
+function Spot.logout(msg)
+	Spot.cfg.refresh, Spot.cfg.token, Spot.cfg.exp = "", "", 0
+	Spot.save()
+	Spot.state, Spot.err = nil, nil
+	Spot.artUrl, Spot.artId = nil, nil
+	Bus.fire("spotifyConn")
+	Bus.fire("spotify")
+	if msg then notify("Spotify", msg, "info", 4) end
+end
+
+function Spot.ensure(force)
+	if not force and Spot.cfg.token ~= "" and os.time() < Spot.cfg.exp - 30 then return true end
+	if Spot.refreshing then
+		local t0 = os.clock()
+		while Spot.refreshing and os.clock() - t0 < 15 do
+			task.wait(0.1)
+		end
+		return Spot.cfg.token ~= "" and os.time() < Spot.cfg.exp - 5
+	end
+	if not Spot.connected() or not Spot.hasApp() then return false end
+	Spot.refreshing = true
+	local code, data = Spot.tokenCall({ { "grant_type", "refresh_token" }, { "refresh_token", Spot.cfg.refresh } })
+	Spot.refreshing = false
+	if code == 200 and type(data) == "table" and type(data.access_token) == "string" then
+		Spot.useToken(data)
+		return true
+	end
+	local e = type(data) == "table" and data.error
+	if e == "invalid_grant" then
+		Spot.logout("Spotify logged you out, connect it again")
+	elseif e == "invalid_client" then
+		Spot.logout("Your Client ID or secret changed, connect it again")
+	else
+		Spot.err = code == 0 and "Couldn't reach Spotify" or ("Spotify said " .. code)
+	end
+	return false
+end
+
+function Spot.why(code, data)
+	local e = type(data) == "table" and type(data.error) == "table" and data.error or {}
+	local reason = type(e.reason) == "string" and e.reason or ""
+	local msg = type(e.message) == "string" and e.message or ""
+	local low = string.lower(msg)
+	if code == 0 then return "Couldn't reach Spotify" end
+	if reason == "PREMIUM_REQUIRED" or string.find(low, "premium", 1, true) then return "That needs Spotify Premium" end
+	if string.find(low, "registered", 1, true) then return "Add your Spotify email under User Management in your app" end
+	if reason == "NO_ACTIVE_DEVICE" or code == 404 then return "Open Spotify on your phone or PC first" end
+	if code == 401 then return "Spotify logged you out, connect it again" end
+	if code == 403 then return "Spotify won't allow that right now" end
+	if code == 429 then return "Too many requests, slowing down a bit" end
+	return "Spotify said " .. code .. (msg ~= "" and (": " .. msg) or "")
+end
+
+function Spot.call(method, path, body)
+	if not X.request then return 0, nil end
+	if not Spot.ensure(false) then return 401, nil end
+	local function send(b)
+		local h = { Authorization = "Bearer " .. Spot.cfg.token }
+		if b ~= nil and b ~= "" then h["Content-Type"] = "application/json" end
+		return Net.request(method, SPOT_API .. path, h, b)
+	end
+	if body == nil and method ~= "GET" then body = "" end
+	local code, raw, headers = send(body)
+	if code == 401 and Spot.ensure(true) then code, raw, headers = send(body) end
+	if code == 411 then code, raw, headers = send("{}") end
+	if code == 429 then
+		local wait = tonumber(Net.header(headers, "retry-after")) or 5
+		Spot.holdUntil = os.clock() + math.clamp(wait, 1, 120)
+	end
+	return code, jsonDecode(raw)
+end
+
+local function spotArt(images)
+	if type(images) ~= "table" then return nil end
+	local best, bestD = nil, math.huge
+	for _, im in ipairs(images) do
+		if type(im) == "table" and type(im.url) == "string" then
+			local d = math.abs((tonumber(im.width) or 300) - 300)
+			if d < bestD then best, bestD = im.url, d end
+		end
+	end
+	return best
+end
+
+function Spot.parse(d)
+	local s = {
+		playing = d.is_playing == true,
+		progress = tonumber(d.progress_ms) or 0,
+		shuffle = d.shuffle_state == true,
+		rep = (d.repeat_state == "track" or d.repeat_state == "context") and d.repeat_state or "off",
+		at = os.clock(),
+		duration = 0,
+	}
+	if type(d.device) == "table" then
+		s.device = type(d.device.name) == "string" and d.device.name or nil
+		s.volume = tonumber(d.device.volume_percent)
+		s.canVolume = d.device.supports_volume ~= false and s.volume ~= nil
+	end
+	local it = d.item
+	if type(it) == "table" then
+		s.id = tostring(it.id or it.uri or it.name or "")
+		s.title = tostring(it.name or "")
+		s.duration = tonumber(it.duration_ms) or 0
+		if type(it.artists) == "table" then
+			local names = {}
+			for _, a in ipairs(it.artists) do
+				if type(a) == "table" and type(a.name) == "string" then names[#names + 1] = a.name end
+			end
+			s.artist = table.concat(names, ", ")
+			if type(it.album) == "table" then
+				s.album = type(it.album.name) == "string" and it.album.name or nil
+				s.art = spotArt(it.album.images)
+			end
+		elseif type(it.show) == "table" then
+			s.artist = type(it.show.name) == "string" and it.show.name or ""
+			s.art = spotArt(it.images) or spotArt(it.show.images)
+		end
+	elseif d.currently_playing_type == "ad" then
+		s.id, s.title, s.artist = "ad", "Ad break", "Spotify"
+	end
+	return s
+end
+
+function Spot.progressNow()
+	local s = Spot.state
+	if not s then return 0, 0 end
+	local p = s.progress
+	if s.playing then p += (os.clock() - s.at) * 1000 end
+	if s.duration > 0 then p = math.min(p, s.duration) end
+	return p, s.duration
+end
+
+function Spot.loadArt(url)
+	local known = Spot.artCache[url]
+	if known then
+		Spot.artId = known
+		return
+	end
+	Spot.artId = nil
+	if not (HAS_FS and X.getcustomasset) then return end
 	task.spawn(function()
-		local ok, body = Net.get(HOME_REPO .. HUB_DIR .. "/owner.txt?t=" .. os.time())
-		if not HUB.alive or not ok or type(body) ~= "string" then return end
-		local mine = false
-		for id in string.gmatch(body, "%d+") do
-			if tonumber(id) == LP.UserId then mine = true end
+		local ok, data = Net.get(url)
+		if not HUB.alive or Spot.artUrl ~= url or not ok or type(data) ~= "string" then return end
+		local ext = (string.sub(data, 1, 3) == "\255\216\255" and "jpg") or (string.sub(data, 1, 4) == "\137PNG" and "png") or nil
+		if not ext then return end
+		local path = SPOT_DIR .. "/art_" .. Util.hash(url) .. "." .. ext
+		if not (FS.exists(path) or FS.write(path, data)) then return end
+		local okA, id = pcall(X.getcustomasset, path)
+		if not okA or type(id) ~= "string" or id == "" then return end
+		Spot.artCache[url] = id
+		table.insert(Spot.artFiles, { url = url, path = path })
+		while #Spot.artFiles > 8 do
+			local old = table.remove(Spot.artFiles, 1)
+			Spot.artCache[old.url] = nil
+			FS.delete(old.path)
 		end
-		Owner.checked = true
-		if mine ~= Owner.is then
-			Owner.is = mine
-			S.ownerCache = mine
-			saveSettings()
-			Bus.fire("owner")
-		elseif S.ownerCache ~= mine then
-			S.ownerCache = mine
-			saveSettings()
+		if Spot.artUrl == url and HUB.alive then
+			Spot.artId = id
+			Bus.fire("spotify")
 		end
-		Bus.fire("ownerChecked")
 	end)
 end
 
+function Spot.setState(s)
+	local old = Spot.state
+	Spot.state = s
+	if (old and old.id) ~= (s and s.id) then Bus.fire("spotifyTrack") end
+	local url = s and s.art or nil
+	if url ~= Spot.artUrl then
+		Spot.artUrl = url
+		if url then
+			Spot.loadArt(url)
+		else
+			Spot.artId = nil
+		end
+	end
+end
+
+function Spot.poll()
+	if Spot.polling or not Spot.connected() or os.clock() < Spot.holdUntil then return end
+	Spot.polling = true
+	Spot.lastPoll = os.clock()
+	local seq = Spot.seq
+	local code, data = Spot.call("GET", "/me/player?additional_types=episode")
+	Spot.polling = false
+	Spot.lastPoll = os.clock()
+	if not HUB.alive or not Spot.connected() or seq ~= Spot.seq then return end
+	if code == 200 and type(data) == "table" then
+		Spot.setState(Spot.parse(data))
+		Spot.err = nil
+	elseif code == 204 or code == 200 then
+		Spot.setState(nil)
+		Spot.err = nil
+	elseif code ~= 429 and code ~= 401 then
+		Spot.err = Spot.why(code, data)
+	end
+	Bus.fire("spotify")
+end
+
+function Spot.control(what, arg)
+	if not Spot.connected() then
+		notify("Spotify", "Connect it on the Music page first", "info")
+		return
+	end
+	local s = Spot.state
+	local method, path
+	if what == "toggle" then
+		local playing = s ~= nil and s.playing
+		method, path = "PUT", playing and "/me/player/pause" or "/me/player/play"
+		if s then
+			s.progress, s.at = Spot.progressNow(), os.clock()
+			s.playing = not playing
+		end
+	elseif what == "next" then
+		method, path = "POST", "/me/player/next"
+	elseif what == "prev" then
+		method, path = "POST", "/me/player/previous"
+	elseif what == "seek" then
+		local ms = math.max(0, math.floor(tonumber(arg) or 0))
+		method, path = "PUT", "/me/player/seek?position_ms=" .. ms
+		if s then s.progress, s.at = ms, os.clock() end
+	elseif what == "shuffle" then
+		local on = not (s and s.shuffle)
+		method, path = "PUT", "/me/player/shuffle?state=" .. tostring(on)
+		if s then s.shuffle = on end
+	elseif what == "repeat" then
+		local nxt = ({ off = "context", context = "track", track = "off" })[s and s.rep or "off"]
+		method, path = "PUT", "/me/player/repeat?state=" .. nxt
+		if s then s.rep = nxt end
+	elseif what == "volume" then
+		local v = math.clamp(math.floor(tonumber(arg) or 0), 0, 100)
+		method, path = "PUT", "/me/player/volume?volume_percent=" .. v
+		if s then s.volume = v end
+	else
+		return
+	end
+	Spot.seq += 1
+	Bus.fire("spotify")
+	task.spawn(function()
+		local code, data = Spot.call(method, path)
+		if not HUB.alive then return end
+		local good = code >= 200 and code < 300
+		if not good and code ~= 401 then notify("Spotify", Spot.why(code, data), "error", 3) end
+		task.wait(good and 0.45 or 0.05)
+		local t0 = os.clock()
+		while Spot.polling and os.clock() - t0 < 5 do
+			task.wait(0.05)
+		end
+		Spot.poll()
+	end)
+end
+
+function Spot.connect(input)
+	input = Util.trim(tostring(input or ""))
+	if not X.request then return false, "Your executor can't send web requests" end
+	if not Spot.hasApp() then return false, "Paste your Client ID and secret first" end
+	if input == "" then return false, "Paste the link from your browser" end
+	if string.find(input, "[?&]error=") then return false, "You tapped Cancel on Spotify, try again" end
+	local code = string.match(input, "[?&]code=([^&#%s]+)")
+	local st = string.match(input, "[?&]state=([^&#%s]+)")
+	if not code and not string.find(input, "[%s/:?=]") and #input > 20 then code = input end
+	if not code then return false, "That link has no code in it, copy the whole link" end
+	if st and Spot.loginState and st ~= Spot.loginState then return false, "That's an old link, get a new one" end
+	local c, data = Spot.tokenCall({ { "grant_type", "authorization_code" }, { "code", Util.urlDecode(code) }, { "redirect_uri", SPOT_REDIRECT } })
+	if c == 200 and type(data) == "table" and type(data.access_token) == "string" and type(data.refresh_token) == "string" then
+		Spot.useToken(data)
+		Spot.err = nil
+		Spot.loginState = nil
+		Bus.fire("spotifyConn")
+		task.spawn(Spot.poll)
+		return true
+	end
+	local e = type(data) == "table" and data.error or nil
+	local desc = type(data) == "table" and type(data.error_description) == "string" and data.error_description or ""
+	if e == "invalid_client" then return false, "Your Client ID or secret is wrong" end
+	if e == "invalid_grant" then
+		if string.find(string.lower(desc), "redirect", 1, true) then return false, "Redirect URI doesn't match, add " .. SPOT_REDIRECT end
+		return false, "That link expired, get a new one"
+	end
+	if c == 0 then return false, "Couldn't reach Spotify" end
+	return false, "Spotify said " .. c .. (desc ~= "" and (": " .. desc) or "")
+end
+
+function Spot.cleanArt()
+	if not (X.listfiles and HAS_FS) then return end
+	local ok, files = pcall(X.listfiles, SPOT_DIR)
+	if not ok or type(files) ~= "table" then return end
+	for _, f in ipairs(files) do
+		if type(f) == "string" and string.find(f, "art_[%x]+%.%a+$") then pcall(X.delfile or function() end, f) end
+	end
+end
+
+Spot.load()
+
+local SoundService = game:GetService("SoundService")
+local OWN_SOUNDS = setmetatable({}, { __mode = "k" })
+
+local Sfx = { cache = {} }
+function Sfx.play(kind)
+	if not HUB.alive then return end
+	if kind == "click" and not S.uiSounds then return end
+	if kind == "ping" and not S.toastSound then return end
+	local s = Sfx.cache[kind]
+	if not (s and s.Parent) then
+		s = Instance.new("Sound")
+		s.Name = "AtsukoSfx"
+		s.SoundId = kind == "click" and "rbxasset://sounds/clickfast.wav" or "rbxasset://sounds/electronicpingshort.wav"
+		s.Parent = SoundService
+		OWN_SOUNDS[s] = true
+		Sfx.cache[kind] = s
+	end
+	s.Volume = S.sfxVolume * (kind == "click" and 0.7 or 1)
+	s.TimePosition = 0
+	pcall(function() s:Play() end)
+end
+
+local Player = {
+	file = LOCAL_DIR .. "/player.json",
+	dir = LOCAL_DIR .. "/music",
+	lib = {},
+	byId = {},
+	cfg = { volume = 50, speed = 1, shuffle = false, rep = "all", bass = false, reverb = false, echo = false, viz = true, fade = true, resume = false, duck = false, last = "", pos = 0 },
+	queue = {},
+	ctx = {},
+	base = {},
+	ctxPos = 0,
+	cur = nil,
+	state = "stopped",
+	sound = nil,
+	fx = {},
+	seq = 0,
+	fails = 0,
+	idSeq = 0,
+	sleepAt = nil,
+	sleepMins = 0,
+	assets = {},
+	ducked = setmetatable({}, { __mode = "k" }),
+	duckConns = {},
+	ducking = false,
+}
+
+do
+	local PLAYER_FILE, MUSIC_DIR = Player.file, Player.dir
+	local AUDIO_EXT = { mp3 = true, ogg = true, wav = true, flac = true }
+
+	function Player.reindex()
+		local by = {}
+		for _, t in ipairs(Player.lib) do
+			by[t.id] = t
+		end
+		Player.byId = by
+	end
+
+	local function cleanTrack(t)
+		if type(t) ~= "table" or type(t.id) ~= "string" or type(t.name) ~= "string" then return nil end
+		if t.kind == "id" and type(t.asset) == "string" and string.match(t.asset, "^%d+$") then
+			return { id = t.id, name = t.name, kind = "id", asset = t.asset, by = type(t.by) == "string" and t.by or nil, fav = t.fav == true, len = tonumber(t.len), broken = t.broken == true or nil }
+		end
+		if t.kind == "file" and type(t.path) == "string" and t.path ~= "" then
+			return { id = t.id, name = t.name, kind = "file", path = t.path, url = type(t.url) == "string" and t.url or nil, by = type(t.by) == "string" and t.by or nil, fav = t.fav == true, len = tonumber(t.len), broken = t.broken == true or nil }
+		end
+		return nil
+	end
+
+	function Player.load()
+		FS.folder(MUSIC_DIR)
+		local data = jsonDecode(FS.read(PLAYER_FILE))
+		if type(data) ~= "table" then return end
+		if type(data.cfg) == "table" then
+			for k, d in pairs(Player.cfg) do
+				if type(data.cfg[k]) == type(d) then Player.cfg[k] = data.cfg[k] end
+			end
+		end
+		local c = Player.cfg
+		c.volume = math.clamp(math.floor(c.volume), 0, 100)
+		c.speed = math.clamp(c.speed, 0.5, 2)
+		if c.rep ~= "off" and c.rep ~= "all" and c.rep ~= "one" then c.rep = "all" end
+		if type(data.lib) == "table" then
+			local seen = {}
+			for _, raw in ipairs(data.lib) do
+				local t = cleanTrack(raw)
+				if t and not seen[t.id] and #Player.lib < 500 then
+					seen[t.id] = true
+					Player.lib[#Player.lib + 1] = t
+				end
+			end
+		end
+		Player.reindex()
+	end
+
+	local playerSaveQueued = false
+	function Player.save()
+		if playerSaveQueued then return end
+		playerSaveQueued = true
+		task.delay(0.5, function()
+			playerSaveQueued = false
+			local s = jsonEncode({ cfg = Player.cfg, lib = Player.lib })
+			if s then FS.write(PLAYER_FILE, s) end
+		end)
+	end
+
+	function Player.newId()
+		Player.idSeq += 1
+		return string.format("%x%x", os.time(), Player.idSeq) .. string.lower(string.sub(string.gsub(HttpService:GenerateGUID(false), "-", ""), 1, 6))
+	end
+
+	function Player.kindText(t)
+		if not t then return "" end
+		if t.kind == "id" then return "Roblox audio" end
+		if t.url then return "From a link" end
+		return "Your file"
+	end
+
+	function Player.subText(t)
+		if not t then return "" end
+		local bits = {}
+		if t.by and t.by ~= "" then bits[#bits + 1] = t.by end
+		bits[#bits + 1] = Player.kindText(t)
+		if t.broken then
+			bits[#bits + 1] = "won't play"
+		elseif t.len and t.len > 0 then
+			bits[#bits + 1] = Util.mmss(t.len * 1000)
+		end
+		return table.concat(bits, "  ·  ")
+	end
+
+	function Player.fetchName(t)
+		task.spawn(function()
+			local ok, info = pcall(function()
+				return game:GetService("MarketplaceService"):GetProductInfo(tonumber(t.asset))
+			end)
+			if not HUB.alive or not ok or type(info) ~= "table" or not Player.byId[t.id] then return end
+			if type(info.Name) == "string" and info.Name ~= "" then t.name = info.Name end
+			if type(info.Creator) == "table" and type(info.Creator.Name) == "string" then t.by = info.Creator.Name end
+			Player.save()
+			Bus.fire("playerLib")
+			if Player.cur == t then Bus.fire("player") end
+		end)
+	end
+
+	function Player.addAsset(text, name)
+		local asset = string.match(tostring(text or ""), "(%d%d%d+)")
+		if not asset then return nil, "That doesn't look like an audio ID" end
+		for _, t in ipairs(Player.lib) do
+			if t.kind == "id" and t.asset == asset then return t, nil, true end
+		end
+		if #Player.lib >= 500 then return nil, "Your library is full (500 songs)" end
+		name = Util.trim(tostring(name or ""))
+		local t = { id = Player.newId(), kind = "id", asset = asset, name = name ~= "" and name or ("Audio " .. asset), fav = false }
+		table.insert(Player.lib, t)
+		Player.byId[t.id] = t
+		Player.save()
+		if name == "" then Player.fetchName(t) end
+		Bus.fire("playerLib")
+		return t
+	end
+
+	local function fileKey(p)
+		p = string.gsub(tostring(p), "\\", "/")
+		return string.lower(string.match(p, "([^/]+)$") or p)
+	end
+
+	function Player.addFile(path, name, url)
+		local key = fileKey(path)
+		for _, t in ipairs(Player.lib) do
+			if t.kind == "file" and fileKey(t.path) == key then return t, nil, true end
+		end
+		if #Player.lib >= 500 then return nil, "Your library is full (500 songs)" end
+		name = Util.trim(tostring(name or ""))
+		if name == "" then
+			name = Util.prettyName(string.gsub(tostring(path), "\\", "/"))
+			name = string.gsub(name, "%s+%x%x%x%x%x%x%x%x$", "")
+		end
+		local t = { id = Player.newId(), kind = "file", path = path, url = url, name = name, fav = false }
+		table.insert(Player.lib, t)
+		Player.byId[t.id] = t
+		Player.save()
+		Bus.fire("playerLib")
+		return t
+	end
+
+	function Player.sniff(data)
+		if string.sub(data, 1, 3) == "ID3" then return "mp3" end
+		local a, b = string.byte(data, 1, 2)
+		if a == 255 and b and b >= 224 then return "mp3" end
+		if string.sub(data, 1, 4) == "OggS" then return "ogg" end
+		if string.sub(data, 1, 4) == "RIFF" and string.sub(data, 9, 12) == "WAVE" then return "wav" end
+		if string.sub(data, 1, 4) == "fLaC" then return "flac" end
+		return nil
+	end
+
+	function Player.download(url, name, done)
+		url = Util.trim(tostring(url or ""))
+		if not string.find(url, "^https?://") then return done(false, "Paste a full link that starts with https://") end
+		if not (HAS_FS and X.getcustomasset) then return done(false, "Your executor can't play files") end
+		task.spawn(function()
+			local ok, data = Net.get(url)
+			if not HUB.alive then return end
+			if not ok or type(data) ~= "string" then return done(false, "Couldn't download it: " .. Util.firstLine(data or "?")) end
+			local ext = #data > 512 and Player.sniff(data) or nil
+			if not ext then return done(false, "That link isn't an mp3 or ogg file") end
+			local base = Util.trim(tostring(name or ""))
+			if base == "" then base = Util.urlDecode(string.match(string.gsub(url, "[?#].*$", ""), "([^/]+)$") or "song") end
+			base = string.gsub(string.gsub(base, "%.%w+$", ""), "[^%w%-_ ]", "")
+			base = Util.trim(string.sub(base, 1, 40))
+			if base == "" then base = "song" end
+			local path = MUSIC_DIR .. "/" .. base .. " " .. Util.hash(url) .. "." .. ext
+			if not (FS.exists(path) or FS.write(path, data)) then return done(false, "Couldn't save the file") end
+			local t, err = Player.addFile(path, name, url)
+			done(t ~= nil, t or err)
+		end)
+	end
+
+	function Player.scan()
+		if not (HAS_FS and X.listfiles) then return nil, "Your executor can't look inside folders" end
+		FS.folder(MUSIC_DIR)
+		local ok, files = pcall(X.listfiles, MUSIC_DIR)
+		if not ok or type(files) ~= "table" then return nil, "Couldn't open your music folder" end
+		local added = 0
+		for _, f in ipairs(files) do
+			if type(f) == "string" then
+				local ext = string.lower(string.match(f, "%.(%w+)$") or "")
+				if AUDIO_EXT[ext] then
+					local _, _, existed = Player.addFile(f)
+					if not existed then added += 1 end
+				end
+			end
+		end
+		return added
+	end
+
+	function Player.vol()
+		return Player.cfg.volume / 50
+	end
+
+	function Player.ensure()
+		local s = Player.sound
+		if s and s.Parent then return s end
+		s = Instance.new("Sound")
+		s.Name = "AtsukoPlayer"
+		s.Volume = Player.vol()
+		s.PlaybackSpeed = Player.cfg.speed
+		local eq = Instance.new("EqualizerSoundEffect")
+		eq.LowGain, eq.MidGain, eq.HighGain = 9, 0, 1
+		eq.Enabled = Player.cfg.bass
+		eq.Parent = s
+		local rv = Instance.new("ReverbSoundEffect")
+		rv.DecayTime, rv.Density, rv.Diffusion, rv.DryLevel, rv.WetLevel = 2.2, 1, 1, 0, -4
+		rv.Enabled = Player.cfg.reverb
+		rv.Parent = s
+		local ec = Instance.new("EchoSoundEffect")
+		ec.Delay, ec.DryLevel, ec.Feedback, ec.WetLevel = 0.26, 0, 0.35, -8
+		ec.Enabled = Player.cfg.echo
+		ec.Parent = s
+		Player.fx = { bass = eq, reverb = rv, echo = ec }
+		s.Parent = SoundService
+		OWN_SOUNDS[s] = true
+		if Player.endConn then Player.endConn:Disconnect() end
+		Player.endConn = s.Ended:Connect(function()
+			if Player.sound == s and HUB.alive then Player.onEnded() end
+		end)
+		Player.sound = s
+		return s
+	end
+
+	function Player.resolve(t)
+		if t.kind == "id" then return "rbxassetid://" .. t.asset end
+		if not (HAS_FS and X.getcustomasset) then return nil, "Your executor can't play files" end
+		local known = Player.assets[t.path]
+		if known then return known end
+		local ok, id = pcall(X.getcustomasset, t.path)
+		if ok and type(id) == "string" and id ~= "" then
+			Player.assets[t.path] = id
+			return id
+		end
+		return nil, "The file is missing from your music folder"
+	end
+
+	function Player.fadeTo(v, dur, after)
+		local s = Player.sound
+		if Player.fadeTw then
+			Player.fadeTw:Cancel()
+			Player.fadeTw = nil
+		end
+		if not s or not Player.cfg.fade then
+			if s then s.Volume = v end
+			if after then after() end
+			return
+		end
+		local tw = TweenService:Create(s, TweenInfo.new(dur or 0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Volume = v })
+		Player.fadeTw = tw
+		if after then
+			tw.Completed:Connect(function(st)
+				if st == Enum.PlaybackState.Completed then after() end
+			end)
+		end
+		tw:Play()
+	end
+
+	local function shuffled(list, first)
+		local out = {}
+		for _, id in ipairs(list) do
+			if id ~= first then out[#out + 1] = id end
+		end
+		for i = #out, 2, -1 do
+			local j = math.random(1, i)
+			out[i], out[j] = out[j], out[i]
+		end
+		if first then table.insert(out, 1, first) end
+		return out
+	end
+
+	function Player.setContext(list, t)
+		local base = {}
+		for _, x in ipairs(list) do
+			base[#base + 1] = x.id
+		end
+		Player.base = base
+		Player.ctx = Player.cfg.shuffle and shuffled(base, t and t.id) or table.clone(base)
+		Player.ctxPos = t and (table.find(Player.ctx, t.id) or 1) or 0
+	end
+
+	function Player.failed(my)
+		Player.fails += 1
+		local more = #Player.queue > 0 or #Player.ctx > 1
+		if Player.fails < 3 and more then
+			task.delay(0.6, function()
+				if Player.seq == my and HUB.alive then Player.next(true) end
+			end)
+		else
+			Player.fails = 0
+		end
+	end
+
+	function Player.start(t, at)
+		Player.seq += 1
+		local my = Player.seq
+		Player.cur = t
+		Player.cfg.last = t.id
+		Player.cfg.pos = 0
+		Player.save()
+		local id, why = Player.resolve(t)
+		if not id then
+			Player.state = "stopped"
+			notify("Couldn't play " .. t.name, why, "error", 3)
+			Bus.fire("player")
+			Player.failed(my)
+			return
+		end
+		local s = Player.ensure()
+		pcall(function() s:Stop() end)
+		s.Looped = Player.cfg.rep == "one"
+		s.PlaybackSpeed = Player.cfg.speed
+		s.SoundId = id
+		s.TimePosition = 0
+		s.Volume = Player.cfg.fade and 0 or Player.vol()
+		s:Play()
+		Player.state = "loading"
+		Bus.fire("player")
+		task.spawn(function()
+			local t0 = os.clock()
+			while Player.seq == my and HUB.alive and not s.IsLoaded and os.clock() - t0 < 10 do
+				task.wait(0.1)
+			end
+			if Player.seq ~= my or not HUB.alive then return end
+			if not s.IsLoaded or s.TimeLength <= 0 then
+				Player.state = "stopped"
+				t.broken = true
+				Player.save()
+				Bus.fire("playerLib")
+				pcall(function() s:Stop() end)
+				notify("Couldn't play " .. t.name, t.kind == "id" and "It's private or got taken down" or "The file couldn't be read", "error", 3)
+				Bus.fire("player")
+				Player.failed(my)
+				return
+			end
+			Player.fails = 0
+			if t.broken then
+				t.broken = nil
+				Player.save()
+				Bus.fire("playerLib")
+			end
+			if at and at > 0 and at < s.TimeLength - 1 then s.TimePosition = at end
+			if not (t.len and math.abs(t.len - s.TimeLength) < 0.5) then
+				t.len = s.TimeLength
+				Player.save()
+				Bus.fire("playerLib")
+			end
+			if Player.state == "loading" then
+				Player.state = "playing"
+				Player.fadeTo(Player.vol())
+			end
+			Player.applyDuck()
+			Bus.fire("player")
+		end)
+	end
+
+	function Player.play(t, list, at)
+		if not t then return end
+		if list then
+			Player.setContext(list, t)
+		else
+			local pos = table.find(Player.ctx, t.id)
+			if pos then
+				Player.ctxPos = pos
+			else
+				Player.setContext(Player.lib, t)
+			end
+		end
+		Player.start(t, at)
+	end
+
+	function Player.pause()
+		local s = Player.sound
+		if not s or (Player.state ~= "playing" and Player.state ~= "loading") then return end
+		Player.state = "paused"
+		local my = Player.seq
+		Player.cfg.pos = s.TimePosition
+		Player.save()
+		Player.fadeTo(0, 0.25, function()
+			if Player.state == "paused" and Player.seq == my then s:Pause() end
+		end)
+		Player.applyDuck()
+		Bus.fire("player")
+	end
+
+	function Player.resume()
+		local s = Player.sound
+		if not s or Player.state ~= "paused" then return end
+		Player.state = s.IsLoaded and "playing" or "loading"
+		s:Resume()
+		Player.fadeTo(Player.vol(), 0.3)
+		Player.applyDuck()
+		Bus.fire("player")
+	end
+
+	function Player.stop()
+		Player.seq += 1
+		local s = Player.sound
+		if s then pcall(function() s:Stop() end) end
+		if Player.state ~= "stopped" then
+			Player.state = "stopped"
+			Player.applyDuck()
+			Bus.fire("player")
+		end
+	end
+
+	function Player.toggle()
+		if Player.state == "playing" or Player.state == "loading" then
+			Player.pause()
+		elseif Player.state == "paused" and Player.sound then
+			Player.resume()
+		else
+			local t = Player.cur or Player.byId[Player.cfg.last] or Player.lib[1]
+			if t then
+				Player.play(t)
+			else
+				notify("Music Player", "Add some songs first", "info")
+			end
+		end
+	end
+
+	function Player.next(auto)
+		while #Player.queue > 0 do
+			local t = Player.byId[table.remove(Player.queue, 1)]
+			if t then
+				Player.start(t)
+				return
+			end
+		end
+		local n = #Player.ctx
+		if n == 0 then
+			local t = Player.cur or Player.lib[1]
+			if t and not auto then Player.play(t) else Player.stop() end
+			return
+		end
+		for _ = 1, n do
+			local pos = Player.ctxPos + 1
+			if pos > n then
+				if auto and Player.cfg.rep == "off" then
+					Player.stop()
+					return
+				end
+				if Player.cfg.shuffle then Player.ctx = shuffled(Player.base, nil) end
+				pos = 1
+			end
+			Player.ctxPos = pos
+			local t = Player.byId[Player.ctx[pos]]
+			if t and not (auto and t.broken) then
+				Player.start(t)
+				return
+			end
+		end
+		Player.stop()
+	end
+
+	function Player.prev()
+		local s = Player.sound
+		if s and Player.state ~= "stopped" and s.TimePosition > 3 then
+			s.TimePosition = 0
+			Bus.fire("player")
+			return
+		end
+		local n = #Player.ctx
+		if n == 0 then return end
+		for _ = 1, n do
+			local pos = Player.ctxPos - 1
+			if pos < 1 then pos = n end
+			Player.ctxPos = pos
+			local t = Player.byId[Player.ctx[pos]]
+			if t then
+				Player.start(t)
+				return
+			end
+		end
+	end
+
+	function Player.onEnded()
+		if Player.cfg.rep == "one" then return end
+		Player.next(true)
+	end
+
+	function Player.seek(sec)
+		local s = Player.sound
+		if not s or Player.state == "stopped" or s.TimeLength <= 0 then return end
+		s.TimePosition = math.clamp(sec, 0, math.max(0, s.TimeLength - 0.2))
+		Bus.fire("player")
+	end
+
+	function Player.times()
+		local s = Player.sound
+		if not s or Player.state == "stopped" then return 0, (Player.cur and Player.cur.len) or 0 end
+		return s.TimePosition, s.TimeLength > 0 and s.TimeLength or ((Player.cur and Player.cur.len) or 0)
+	end
+
+	function Player.setShuffle(on)
+		Player.cfg.shuffle = on
+		local curId = Player.cur and Player.cur.id
+		if on then
+			Player.ctx = shuffled(Player.base, curId)
+		else
+			Player.ctx = table.clone(Player.base)
+		end
+		Player.ctxPos = curId and (table.find(Player.ctx, curId) or 0) or 0
+		Player.save()
+		Bus.fire("player")
+	end
+
+	function Player.cycleRepeat()
+		local nxt = ({ off = "all", all = "one", one = "off" })[Player.cfg.rep] or "all"
+		Player.cfg.rep = nxt
+		if Player.sound then Player.sound.Looped = nxt == "one" end
+		Player.save()
+		Bus.fire("player")
+	end
+
+	function Player.setVolume(v)
+		Player.cfg.volume = math.clamp(math.floor(v + 0.5), 0, 100)
+		if Player.fadeTw then
+			Player.fadeTw:Cancel()
+			Player.fadeTw = nil
+		end
+		if Player.sound and Player.state ~= "paused" then Player.sound.Volume = Player.vol() end
+		Player.save()
+		Bus.fire("player")
+	end
+
+	function Player.setSpeed(v)
+		Player.cfg.speed = math.clamp(math.floor(v * 100 + 0.5) / 100, 0.5, 2)
+		if Player.sound then Player.sound.PlaybackSpeed = Player.cfg.speed end
+		Player.save()
+		Bus.fire("player")
+	end
+
+	function Player.setFx(name, on)
+		Player.cfg[name] = on
+		local fx = Player.fx[name]
+		if fx then fx.Enabled = on end
+		Player.save()
+		Bus.fire("player")
+	end
+
+	local PRESETS = {
+		normal = { speed = 1, bass = false, reverb = false, echo = false },
+		nightcore = { speed = 1.25, bass = false, reverb = false, echo = false },
+		slowed = { speed = 0.82, bass = false, reverb = true, echo = false },
+		bass = { speed = 1, bass = true, reverb = false, echo = false },
+	}
+	Player.presets = PRESETS
+	function Player.preset(name)
+		local p = PRESETS[name]
+		if not p then return end
+		Player.setSpeed(p.speed)
+		Player.setFx("bass", p.bass)
+		Player.setFx("reverb", p.reverb)
+		Player.setFx("echo", p.echo)
+	end
+
+	function Player.playNext(t)
+		table.insert(Player.queue, 1, t.id)
+		Bus.fire("player")
+	end
+
+	function Player.addQueue(t)
+		Player.queue[#Player.queue + 1] = t.id
+		Bus.fire("player")
+	end
+
+	function Player.upNext(n)
+		local out = {}
+		for i, id in ipairs(Player.queue) do
+			local t = Player.byId[id]
+			if t then out[#out + 1] = { t = t, q = i } end
+			if #out >= n then return out end
+		end
+		local total = #Player.ctx
+		for k = 1, total do
+			local pos = Player.ctxPos + k
+			if pos > total then
+				if Player.cfg.rep ~= "all" then break end
+				pos -= total
+			end
+			local t = Player.byId[Player.ctx[pos]]
+			if t and t ~= Player.cur then out[#out + 1] = { t = t } end
+			if #out >= n then break end
+		end
+		return out
+	end
+
+	function Player.remove(t)
+		for i = #Player.lib, 1, -1 do
+			if Player.lib[i] == t then table.remove(Player.lib, i) end
+		end
+		Player.byId[t.id] = nil
+		for _, list in ipairs({ Player.queue, Player.ctx, Player.base }) do
+			for i = #list, 1, -1 do
+				if list[i] == t.id then
+					table.remove(list, i)
+					if list == Player.ctx and i <= Player.ctxPos then Player.ctxPos -= 1 end
+				end
+			end
+		end
+		local wasCur = Player.cur == t
+		local wasPlaying = wasCur and (Player.state == "playing" or Player.state == "loading")
+		if wasCur then
+			Player.stop()
+			Player.cur = nil
+		end
+		Player.ctxPos = math.min(Player.ctxPos, #Player.ctx)
+		if wasPlaying and (#Player.queue > 0 or #Player.ctx > 0) then Player.next(false) end
+		if t.kind == "file" and t.url then FS.delete(t.path) end
+		Player.save()
+		Bus.fire("playerLib")
+		Bus.fire("player")
+	end
+
+	function Player.find(q)
+		q = string.lower(Util.trim(tostring(q or "")))
+		if q == "" then return nil end
+		for _, t in ipairs(Player.lib) do
+			if string.lower(t.name) == q then return t end
+		end
+		for _, t in ipairs(Player.lib) do
+			if string.find(string.lower(t.name), q, 1, true) then return t end
+		end
+		return nil
+	end
+
+	function Player.command(arg)
+		if not arg or Util.trim(arg) == "" then
+			Player.toggle()
+			return true
+		end
+		local t = Player.find(arg)
+		if not t and string.match(arg, "^%s*%D*(%d%d%d+)%s*$") then
+			local added, err = Player.addAsset(arg)
+			if not added then return false, err end
+			t = added
+		end
+		if not t then return false, "No song called " .. Util.trim(arg) .. " in your library" end
+		Player.play(t)
+		return true, "Playing " .. t.name
+	end
+
+	function Player.applyDuck()
+		local want = Player.cfg.duck and (Player.state == "playing" or Player.state == "loading") and HUB.alive
+		if want == Player.ducking then return end
+		Player.ducking = want
+		if want then
+			local function duck(o)
+				if o:IsA("Sound") and not OWN_SOUNDS[o] and Player.ducked[o] == nil then
+					Player.ducked[o] = o.Volume
+					o.Volume = o.Volume * 0.12
+				end
+			end
+			local roots = { workspace, SoundService }
+			local pg = LP:FindFirstChildOfClass("PlayerGui")
+			if pg then roots[#roots + 1] = pg end
+			for _, r in ipairs(roots) do
+				Player.duckConns[#Player.duckConns + 1] = r.DescendantAdded:Connect(function(o)
+					if Player.ducking then pcall(duck, o) end
+				end)
+				task.spawn(function()
+					for i, o in ipairs(r:GetDescendants()) do
+						if not Player.ducking then return end
+						pcall(duck, o)
+						if i % 1500 == 0 then task.wait() end
+					end
+				end)
+			end
+		else
+			for _, c in ipairs(Player.duckConns) do
+				pcall(function() c:Disconnect() end)
+			end
+			Player.duckConns = {}
+			for o, v in pairs(Player.ducked) do
+				pcall(function() o.Volume = v end)
+			end
+			Player.ducked = setmetatable({}, { __mode = "k" })
+		end
+	end
+
+	function Player.setSleep(mins)
+		Player.sleepMins = mins
+		Player.sleepAt = mins > 0 and (os.clock() + mins * 60) or nil
+		Bus.fire("player")
+	end
+
+	function Player.shutdown()
+		if Player.sound and Player.state ~= "stopped" then Player.cfg.pos = Player.sound.TimePosition end
+		Player.seq += 1
+		Player.state = "stopped"
+		Player.applyDuck()
+		if Player.sound then
+			pcall(function() Player.sound:Destroy() end)
+			Player.sound = nil
+		end
+		if Player.endConn then Player.endConn:Disconnect() end
+		local s = jsonEncode({ cfg = Player.cfg, lib = Player.lib })
+		if s then FS.write(PLAYER_FILE, s) end
+	end
+
+	Player.load()
+end
+
 local LIST_CACHE = LOCAL_DIR .. "/cache/list.json"
+local HIDDEN_TOP = { hub = true, testing = true }
 local Repo = {
 	entries = {},
 	byPath = {},
 	state = "idle",
-	from = nil,
 	err = nil,
 	syncedAt = nil,
 	src = {},
 	meta = {},
 	sourceSeq = 0,
+	sig = "",
 }
 
 function Repo.key()
-	return S.owner .. "/" .. S.repo .. "@" .. S.branch
+	return SRC.owner .. "/" .. SRC.repo .. "@" .. SRC.branch
 end
 
 function Repo.raw(path)
-	return string.format("https://raw.githubusercontent.com/%s/%s/%s/%s", S.owner, S.repo, S.branch, Util.urlPath(path))
+	return HOME_REPO .. Util.urlPath(path)
 end
 
 function Repo.cdn(path)
-	return string.format("https://cdn.jsdelivr.net/gh/%s/%s@%s/%s", S.owner, S.repo, S.branch, Util.urlPath(path))
+	return string.format("https://cdn.jsdelivr.net/gh/%s/%s@%s/%s", SRC.owner, SRC.repo, SRC.branch, Util.urlPath(path))
 end
 
 function Repo.isScript(path)
@@ -501,7 +1684,7 @@ function Repo.isScript(path)
 		if c == "_" or c == "." then return false end
 	end
 	local top = string.match(path, "^([^/]+)/")
-	if top and string.lower(top) == string.lower(HUB_DIR) then return false end
+	if top and HIDDEN_TOP[string.lower(top)] then return false end
 	local file = string.lower(string.match(path, "([^/]+)$") or "")
 	if file == "license.txt" or file == "readme.txt" or file == "requirements.txt" or file == "robots.txt" then return false end
 	return true
@@ -509,13 +1692,7 @@ end
 
 local function makeEntry(path, size)
 	local dir = string.match(path, "^(.*)/[^/]+$") or ""
-	local top = string.lower(string.match(path, "^([^/]+)/") or "")
-	local testing = top == "testing"
 	local cat = string.gsub(dir, "^[Ss]cripts/?", "")
-	if testing then
-		cat = string.gsub(dir, "^[Tt]esting/?", "")
-		cat = (cat == "") and "Testing" or ("Testing / " .. cat)
-	end
 	if cat == "" then cat = "General" end
 	cat = string.gsub(cat, "/", " / ")
 	cat = string.gsub(cat, "  /  ", " / ")
@@ -525,25 +1702,19 @@ local function makeEntry(path, size)
 		category = cat,
 		size = tonumber(size) or 0,
 		ext = string.lower(string.match(path, "%.(%w+)$") or ""),
-		testing = testing,
 	}
 end
 
 function Repo.visible(e)
-	return e ~= nil and (not e.testing or (Owner.is and S.showTesting))
+	return e ~= nil
 end
 
 function Repo.shown()
-	local out = {}
-	for _, e in ipairs(Repo.entries) do
-		if Repo.visible(e) then out[#out + 1] = e end
-	end
-	return out
+	return Repo.entries
 end
 
 local function sortEntries(list)
 	table.sort(list, function(a, b)
-		if a.testing ~= b.testing then return b.testing == true end
 		if a.category ~= b.category then
 			if a.category == "General" then return true end
 			if b.category == "General" then return false end
@@ -555,6 +1726,11 @@ end
 
 function Repo.set(list)
 	sortEntries(list)
+	local parts = table.create(#list)
+	for i, e in ipairs(list) do
+		parts[i] = e.path .. ":" .. e.size
+	end
+	Repo.sig = table.concat(parts, "|")
 	Repo.entries = list
 	local by = {}
 	for _, e in ipairs(list) do
@@ -564,8 +1740,8 @@ function Repo.set(list)
 end
 
 function Repo.fetchList()
-	local branch = Util.urlPath(S.branch)
-	local api = string.format("https://api.github.com/repos/%s/%s/git/trees/%s?recursive=1", S.owner, S.repo, branch)
+	local branch = Util.urlPath(SRC.branch)
+	local api = string.format("https://api.github.com/repos/%s/%s/git/trees/%s?recursive=1", SRC.owner, SRC.repo, branch)
 	local ok, body = Net.get(api, { ["User-Agent"] = "AtsukoHub", ["Accept"] = "application/vnd.github+json" })
 	local why
 	if ok then
@@ -577,13 +1753,13 @@ function Repo.fetchList()
 					list[#list + 1] = makeEntry(it.path, it.size)
 				end
 			end
-			return true, list, "GitHub"
+			return true, list
 		end
-		why = (type(data) == "table" and type(data.message) == "string") and data.message or "GitHub sent something odd"
+		why = (type(data) == "table" and type(data.message) == "string") and data.message or "got something odd back"
 	else
 		why = body
 	end
-	local url = string.format("https://data.jsdelivr.com/v1/packages/gh/%s/%s@%s?structure=flat", S.owner, S.repo, branch)
+	local url = string.format("https://data.jsdelivr.com/v1/packages/gh/%s/%s@%s?structure=flat", SRC.owner, SRC.repo, branch)
 	ok, body = Net.get(url)
 	if ok then
 		local data = jsonDecode(body)
@@ -595,7 +1771,7 @@ function Repo.fetchList()
 					if Repo.isScript(p) then list[#list + 1] = makeEntry(p, it.size) end
 				end
 			end
-			return true, list, "jsDelivr"
+			return true, list
 		end
 	end
 	return false, why or "no connection"
@@ -626,25 +1802,17 @@ end
 
 function Repo.refresh(manual)
 	if Repo.state == "loading" then return end
-	local prevState = Repo.state
 	Repo.state = "loading"
 	Repo.lastTry = os.clock()
 	Bus.fire("repo")
-	local key = Repo.key()
 	task.spawn(function()
-		local ok, list, from = Repo.fetchList()
+		local ok, list = Repo.fetchList()
 		if not HUB.alive then return end
-		if key ~= Repo.key() then
-			Repo.state = prevState
-			Repo.refresh(manual)
-			return
-		end
 		if ok then
 			local before = Repo.byPath
 			local had = next(before) ~= nil
 			Repo.set(list)
 			Repo.state = "ready"
-			Repo.from = from
 			Repo.err = nil
 			Repo.syncedAt = os.clock()
 			Repo.saveCache()
@@ -660,13 +1828,13 @@ function Repo.refresh(manual)
 			elseif manual then
 				notify("Scripts updated", shown .. (shown == 1 and " script" or " scripts"), "ok")
 			end
-			Log.add("ok", "Hub", "found " .. shown .. " scripts (" .. from .. ")")
+			Log.add("ok", "Hub", "found " .. shown .. " scripts")
 		else
 			Repo.err = tostring(list)
 			Repo.state = (#Repo.entries > 0) and "cached" or "error"
 			Log.add("error", "Hub", "couldn't load the script list: " .. Repo.err)
 			if manual or #Repo.entries == 0 then
-				notify("Couldn't reach GitHub", Repo.state == "cached" and "Showing your saved list" or Util.firstLine(Repo.err), "error")
+				notify("Couldn't load scripts", Repo.state == "cached" and "Showing your saved list" or Util.firstLine(Repo.err), "error")
 			end
 		end
 		Bus.fire("repo")
@@ -1331,7 +2499,7 @@ local function runNow(entry)
 	end
 	if SHARED.running[entry.path] or not HUB.alive then return end
 	local ok, src, from = Repo.source(entry, true)
-	if not ok then error("couldn't download it, check your internet or repo settings", 0) end
+	if not ok then error("couldn't download it, check your internet", 0) end
 	if not X.loadstring then error("your executor has no loadstring", 0) end
 	local f, cerr = X.loadstring(src, "=Atsuko/" .. entry.name)
 	if type(f) ~= "function" then error("it has a syntax error: " .. Util.firstLine(cerr or "?"), 0) end
@@ -1542,7 +2710,7 @@ local ACCENTS = {
 	{ "Ruby", Color3.fromRGB(255, 105, 130) },
 }
 local rainbowColor = nil
-local FONT_M, FONT_B = Enum.Font.GothamMedium, Enum.Font.GothamBold
+local FONT_M, FONT_B = FONT_SETS[S.font][1], FONT_SETS[S.font][2]
 local TOUCH = Enum.UserInputType.Touch
 local MOUSE1 = Enum.UserInputType.MouseButton1
 local MOVE = Enum.UserInputType.MouseMovement
@@ -1744,12 +2912,14 @@ function Z.front(frame)
 	frame.ZIndex = Z.n
 end
 
-local ICON_SET = "v2-b4354f5c"
+local ICON_SET = "v4-dd002031"
 local ICON_DATA = {
 	["activity"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAC1klEQVR42u1b63HbMAwGeB2AG9QjaANrg2qDeISO0BGyQZINmA3YCSJPYHmCKBOgf5hrLyUoSqQskDLudNaRkgh+/PDgwwB3uctqQkQNETV77HhLRBf6K5ddAUFEb/S/vO2l8x3x0knTV63wzW5hXTUMuAQYcNmD15+SpmYTaDM9UywAXWkAYGYToKhGEbE6BswJcZLCoVrZ/j/cJdoM1gx/xl1iw6HK1PkDABw8VQYArKf84N6pxgQ4m7YOBLFZoVrR/q+IOCDiAADXqv0Ak/E9/lP/6Kl/r4IBRNQG6O+7/xQdeLeo0feNLs1lSck+4Ogpe40sOxYNgAtlzQT9Q2XN1uEwlQGcDZtIAMqOBkyWNwSeHzzPP5cMwPucDhHRs7RwqBI63wKAjqR/qE5vuUqU4gNOEfE/tq4rjfrc2p+NeNdK2jP49kU5DQAPEyOimdAHABDj0Iwn/jdEpBFxXDggP5xOId0+235h22F2dGJlTGTPaUHHHyaW4SmabW4/L0VOMxQfU8MhET0l6Nrmng6/IOKcDpiUtJiIfgaccJJz62ciOSyk7ill04TJP2KlZ52gS0tP7lcz7fcAMAKARUS7EGsDAE9MWtxPgRfQ7ex088nowrCMzJNh29IwSsWdPyCiX0xHdOAdnXtdQW2IgVkwO2wT8g+RLBgzTKbGFB3UxhjYmeHwOHPuIR4Anxl4N02ckzvMnH0WyQBudtgumH3KBsBtmpwjO+srO7tvlCtbL6srARgYBpjOd5/T/kUAEEin2wn6fySk4uLMIHiGgDt7kKNtJQQDy4XDwNkDWxMAobR4Nfv3TYc3C4dEdAWA7xH5AIA7e1ATA0KrRMe1Rl8aAD6b1sziRzbvj4IA2OSgpSQGAAD8jnjmNWeD0gAwC02lGgDsrQGQmBUOoWX43O0pgRjYW46+RABMoo+owgz6qR2d2gFov/iCYa//QN3nX2/vckP5A4tBUoE6YmnxAAAAAElFTkSuQmCC",
 	["armchair"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACfElEQVR42u1aMW7bQBCcFVIGCIsU6UIDeQDzAvMJKpOOT8gT9APLL7BcJZ2VF0R+gajaAcQgTQwEiAyknxS+AInAo3gij3e0dgAWIkXu7uzd3uyRgEKhUCgUilOFdLmZ5BTAOYAMQD6w7ysAJYBbEVkOaplkQvKG8eCGZDLICCCZAlgDSCIbzTsAb0WkcrlpcoShqwiDh/HpyvWmiWP2ZwHmugtykh+8TQGSWwDp3ukHAAtTlHYDZjsHUAB4sXetEpEzX8WvDkWodJMs6hzyZSwfzJjbalSH3EsNiE7EiHSecqMmoA8oAUqAEtAar2yVOOQq4OJrl6XmoqER+WW6wqGDnxrbNlx0Tg7JjOS2bUcWYSe6Jpl1MbR1bEvnAxAwd/RpfdRIOMKQswrrS432nhiSacPD7kh+J3lvub7ySMDKYvPe+HTX4HfqWmDqMN3732LI/sDi0+IY3w/2/W0y2zBSMg/BZ20zaxkpMxcd0GoeN2w/+dAGiaMP+8hOXQkmKoVr8MzTc78E3ivRZmhIAjYB/d/EQMAyIAHLGAiYA7gOEPy1iMyCF0GzMVkYoZEOFHzl+grM+ypgHKowMugqoAQoASeDnQsBqydIQNn7hkiMcPVdLA9JAWwtNr4CeA7gpzliwEtz/AbwxvKfMyft0GFTNEbMrfqlgYDEzJvXI5/7GwC57VX65IDEnQL4NvLgi6bvCCYH5G2Jx720yxEGf2ky31j9xaEmvAPwsebSbeBAz2vOvReRT303Qz8soyQPvOyxra8qhZWAbgRUePwo8r9dmQhi+Lz3+8FJ9jrOt4xk+fedXMivQ/7VKySXxqfSx2s5hUKhUCgUTxN/AK+jUL3wlY7hAAAAAElFTkSuQmCC",
 	["arrow-down"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABSUlEQVR42u3azbGCMABF4cyrgA4sRUqgBDuQjtKKHWARztiB2/M2vNHhRSU/QELuWbJA74fjIoMxSimllFJKrR5wBI41Dm+AgWcD0NQE0PO/fovv8rORQee41tYE4KqpHcAIQAACEIAABCAAAQhAAAIQgAByBBhPcs6ABbpcRgDd+J3Oi54sTY6xAGzgfS6OE6FL4L3s5D7DUuNb3NmtABzj/2rX/A84hf4SIh+INcac1v7QK++za/0CPjx5gOuSAE0KhBiAb+MXP15PgRAKsPn4VAghANmMT4HgC5Dd+FgEH4Bsx8cgzAXIfnwowhyAYsaHIHwDKG68L8IngGLH+yC8Ayh+vAfCfea18sZ7IMytvPEJEcodnwCh/PERCPsZH4Cwv/EeCPsdP0G4OcbfqnlXEDgAj5fxD+Bgamt8YbI3SimllFJKrd4vypK6jexzykgAAAAASUVORK5CYII=",
 	["arrow-up"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABZElEQVR42u2azW2DMABGP1cdIBukI2QERmGDrAQbsEHYIFxz6yFSrjnl+vViqZUKrf8AG753tEHkPUx+rABCCCGEEEIsDskzyfMexY8kX/zmRfK4F/kDyTt/cyd52IP8ldNcNxvBQX67ETzktxchQH47ESLky4+QQL7cCA7yD8ex2SO8zSEP4ALgNHFIC+A2Mn6zc2OcAFyyXwkOd76xx/Ujc72da4p8HFzl/wtQZAQfeZcARUXwlXcNUESEEHmfAFlHCJX3DZBlhBj5kABZRYiVDw2QRYQU8jEBVo+QQj42gEuEueSrFPIpAjhEqJb8LdAaY+qlP4XsNdul3/2HmDufcgX8sRIGn/PfPa9XAagBfADojTHd2t9EjTE1yc6+tk8ADXIn5QrIbj+gNBRAARRAARRAARRAARRAARRAARRgZZ57CtCNjPW7WXZ2e/3n9tqw+f8IToSofHZwhRBCCCGESMcXdnxa+L0RCowAAAAASUVORK5CYII=",
+	["bookmark-check"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADzklEQVR42u2bS2hdVRSGv9UGwUhNLRURH0Fp2hpExbdOoqUoUlB8pBQFBUETZ4qo4KDiQAQHrQhCQZCWErFgHfjAiIjVSkU7slrro22sRUpbEZ20VaOfA7cQwj33npvknHuSnH+Wc9a+a///WWvvtR+BGjVq1JjHiOk0VlcANwGXACuA00vq90ngO+Ab4KOI+KF05dRH1D/sPE6pD5VNfrPVw+ayyD9rdfFMoWOAeiWwG1hQ0TFtHLgqIvbkbdDVpoMnm5DfDZwoiWg3cE0Gn8eBB4oK/2MNwm5UXdyBQXiJ+n6D/vxclMOVGXl3UafiXV023T61k8uXNhxEIsY6VsRE7M94dUURAlR14JvW2DabSBWCWoD5LkBXVTumngasS3++FhHj80YA9SxgFLg2PRpWV0XEqTmfAupS4OMJ5AFuANbP+QiYQL6/wesb5/QgqJ4DfJJBHmBk1kWAemGq2H5qYXduIr8sw2RLRLwyqyJA3QgcAg6pL6iRYXcesLMJ+a3Ag1UI0bWNVh0ZtsMNTLdMFkE9Xx1rssGxVV3Qol+NMNhpAXZmdGxEXZhsetUfm5AfaUV+JgQoKgW+yHh+LzCi9gG7gN4Mu23A/RHxT5WmqHYioFv9ssnXHW/y7vX/oyRnv6oXARFxArgZ2JdhkkXwDeC+iPh71i+GIuJXYADIe2jxFrCuTPKFF0IRcTyJMJaD/N1lky+lEoyII0mEwy3Ij3dibCulFI6Iw0mEI1UiX+piKCLG1OuAl4Ez01T5dCfJl74aTJFwe5VWoPWeYC1ALUAtQC1ALUDOhVcBK8x+dWURi9ciBIgZJH6XehDYC+xTD6h3zmTJUckUSF98B7AdmHiGfzHwprpD7Z9zKaAuVTelLz7QxHQA2KtuUpfM+hRQu9THgP3AUBtNh4AD6qNqV1VSwDbJr+G/m5wbgJ4pkFgMbEwRcWsVIiAv8T51FHgH6Gthvgv4rIXNcmBUfTttpnYGrTZF1R71RfWvHBcaD6prJ/32WI52f6ob1EUT2pZ2LjCY4Wxhujf8Sw4Cv6lPpLP/Rj6eUn/P8TvH1aGqCPBVzmusL6XT31Z+zk6zQB7syXh+T2kpkAPvqsun4G+l+t4UfQ52fBYAvgZWR8SaiPh+CrtH30bEbcAtaTaZNXXAUeBh4PKI+HAGttE+AC4DhoFjZZft7aTASfU59YwCZ6JF6vPpnyRmJAXacb66icNt6gUlTsm96QwxC6uKcjz5dvan6tUdrE2uVz+f1Kejak9RDrvV9eqrUyhPixTiDnV7KpJ6qVGjRo0a+fAv9SBnnA6o4k8AAAAASUVORK5CYII=",
+	["bookmark-plus"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADQklEQVR42u2bS0hUURjH/6dE0BBFDFchRT6SKOkB7YyQIlxEkW5bleXKiGqXFEQbsWjlqlzWwjYVGRG6iCJcZWkvH6vKRwtzkb3g18K7kOFevTNzz9w7zvnDbO6c833n+9/zPc6cbyQHBweHAobJZjJQL+mgpB2S6iWV5GjdS5I+ShqXNGSM+Zxz5oBzwG/ixy/gdK6N7yd56M+V8VdJLrqtxgBgj6QRSRsSGtP+SdprjBkNO6EoTQWXVjF+RNLPHBlaKml/gD0XJJ2ytf3nfLbdIFARQxCuBJ76rOeLLYUNAX63Na79DmzPdk3p+PJO3yBizHRsRYwxEwFfNdkgIKmBL6vYlk9GWcGGmHy3GOgBZrxPD1CcaKaAdr9ok6GsLh9RXRnK8kNb0l2gKZvAlfcu4BUyqSgpJAIKOwg6AhwB65yAlDzvlzr90lR7QEqzWifY2gGd3rG0OgJZ1Z6sznwioClPZFojYCFPZFoj4K6kxQjlLXoy4zs2pnlOf+PdGTQEDOnW8n3CSgxJuhYwftwYM5c3BHgkzEiaCcgSfgFt3hgz7OoAR4AjwBFQCAR89Xn2rZAISK0TrOX52NJgmnWCtTyfSALWqhNcEHQEOAISSQBRKwcagQYLdmGDABOh4SeAKUljkt4Dk8DxKGNsIl3Ae+PDkgYkrbzD3ybpATAMNK47FwCqgD7vjTevMrRZ0hjQB1TmvQsARcB5SROSOtKY2iFp0rtELUqKC5Cm8a1a7uTslVSegREVkm56O+JIEnZAWMNrgUFJjyTVrjH8paRXa4ypkzQIPARqFRfW6g8AyoFbwN8QDY1TQHuK7OkQ8/4AvUDZirlZ9QekQ0BbgLKNXt/w9xAGLAAXg255gMvAjxBy5oGOpBDwNmQb622gKoSezV4WCIPRgOcnc+YCIfAYqMtAXwPwJEOdbbFnAUnvJLUYY1qNMZ8yOC5/MMYclXTYyyZ5UwfMSjojabcx5nkEvxs8k7RL0llJcxGvNVIXWAKuA5ssZqIy4Ib3J4lIXCAd5S2rKLwPbMlhSq4B7q2ynkO2FKd2Z78A9sVYmxwAXqesaRYot6WwFLgC3MmgPLVJxDFgwCuSauTg4ODgEA7/AcXreJ5nQOuNAAAAAElFTkSuQmCC",
 	["box"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADFUlEQVR42u1bu3EiQRTspwg2A20IyL+q4zJAEUAGRwaSIuAyQBmIDEBVeDKETFkryZLHylSd0ec8qjixB/Ofhdu2gBl23vRO9755A0CH/xuSa2CS3wEU+rYWkfuTZ5tkQfKKZMVdVNpWnOrkhyTXPIw1yeEpTbxP8pH2eCTZP+aJlyTv6I87kuUx6jw02u8PFjqvSV4rWYW+ro/WHyx1ftt0J5WI26PyB0udL0j2DK7Z077t9QdLnb+QHDiMMdDvtssfbHUeYLx2+EMInXuuuDz+oIMH1blHLLb+UIQYcB1L5x5xmfrD2vmGqMN/ptB5ZH/4dHpS/GPHFk3nkf2hcrn7+/DQpvxc4304EHNpu7RMMMm5CvTuTwxjbZTqmWcMYwBVjvyc5E8AlcYQ/OILh91akvzco76w8F0B9YH2HoB5rPx8s+8AMNexfGJ1IuAJwA8Arwf6DVQWQfLzzb5Dl/uhXONVY3yKIYHFVvs4RX5uue8Ym8bvTUDs/NxS57++rrQkBMTYv4eqLyQlwDE//8sfQtcXshDgsH+vVONDg7Tbat+RlQAHfwheX7CJ/wwRICK1iIwAXADwOfO7B3AhIiMRqWPEGoWALSJWItIHcGmQP3x9nl+KSF9EVjFjjErAFhEzzd5uAHzs6foB4EZESv1OdCQhYEsW10rEe0OXdwA97ZMMZ0gMEXkB8NzQ9KxtOGkC2oaOgI6AjoCOgI6AjoCOgB007ZzOj2he54ZzsloBJclJ22dOcgqg9L3IvqOxue8RuHfBovmaPY3N/2hsT5DbmLqWvUMSoMWXqcuhiMkqqE3qe7kI0Dri2qCUVvosK9P63iAVAVqArQwLqD1fPyhIzgxrd0b+4EqAgc63MQt6cq2HFSvDwff6gy0BhjrfYBX1kJbkyOJY7MqXAEOdb7Q+SvWsLSx+RLHjD4ZHb6Y65+Z3xzmSjtLFH/YR4KDzErnh4A/Lhs+XrdF5An/4bfhZPp0n8gcb5NF5In9ov84T+UP7dZ7AH9qv8wD+8NYw8bccOs/519k+gG/6dikiC3TokBx/ANgCwfJAKi2vAAAAAElFTkSuQmCC",
 	["camera"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAC/UlEQVR42u1a7XHiMBB9y+Q/7uB8FZyvgrgEdxB3EDoIHYQOjlRgUoFNBbgDTAWYCvb+7NxwjGQkW3JsovcrE/S1q9XbtwtAQEBAQEBAQIAHMPMLMxfMfGR7HGXuyxwNT5j5wO5wYOZkTsaf2T3Ok3cCM0eOb14VCZHLMy8c+2AFwOctJbKHM5DD248BHACobugDQAWgMVwuBpACUBFgC+A3ETVTC/9CE7bbAWtuNWsWUzI8ZuZ3zUEbB+s3mrXfJOq8GpeJcWVP0sodnCHvuXcpZ8/6snkxkLErhxdRDTxLYZw9JKSH5vHWZXjKmVoHOiI22ax0YHzi4TkmDpxQ3ttkPdDwjWuhoniam4GOWGl1ADMfJQdf4wJgK3m81ZytJaJ6bMmt0RyQ/6cAcgDLm88aIvqpW9QLk39hilZmEN3g1HjwfBwQaS419VULmBxI1SP4V/u75BAiam0O5zUCRLmdDdPVm8N9OyPAuwPk1sueSi7y7YCF75AHUAoj2yIFUPpMq2NwwJ+B/YEEwLvPAz75LKQA6AqRC4AdgPrK0EyRswEgZ+YPIqrgOVydckBHJ3inCmvhCl3Rc5wVCYpuV6E2mFtr5sZzIkEd6ZmoSt2YbE4kqGLuk0m9IGNOhmtO1gEq5rdpjzWGa07WASoDlhbzVWPrOTlApcETE1EjYxKMBF8O0OXstcHcteWak9UBrW1/gZlfdd2mOdYCG508ltL3WcRPJH8XHXM2Y9TqriMg6vhSwwbNkILoyyJAmhGZ6P6+uADIrBobU6oGRdSkPZ1wAZD6brZ6b4ldOWFvMW0/hvGjtsRkj1yqQe6oFHPHe3ZywBNGBBFtAWw1Yqf2+dZHb4gYEGSFCWCBb46HdoC1fviOX43dcsAJwA+FdP0l5WgzE9tj6H9RdupywAbqNvTqgV7Gf3UFKcKmAvD8oLSwJ6L0ngNiCfflgxl/AZDc/r5wocjRjbyhzwcy/hNArPpxJd1h0Ux0fDLDZ7GXSK6IaIeAgICAgICAgBv8Bfs1nDCcPVpuAAAAAElFTkSuQmCC",
 	["check"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAA3klEQVR42u2YwQ2DMBDAGIHR2IQV2KRsxCiwgfvhU0RFKKmUXGyJf2yRkKPrREREREREpG6AHhiBFzC0KL/wydSyPMDasjzA1rJ87C2QID8rr7zyyiuvvPLKK6/880UN+4w9An1r8tNhEcs/IhT72gPryWKyRih6zwPbl0VliVD8gXeyBbJFqOa0B+bcEar71OWMUO13PkeE6i85TyKEueH9EiHc9fZOhLB3+5QI4QebhAjxp7qLCG2MtDcjxJznEyPE/ZmRECG2/EWENuQPU+S2P1MnIiIiIiIiIlIIb+FFFvn6/UTEAAAAAElFTkSuQmCC",
@@ -1760,39 +2930,56 @@ local ICON_DATA = {
 	["circle-x"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADkklEQVR42u1b23XbMAwFvUA0gjeoNog2iEZQJog2qDeINnC6gTpB3AnsTmBtYGWC2x+01klFEqRASU6Cc/yTmCBwiRdhkOiLPjeZJTYFkBHRt3d//m2M6T8cAAAeiKgkoi0RFcJlByLqiKg1xvy8KQAAbInogZUtldi2DMqPJaxEbNYAvgO4IB1deI9sbco/JVZ8DIinNSheAjhjOToDKBaJAXwCjfDrb+zHHfsyEVFvjDkxr5yI/pp1wQGzJKI7If9HY8zLnCe/F5xOB6CZckIACubRCfbbzxXojh5BegC7BHvvmLeLXpMFSIHyPQuZJT4AHxDHJDJ4lO/Yj+dywdzjFq9z+vxpibzM1nBKHhMA1I5NXmhhAvDikK/SyPOrVV4IQjGFsa3IOa2wFLe5w1nb9LvV1eLXmGALjHUMs4sl1eW0UuLs0FvuDlkIo50FyR2tnCbLDmDrOP3sBgDIQqxgM8KjHFxMhtSENCPYHJ/5k0eac/B6lnHskpaJGjQA2rHAFyF8dE4GUI2szwNlGAuIrcR8xqgJ3LyJLUwsyqvJ4HOBwtGT06C9CwT+n9a1trUVd6EVVR/pvwgpUR0nH+UCzLMPqmABHLRKXoFCVcx3FUrkg2uBau6XKJZKeVdNEArApKajQEGkus1xS80JwGaYAVIUJtysfIxYmqzROaqrDS2t2j/QEiqlPXOxVUvMZSYQKuU9nQBs6JPTRoDgVuv0hUXOXtMFQm9R6llgQiaoFPa1xbXsKw0GxIA8odk/elLkVHcoQgX+9KXw2ILLDV+GLqGXoVIjDjj6AfBdhx3rGqUAWLpigM08StIhZ3k7oWwWy2yM8XaF2qk/LqykJXYObonxwlrjWswgNPyJbYpGrXe0xivJ4qC28krb4uK2/iawrVzfQHlf09S2vscK8hWffu6YXslCmdWO0bTshkw//MfRAVPbr63HFQJgG+HpUtym5hlLk8u5TzIg4XGFxUFgs98n7y55RlCOWG5I6jjbCI9nIuu8wJicazj7kArx05Kj7IORfCwyticA4R8QCfaWvEU4zOKOnpgwdItnAPcT9rlnHpKR/CifnzIuL+3yEhH19P+4/Nu7cfm7QRtrS/ZJleBrdkpLKISj7Kmo0+haawBRC0bZNamPLm8TR+hdYiCSj+RrAVFZOkux1DJPdcXneDhZ0vXhpDQj/KLrw8k2pXxLPp19XzmeVvso8os+MP0B7GwAGsMMdvoAAAAASUVORK5CYII=",
 	["clock"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADtUlEQVR42u1b63HbMAwGvUC1QbVBtYHVCawR0gniDeoNog3sbqBOEGUCKxNYncDyBOiPIolO5QMUX1IS3OVPzgSBjwAIgBDAJ31sEik2RcQMAL5N/v0shBjeHQCIuAOACgByACiZy1oA6AGgEUL8XhUAiJgDwI6UrTyxbQiUXymshG3WiPgTEa8Yjq60R7Y05e8DKy4D4n4JileIeMF0dEHEMkkMoBOomT+/kR/35MsAAIMQoiNeBQC8mHVJAbMCgC9M/j+EEKeYJ39knE6PiLXLCSFiSTx6xn7HWIHubBBkQMRDgL0PxFtHj8ECJEP5gYTMAh+ACYhzEBkMyvfkx7FcsDC4xWNMn+/mIE5KPNBfMdMauuAxARH3mk1ODic4pWImr5NGvjsf97xX5YlvLeFXO/DTgVC6AKBKcjpHYFsJz9aRp8odLrp1G53pU0IypT8WVV1MKkm2KeWki3WAuSquusJDXPFuAaPYMihqh8zGAvaj1HRM9Uv6usjuzj/ZZLEkI5149bzm9L0kGKEsYGS9bCuQWUClOf0BFk4ko8oKKg6CjSzT85xYBbOA0R6yTLHRWgCZyE7RklobyWTemVygtGC2RgAAESsdADIfuQkh2rVpTzLfFDFOCUD+Tk5fJ3uuA2ArWdCvGACZ7FtWKjyidsUAGGXfTG6AD0FjXccWoMrxYyU/X11b3BayF2wXiJj75wDwSI1NL0BwZN8kssLOUNZ6BcIJAHrs9E2cbpIzEFalO1VRfltK5tq9tXgGswaCHlZklKkWRANgIqQNEAdXAHQLZLSPERQsgSiYPA8mAKYx4El3ZYTO3YUQJQB8V8gxre25NwswdHxFTNZeviZKVlQWwe5MKTpbJ92CKkUcYADR2D7BaQJgNecmqFeY7tZWAdDQErusEICLdUtMU0HlId78Ayp/mN3bsG0rL7HSs2nrbyTX0QCujwtpaQ+ubX2DFRQLPv1CM72S2TLba0bTshWZ/vxsVjOGcl4gAKoRnt41CUk3lsaX8xhkQMLgCslBILM/BhuRMdQIYcfSeMqfQ4zwqDbsDDO7RUTlC8NwdhsK8S7lKPtoJB99j+35AuEViAB7c75FaKO4oyEmjN3iARG3DvtsiQdnJH+Wz7uMy98BAPcWGOD/cfnbZFz+ZTS+hLdxee5pxh2Xn+QJPaajPmWzZporDBEVH2I1a20D5CEwEMFH8n0BcafoLM2lhnh6VzzGh5MVvH04yb0RnuDtw8kmpHwpP52dZo7dGuYQP+m90V/OJl0PUHOXBAAAAABJRU5ErkJggg==",
 	["cloud-fog"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAC2UlEQVR42u1a7ZGbMBB9yqQAdxA6ODo4UkHo4OjA18HRgd2BLxWEVGBSwSkVwFUAV8HLj9PNeBJJ5kMI5OjN+IeNQdqn3cfuSkBERETEfwzh8mEkdwDuAOwApAAS9ZEAegA1gDchhLwZBkkmJA8kOw5HQ/JE8lvIhmckf3A+GpIPoRne0D0aktnWjT9weRyUlmxHBNWEzkrYhuIVQHvx/X7EvRLAVyFEv4VV35F8GbByNcmCZHIlfEqS1YDnvfj0hDnGP5NMJzw7UaRtlwSSZ8vk+imGa8bISbaWcc5rGV9aJiVdr4zyJBOOayQ3RpdfcFxpGTfxSYApwak9aI5cNRSUUptiPvEkvCZNcJ4ofdb8Vhj+Wwoh2sUTEyF6kiWAk+byniT/+v8v1+x7d33DXNqRafSZ5NMscVaJjA75CgQUE1PpjuTT1EFNGdoqyYjSnTnFVT52QF2VV62YiJUOiqtibvw/rpyOH72QYHn9bbZGV4uWKb2oZ5EQIgEGG6RFHP/Rsk831eEVogaQAfitubwD8HjTBHwkUoqEV10idfMEXJBQ6rzAqAWWt0AeKhGGbLLWeoCl/5YH7Ay60v3OxpjuVdIF7AHaN5tNA2pD3ITqBdJEjImA6pbCYFJb3ZBIdC4aoCuFgQ7plDJ0/T79eOPTaxowtiV1DIwA3WLKITfmlqIiD4iAZnJX21JddSGEgqWXMKo/0IdYIVp0rJ4iIv0oFV3f+L0lfLOpbPY+doYcGH+y7V5rc4WBD07wfjag1R1wUte/eLDReMBKzaEx3QcgXWRfQ4VJR38oR3a05KIhO/DwhGukA0X76i62i4bIGoK4s3SCPtph3wFk1+oB4cADKgA+z/u9AUg2cX7owvWePbm+DLUoi4iIiNhm22zJbgyAh4XyhBbATyFEFVQryldaPAZLbY0Vnrjeb5UAn1nhJgnw1TOYPc7SIlgsKILVZkUwIiIiIhT8AYw9+Hk2EspFAAAAAElFTkSuQmCC",
-	["code"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABVElEQVR42u2awW3CQBREZ1MBJaQUl+AS6IAW3IldAiXQAZTgDnAHkwscEsX2Bv7u/h/NO+Ox3rMWJGRACCGEEEIIIcR7kDyQPJEcSfaGu/1j80Ty4Fn+yu8MBrvDj82ruwgr8iR5N9i+/7LrJ8KGPEnOBvvLynb7CDvypY6AjwgZ8pPhvSZXEWrKu4vQQt5NhJbyzSN4kG8WwZN89Qge5atF8CxfPEIE+WIRIsmbR4gobxYhsrxJhOjyuRHWLur+g3xmhO75uY/cvYj/0L1S7bZRbQz09McNj9vel2DoCHvyub8EISO8LR85gpl8xAjm8pEiFJOPEKG4vOcI1eQ9Rqgu7ylCM3kPEZrLt4zgRr5FBHfyf4gwGNxjcCmfGaHU+wE+5DMizAbbi2v5nQgljoCpfLKOAOAI4BPAJaV0NtrtAXQAZgBTSmmBEEIIIYQQQojX+QKt0xxZQ+KsSgAAAABJRU5ErkJggg==",
 	["command"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACR0lEQVR42u1b0ZGDIBRc0sBZgteBHSQdnCXY0ZUQ04FXQZIO0sHZgV4F7378cDKCPAUeKjvjZMZAFhaEx3MDJCQkJBwYiluBiDIAXwDy4QKAdrh+lFK9zwaL8RNRTkRXmseViPJd8RNRRXxUu+C3VF07GpvmX6i8s5EIwa9MzxyA35k2PofP80y5T6VUy33mJflBRLVG0Z6Iyony5fDdFOoFoy/HT0SZgTw31CsMjci2wm969kqLuuXatSAk/0nzO5MqK6Wa2chKX4azNwfj5wjwZHTg6UEAL/yngGF37qnsKugEmNoyztgOzpZ9YgkAm0VIGobFliWAbiG5ElERcecLAN+cPp00K2kP4DbxVQbgHuNMGNp0H9r4jpvumLw2FH5o7hcTDekBvCz7w61/cR4KOzyMSKNaO7XqDXe+drayHm7kNSmpLcyGmpMSW5oULUdJyVyziH283ftjLoK29dvR1fhOytqK9JgYmUeo+i5C4cMgCZAESAIkAZIASYAkwHHhwh+QC+cDxqFwFP4AaUTjD9jHcXgjox61PyDqmeDKHyCZDwBi8AdI5wOi8AdIJ0SW+AN0gZBuhKtF+fVQQY1SLwAVp0/O/QERiNBw+uTLHyCNKP0BraeyXg5D7YKtZq7sWgG88Dv3B3Dfz0fJb9gGO5M/YNiGOo82uSD8c4FQZzAqdgGMkk75XfkDLq5DUWl+l4ehxcdSaf65qRjk/bw0/5qRcJOQiIB/nBKzGQ3W+3lpfhf+gHFisgn0pykx/oSEhIRd4R8DAm+OOX8m2QAAAABJRU5ErkJggg==",
 	["copy"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACGElEQVR42u2b3XHCMAzH/+J4bzaouwEjMEK6ASO0IzABbACdADZoN4BO0HQCzATqi3uXBodwV9uyg/SWuxBbv0iKPjCgct9Ct9zEzAbAY+K9fRNRI0aGmStm3jDzieXk5PZQpVa+FlbcB6JOqXyuUkeNAc7UvgBUmcYsC+CJiGyoB0461+uMlYfb2zqm+fv8/sjMc4EgPHdrX8SDWAuaHr+bS71uB8EnJtli0jYf+6VMCkjWPnuC4d0AWAA4t66XRHQM9fBp9rk60ZGZZwAMABtS+SIAOAgNgCh1QQkuEFUUwL0DSBIDcu4nTCMqXQFYAail6gtmtgD2AF4HC6iQmWBJ/YRJBOo1gF1mVWUFYOeDMIlg9puMY95Fey20BZTbTwgRA4ruJ/wXQKn9hJAuYHry+A/BGuJjaK+aCisABaAAFIACUAAKQAEoAAXg77tLFjNJAbgG4tlzz2rMELousPfcMwPw7srIgxtTjRbAS48VdGGYUQJwrePFwG+qvtp/FF8BItoDeB6wBDvqz6CDYAC8eUAsQ4+oJaV3MtR2B+fzBhHm89kC6MBoEGk+r5mgAlAACkABKAAFMAoA2fUTrqzdxFrQeiaxB8Hx+MGzHxtz0S3nL9s/WW5gAJUzr4dMXf4MwLT/MRY0CN7YT5CURcjzRtcsoe6JB1Jikx27a7uDiwlWWPHttYOXlAjGbz8hpTSiR29VCpEfqMsaYuL5jZgAAAAASUVORK5CYII=",
-	["crown"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADLUlEQVR42u1a7VHbQBB968l/VIKoIEoFVgeoA1SCS3AH0IFFBSgVoFRguwJMBXIq2PzITUZj7k67JxFO+N4MPxhbu2/fftzqAEhISEi4YtBnOWbmNYDS/NoR0a+rUZ2Zd/weu2sJfstubL968Dn70TNz/pUFaHgczbVmf4g8BrJrM6n/Z/ZnrwITx51IVGbOmPnhgsyemYuJJApHoCfzM3sVGJ/7C5sPzJz5HnrxDKdqAhmX3YqZa8dnLxP8VYazDc/aLA1RB5ApHba6wXc6x3fKAH+1II5CQ3TSwuLJfinw/aL0tRPGUE4RgJn52dtLiuzPUQVmdj0r+JcuQxrsx0SwDCEnAY9Ye0HwewXvs89YqxShd50Qnl5sPf47zewxc6tXcm59Amxcqo2IUFlsvWqPN8+y9Kqc9D7Om5BtbePJzrssebLfTFiYasWk7zzJzMcInFzEBdvcLjT70ioQTPrG086n0JW1F7TJP6JT11uP0K8jvjcDG30QB9Nb3uXBlOBZM3klx+bFZNfarwVLXSV1PnpZYZxISW4DNrqtIvhC+Gwmdd4Jl5ecmQ8jBA+a7F/Yl9jOQ/mHqJ85KqadO/iBbdfp03r4TKvCkB4ym9zWEG5CXmRGbDfG9tZnWzLDpE7PS7yucpwgzvV35bFl65k14oeNYxsigO2hPOZbW8MtFyYzqAIAoIo4+5UyFrcARHQCcLR8VEYsgI3b0cSiroAlzoE7TfZDBcjmPOLmPCq15S81bMNjhAI82oiOPbcS2P65kDZYC7mrBbCVUDFlxf2A7GcAipDyDxUgtuOwCu3/UQGI6ADgLfLj0MblzXD/sP26j6gF+tD3lpXQh+s4LCIIvgCQafb/Ib4J/bQAbH8Su2fmm6X2P6D4LzFmPgD4jmXgSETFnC0AAA2WAzFXTQVkAE4AbiIP/jeAnIjOs1aAMVgvIPuVNHhtC4CIWgC3AJ4cr8qfhTfD6ZaIOiQkJCQkzLwHDHaBe8R7M9wCeNIcg1oB9o6Lh5hwIKIfs+8B5tKxWEBVF5pL21WaAboWWMIbofhNMHQI1vh7BZVFFvjZ3AE0miGYkJCQcNX4A3BH3Q7W4h+dAAAAAElFTkSuQmCC",
 	["download"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB20lEQVR42u2bwVHDMBBF/zIUkA4IHagEl5AOUBccM8ONE0kFgWNOpIR0QHJiOAEd0MHnIk5YttdRLCveP+ND1iPr77O0tuQJYDKZTBOW5OqYpANwF36+iMhhMtRJOv6Xy+HlKhMD3zF2sQBcx9jFAhiNDIABMAAGwAAYAANgAAyAATAABsAAGIAeIjkj+Rp2dd5IVucyS7IKfTD0OctOkOSuZnvLt7TZ17TZt7TxNW12YwAQk08FIJI8SXIMNeAYiW/aRkJHwB7ARtn3oCOgYrN83xHQdOeDKoxBHYx6LQDtNYuC0AaguOS1xpsAFJu8BkIMQPHJKyC8d4yVl7wCgkZlJZ8YQpnJJ4Lgcxp3JJ/C4TJA8Nn8n+P7vRJCiuT7+ye5qrnAaqDpkGL9cJr/PsvVRBB8oj46+x98R0hEngEsa04tw7lBdZ2jwIrIA8kPAPch9Cgi2xxesgAIELYAtsgs2xQ1AAbAABgAAzAN/WgA7C8QwEHzLr2IvKsvCth/UHmXyEXmAD4LHR1VJH4rIl+nLilLVXQpLA0AZmHe3BQ+948AKhFRFUGEBgsA34Un72PJtz4Gw/94HIB1gcmvw51vrP6iqAnzAMM1FJrcz/nD36EqeCaTyTRV/QL3Vk+xREesZwAAAABJRU5ErkJggg==",
-	["eye-off"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADFklEQVR42u2bwbHaMBCGV2kg7iDuIC5BJdBB/K7vAoec8+gg7sB0kNcB7uDRgZ0KIIec/xyyTBiCZK0sWeaJnWGYAWxZn1a7q92F6CF5i7r+AEBFRB+J6KdSasiKBoAt/skRwCqnyVe4LXUuADTMUucAoARwyh3CCnbJAkL9gJARBGWDQESt5donpdTOx9YQ0SfD17+UUod3qQnsZnu4yRuAFsCaA7P7hwBgD3/pGUZ5txAQTvYA9BIhPI9cf0BYmR+EA4RvIzZgQHj5DqC4m+3AIErD55rvvxNqzNtsxhLAi8MD1YHGKgFsBDBeYk++FaxKHXhsDaBzGLddwuSjRYwM4jAbBACF5+Sjhs1XyZubEIIYx5EAZmDjVSeCMOZZ9jEpHy4JJ4RQjGyJbegU2X+TvwMIlc8Ne8nkBRC+JoDQi+wBByKmPV84XJ9SE0w2Yed6kzKEKgF4TmgYTVJOWf2N8EGahC5y46UFltXvPB4idZzQibXA4vO1cHC9kIjRXQvYgIRa/VtG8HcCCCYtKCTEtMfAt/Z/N7d3cJnTh1lT0H+zyE+Wn7TJUu6WLbAPtAUwd5xgsWmF1AXWwoFNvng1FwSxERxxg30gN3i8DKZihs2cJpPbtIBa0FggRNUEyym2c7nYVCY/CkPhwiELvHcsmNQBtp+7R7MQFJ2qPAKimBWoRuoRTpYUdBFAHaNAmHKKlRxpWw+LPMwBwZAT0L6WdGN5kB9CTSgcT4jNlKP0jTxhPTWY2I1UbSuPe54TqQ2/6utVClCB0sFKZg4FifUSy3BzJh2jVWunFGRjQHApTb0B+PIuNUHo1noupJYToa8tYe1kCMo38UhEr2RudrqWgYg6fg1kaMRmWJ+JSBNRxe8S8WrcmrI6r1iezJtPYHezyxrCxSGqGek3DiHdRSfJ8po5eWtsAzdFDQy3XKx3sMBY8cNLgJx4pbdjkeZUCCrFViGi80pWRFSwZzh7hUH6V51Ybb13JY8u9wcEZwir3CEckzVdLwiCphzEAqGiXITjkJOpa0xlAuEce5wW9ZechyxA/gCmyf1+/YGcxgAAAABJRU5ErkJggg==",
+	["ellipsis"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABh0lEQVR42u3Xuy5EURTG8bVH4j6Z0IqIxAMwPICgofQA4gU8gcIrCIkGreimEc8gEhElcSvMdKJzCfFXOCImnLP22FTfrz0n31p7JXvvc8xEREREREREREREREREvgWUgSrQliBrBBhJkNOW9VT+y4XPA4fAK+/ugR1gKDKnE1gBGnxqAMtAR2TWELCb9ULW2wEwl3rx6/zsCZhy5vQAZzlZp0CvM2smq/2T1VSLn6LYjadxYMuRtekcZN2RNZ1iAPv4LBTkdOHXXZC16MzZK1pfyTGDUeesxgqeT0TMvSir6sypphhAyVmslPDYCf+V42n6xFnsuOD5UUTjR7+sFfte7n6bdey1BtDjyNpOdAhWsoO3yGSqm2Ajp8hLxDVYBi5ysi4jr8GXnKy11N8CS8BjU5FzYDwypwLUvmm4BlQis8aBq6acB2DpTw4boN3Mhs2sz8xuzKweQqDFgfab2cdX5HUI4a7FnGBmA2Y2aGa3ZnYVQnjWT4uIiIiIiIiIiIiIiIh89QY6qSJZlDcW6wAAAABJRU5ErkJggg==",
 	["eye"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADGUlEQVR42u1a7ZHaMBBdpYG4g7iDuINzKog7CKkAl0AHdx3YV8GRCiQqwFcBTgWQCjZ/ROIwlrT6tAl6Mww/MJK1+/ZptSuAjIyMjIyMjIyMxwRbYlJEfJp9GcYO/5UBELEEgCcAqACglt8UDAAg5PeBMTbeDaUQsUTELSKeMBxOcsxyzQuvEfEN4+MNEeu1eZxjevBFGYGIBSI+4/J4RsQiqQgiYgUAHACoE/+ciNpwFTrG2OVqzIlAVhPR/EQc/wIAXxhjQwrPb4meGRGx9fGOZFkrx6JgG5vyHeElRAyRkiIrCPN3PkbXvcCR4PE60W5jYsQx9KQmz7cLiHBrYkIQEZQDbTTi1tiIj6TnVwAo5QcAYJSfH1dhtBBjAQAfFY/0jLHvPlbeGWK9sBirJGpIZ7O/S20aNOPtfGJNhcFy8RuH/X0T0Ai1i+KfAi2+80hyukBGOFntDJqXTuH5WEzoQlC/sox5Ss5A2dttNKHyCgXNwWZnGUa9YpwLIjYzzzfytzn0gcSbu3pfOGiIavGlwXsqIxSW7yCsWaDxfm05uSr2G8J/G18tMDizt/WacNhCZylo8f8g+7mGBX/Y9GHyvErgXBKJOZrbFDwPxDFNUL17NWeAx4YmBPgdhwAnh4A8hMxRr3Y45o4qgaMIqM2YOhGUVaVbvCoPXBrl5IHYdNYlU3IbPAfaBrlTUqVRzlCJ0FmTCJ0jJ0L7taXCnFhST5cKG7x3vIPD0NGbRXKgMZAReo/F94EWP1oXSg2hkIIJoTyP6FqsNZTEuENJjMKG3qEkdnQtiVGKoj0AfAvVkZFGaxRF0b1DUVTXoXpljG3AFwTPxevIuHeo+tATDoQefqrGiOnugYgxcUGMYR6xNcaJGlLE9EBLVPHrrY7CYy7b2ybWHSqf9riuIzN3kBHwb3v8/aY9/nlyVq/kQYa6G/wCgDpJe/wmJF5WcEHiJSrliTQVCyxcrOrSlBSpfYKF71d1SUrBCJtbHUlumwQVQRtjwN8LkvVE6Ex4n4imiHlRcqmrstVM+npJquIZGRkZGRkZGRkPjt8FabNi7s2KbAAAAABJRU5ErkJggg==",
+	["eye-off"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADFklEQVR42u2bwbHaMBCGV2kg7iDuIC5BJdBB/K7vAoec8+gg7sB0kNcB7uDRgZ0KIIec/xyyTBiCZK0sWeaJnWGYAWxZn1a7q92F6CF5i7r+AEBFRB+J6KdSasiKBoAt/skRwCqnyVe4LXUuADTMUucAoARwyh3CCnbJAkL9gJARBGWDQESt5donpdTOx9YQ0SfD17+UUod3qQnsZnu4yRuAFsCaA7P7hwBgD3/pGUZ5txAQTvYA9BIhPI9cf0BYmR+EA4RvIzZgQHj5DqC4m+3AIErD55rvvxNqzNtsxhLAi8MD1YHGKgFsBDBeYk++FaxKHXhsDaBzGLddwuSjRYwM4jAbBACF5+Sjhs1XyZubEIIYx5EAZmDjVSeCMOZZ9jEpHy4JJ4RQjGyJbegU2X+TvwMIlc8Ne8nkBRC+JoDQi+wBByKmPV84XJ9SE0w2Yed6kzKEKgF4TmgYTVJOWf2N8EGahC5y46UFltXvPB4idZzQibXA4vO1cHC9kIjRXQvYgIRa/VtG8HcCCCYtKCTEtMfAt/Z/N7d3cJnTh1lT0H+zyE+Wn7TJUu6WLbAPtAUwd5xgsWmF1AXWwoFNvng1FwSxERxxg30gN3i8DKZihs2cJpPbtIBa0FggRNUEyym2c7nYVCY/CkPhwiELvHcsmNQBtp+7R7MQFJ2qPAKimBWoRuoRTpYUdBFAHaNAmHKKlRxpWw+LPMwBwZAT0L6WdGN5kB9CTSgcT4jNlKP0jTxhPTWY2I1UbSuPe54TqQ2/6utVClCB0sFKZg4FifUSy3BzJh2jVWunFGRjQHApTb0B+PIuNUHo1noupJYToa8tYe1kCMo38UhEr2RudrqWgYg6fg1kaMRmWJ+JSBNRxe8S8WrcmrI6r1iezJtPYHezyxrCxSGqGek3DiHdRSfJ8po5eWtsAzdFDQy3XKx3sMBY8cNLgJx4pbdjkeZUCCrFViGi80pWRFSwZzh7hUH6V51Ybb13JY8u9wcEZwir3CEckzVdLwiCphzEAqGiXITjkJOpa0xlAuEce5wW9ZechyxA/gCmyf1+/YGcxgAAAABJRU5ErkJggg==",
 	["file-code"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADDUlEQVR42u1bQW7bMBCcNXopUCC69apD7yX6gapADz0qL4iekB/E+YF/YPcFdV4QGei1iP0C+wex+4HpoQxgCCJFyaJEJtojzSXF0e7O7lIGJnnbIpcok/zq4Zk+AfgA4I+I/A4OMZJ3JPccRv6SfCSZhXDwVD/MWHI3mguQTADsASQjv4ctgG8icuxrwZnjvGUAhwcABeBRv5BhACCZA8gDCkO9g9AEwKLGH48ki573yVrGhKc+QJg5Il6VlYisBnrjP0e1BAP6uYd9ai1A/7byZQmzjnrHIZ1eRApfljBDJOILhGgA8AVCVAD4ACE6ABxB+PWqAXAAISN565MGe6/ObDTYoGeiyGeSaZP+u9DftEPPYQngI4AflfEEQAFgHgsAptyivGDNL9HEABHZAjj1vOz32ILgvOf13kcFgIgsLJHdiwRHg5rergFsPLhEuDQ4Fo1Gmwi9WheYAJgAmAAYVAZJhXV9/hnASWd8trkKwBWAXZ8XIKPRoKan5zPduWXuvFLNKd806BUAkqpy+BdJa+amhpJW+QRg5tnsTVdqqeNYAmDps/fvMwguUX+pcsL/S86qmKpBpdeKJwZUfLkqhUWvsOjNo4gBJHPLIRYO+y0s+nnQAFiCHkmWLfYsLX0+FTIAT4b5hzaBjGSidWrvAoNkAQ2KKejlbZIaPTc3BcU+y/EhUmGOpDs8C5DcGubvO7iA6Uu0bciJUGEw2xQtrqv03NTkTkHnAZ5pMIuiFnjTidCZ3trC5YnB7005xDq6YkjHg52hwFGGnL8uUO70WnEVQ5rLTUHx4Dh2AlD4bIx4zQN09yergHAvIoeauQcA95XDZ00dpOA7Qmf+nbk0N3Q9kbXtAXSNAYP0BLUJly2sZjCZ2uITAN0kCfAsqS8ANjVjWYAAKMdnb80CC0M2dzPYN/vNDHPTtfYQhw3ylpVcSHItIuuLXEAv8BDh4R+aDu9kAS9mplPVq0gOfwKQuqTQTiygF1K9BBX/sgGgvNUPJG8tHdsx5dDl++BL/zobBB2KSIlJJukk/wBu6tx8e4N3qgAAAABJRU5ErkJggg==",
-	["flask-conical"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACp0lEQVR42u1bsZLTMBB9m6GgoHB53QWGHneUmC/An+A/gJIy5ZWmprjjC7j7gqSlcugZknTpzjdDQcVSIGZSSIpsS/JqTjvjxpHWu08r6+nJAbI9bqMQTpl5CeDy5NaFun4B+HGm+0sAzwAc1fXfDkS0F48oM5fMfM/+7Z6ZyxQA6DicdeKnADNz0DlL5DXmRYAY7wLm/yWFKVAw802A8r9h5iK5ZcaQTKVpV+kaho5vgUduGYAMQAYgA5AByABkADIAGYAMQAYgAxBiJ1hL8DHnVlgnj/WW9r2m/TrV5BuTsGHpYxJSmhQB2BmSWVr6lIY+u9SSXw0dfYcqWKWSfGE4F+hto3/Sf2k5FyhSHv1VTB9zJW8avX7I6Kkq6oe+QyQAYJq/H2K+R+ZK3vQG30/wuTf4LCUCsPa9hlu4xFpa8pUh0I0H3xvXwxVplNdLkBZwOynJN6FG36EKGgkA7EIvV5bldTJFfjIxsCsAukSPAK49n20e8e8zm1NbMvMVEX0c65QmJH8J4KcAUeUPgBdEdIgtiHwWoigtAHyKWgFqfkvboj4f8xXZ2BGUuClZRakAtbbrmNhvAN8iJfsawFPN/bdEtAn6ZAvlrQVwj3XoB1ehSY9oimwhPdUMAFRR9UNL2d3OyELjUGSl0OykKTQ2iuxVP5SszgRXkc+ovIUAAEz6oZOK7EKEGgA6Ry0R9XMDoGJoNT8VAGofCHdSR9+hCjofznXWSuPBzNyO+dZ47F5gK3AvsB/TyQWAB829dwIBeOMY++DSujVMg/cSTmkUF7geS9LI4QE1gK9I087uDskR5S2AV4kl/52ISl8vwdrLfIpnD64cwAkAJTVVAA4JJH8AUAX5k6UiHK3l6HpO61VsgwjaFFm8NFDkOawnoi2yZRtsfwF17mAKgHQCKgAAAABJRU5ErkJggg==",
 	["folder"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABzUlEQVR42u2by3HCQBBEeyjfTQZWBsgRQAgKgQxMBiYDKwPIABOBIQM5AxEBEEH7wB4wWkn8hD70q9IBdrWleTU7S5UGQAghnhgrGiTZBzAAELorOHPd1F2JmS1baYZkRHLL29mSHLcp8D7JBe/PrC0CYlbHpOnBj1g9YWOLIMkVgKFn3sYVtUsYFhTIdzPbNTEDfMyvXCskuctZM25i8GHOwwYVrMmmnAx2vP8B/GQmmNmNYqcAPnOGEwBVbIXUrZ0A+D1ru+UVwDtlV8L62JKM8p6t96BMGwPY15TlfQALkovaBJhZUrMEAIh8xbf3sGJj9g1gBGBdo4QPV+seVwTzTgcAkUvPqn4YBQDePN+vzWz00CJY49E+L4uph24zLcjA7gsws7TgZHiKDChFAiRAAiRAAiRAAiRAAiRAAiRAAiRAAiRAAiRAAiRAAiRAAiRAArqAa/W96IbGNjNdKWBc9nb45eSeDbLv1GckBzg0HKUtiT3Aoe9g4hnbFAmIAXx5bpp0aGfExx/MkzYr5Hd5tp1Md4hPQODS/bVjwe8BhKc9A5lTwE0IACw7FPwSQOBrmCj7x0iEQ2dX2MJtsXaZvHIdakIIIYQQ//gD0nsxntUi2zMAAAAASUVORK5CYII=",
+	["folder-open"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADoElEQVR42u2aXYhVVRiGn3f8N0YGGSzFCJXo+JOmQlfhT1MWUiCUQYbUjRcaagUK4kUogWTRjbciRVQXRhcOlF4oVEiBUiak0oUpIjUyCDWO//l2MftiOK59Zs+cvY/rnNkvnIvzrbUX63vX97e+vaFEiRIlRjFUa9D2E8AKoALMBSZmXLcfuAgcl/RFUzJje7PzQY/tDc2m/KfOH181i/K7XBzejl35Jbb/K5CAW7bnx6Tz2Kr/24G2lLkngOsZ150KPBmQjwe+sb1I0s0YLeDvwKkdtt0xgrXm2D6XYgn7YlS+krLZWXWsOa+GO2yKqg6w/Qrw9X0TJNVJ7E7gg5ThS8D5OnXoBX4HzgLfSvp3pBt9LXRMOViWbJ9yY3DedmU4+xsc8FyIiUkG1iQnVTRmAb/afn0kBKgwP5MuAKuBfxpAwkTgS9sLo7CAQSScAJ4CfmhQfMt0Bxnb0Ig7YAnLk7Talfzm1bnsTGBOQL7A9suSuh9oEGxQCn/R9vXA9j+JxgUKtqzDwN7A0PLhENDsOBuQLYkiCzTKE0byUCtZQN23wXs5BqU1wNYkOj/6gAPkekmfZ5m4tt4sYHu67e8dH06llchtOTJdAU4DyyK09EXAT7aXFhIEbY8DDgKdEbt7B3DI9pgi6oAdwIImiHkzgDfS+gGvJqc4rH6A7anABaA9MHwEOABcabCik4EXgC2BsTOS5ucWBG3vSQk8+yMokd9N2VtnLgTYnpZSg/fabo+AgClDEVBvFtgBTArI90rqi8DnxxfWErP9cNLnD53+hEhuic8XaQG7UhjeLelWJFH/2YDsmqTeuizA9kzbdwPT/0pqglj6BD8H9tidRyW4DRgTkL8v6U4kyj8EPB0YOpYHAaE21iVgP/FgZUp1mwsB3wVk70i6FxkB1bgq6bdcboNJAdRvu8/2R9F1R+xfAuoczC0NRt0asjuyvo9s1Y5QV4r82GghIJT/eySdGy0EhALg0UI7QhH5/zQGPukb0vxb1QKey+r/rUpAyP8vSvpztBCwMuvpVxNwOcWn2pvI/x8DZmcNgPddHlKKh7VNRMBnKTo8kvaMqhb4A3g8MO/jxIxuRKp7J/AS8GZg7LikZ7Iy+J5bD+tr6VxtAW3ASWBxiwTEq8B0SbezBEGS6+xbwLUWIWBdLeWDaVDS6aTh8WMTK34FWCXpyFATh3rrs5GBl50VBr7wihmXgR6gG/hQ0g1KlChRokSJEiVq4H9cyKNMb7t9kgAAAABJRU5ErkJggg==",
+	["footprints"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAFS0lEQVR42u1aWWxWVRD+ppXYyE9bjRSVEomltYQllYAaFFIhRZS4hcUlRGN8McbExIA1gQefjG8kbiQkEnwwcaFBRULCoghCMGERY9OSViMuEYrWliVtKfXzwWvS2Jnzn3PvreX+7ST/wz/nzJw73505M2fOBcZodJOkqYxkHYBiAL+IyJmCR49kA8kmkqc4lDpJbiRZXYiGP0myjX50nuTiQjG8jORHjEdLs258CclvGZ+6SN6SVeOF5A4mp0+yCsBGh1E/k3yZ5G0ky0lOI7nGMf/GrBn/hMOYNx1ySw2ZdVkD4CfDkEYPWS1svsiS8ZYrv+8pv0oLmSwB0KEY0Eey3FP+ZkX+L5LFV4qNV7mqPAATlaHNItLlqf+8UX5XA2j1BHESgMcATAcwGcAAgO8AtAP4WkRahuvtv2u4f3WgnthFEcl3PFLrfpKPDwcA3cpinwbqKDceekkeuRzJLwNrjBaSM0LtLLJiF0CpMrQ9UP9Eg/9HHrkPASwMXKsWwBGSz6Xx9lcYKC8I1HOfoedah8yLKVScjYk8AMA0g98aiOUchXdGRP50yKxxjP0K4ASAc3nWfY1kfRIArld4F0TkbCAAdym8ZsfbXwZAK5VPAZgnIpUiUiciZQDuBtDkCqMog8QKgS2KWx0K1FFEslfR86pDZrsy/wLJqQ6ZR0n2GKGwJS4A7ynKPg7UscB4qEUOmYtxjCC5mOSAIjtAcmacENBcvSIQxwcVXh+ArwwjSgFcowzlBUBE9gJYb9i3No4HrFPQbE/hELXXMX+64TE5z/WKSZ5W5HsjcP8/DyB5O4ApypCrkLrJ4Pf5rCkiAwDeUoauBrA6FAAt3U0gOdkTg5UG33WKHG8Y1h/geG8b/Ifi9P8uKe70VAL3351Hpt4IgRsCn32ToqObpHh7gIj0AjimDN3j8QBzDff/II9op8GfGriF7VB4pQBmhoQAAGh5f1EC99+aR67N4M8OBMDarOenAcAUklV5HkCLt935eggi0gPgB2VoViAA3wOgwq8KBWCfwV/ocP9KALfGcP9/6bjvm3MA2RudGf5LuSAAROR3o253hUGDwfftIxzUDlQky1IIg1yoBwCA1sFdbZ1BAWxW5rcEHKJ2Gfz7AwHoUXgDcQDYl0Jz6WCA+zYD6FCGHghcU0udHXEAaE4BgCOB87Xrs2Ukx40EAB0jAMA2I48v8SyEckZPIRwAEelMAYCgQ5SI7ITeTl+eoAljenNRTKNeiarCwb/1hkHdMfRr1dwKkkUxAeg1UqyXS2m0Upm3ysgMcdZ8xFj3Xg/ZPYrcrtDT4IiSiGwDcFHzAg/xOxTegUwBENFnnl2mwW9/nlHwZBIA7RKmIs/tj3ZavWycawA4LkevUA8AgGdJWu1wLVMcEpFLSQBox9CLkkmeLa22BPtAN8ljGHq58nz086XPXYM+IaClj6dJjh8UexMAPKPMO5rQCw6k4EnO9OfjAd8oTY45ANpJnoz+1xpecTzhwx9NAYAfE0mTrDDazfnoNMnrEq49I4WL0pLEEJKcb9y8WNRP8s4U1s0ltT61LTm6Mu/y/CJ0eYrravRwWpVoUcCuvBVADYA9jmk7AdSISNMwp8hxaSkKqgNEpANAA8la/NMbrAfQHzU99otIKzJGsQqhyNBWAJuQcSrCKKcsAKB9DlPiyTtXCACcUHh1Cm+uUcRlm0i+bqTCF6IirZLkS8acDYUAwKzo++JQukyypiA2KpJvxABgAwqFopL4bIDxv/l+WpMlEKpIHvYw/rDHDXamgWgkeVIxvJXkWowmIjk733eAYzRGbvobcE0LdNvlgx0AAAAASUVORK5CYII=",
 	["gauge"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACp0lEQVR42u1a223bMBQ99AQaQSN4g2iDuht4g2aDJBPUG9iZwOoEViaINrA2sDzByQ+Bqi6fepFseQABAixd8lzetwxkZGRkZGRk/K8QayxC8glABaCUFx7uO3kN7xshxEeSCiBZAvgmSVcAipGiegCNvH4JIbqozYlkSfLI5XCUyo2OeLUwcZUitrGQf2E4vASLAdIUzwB8TuJDEfCgCIxPHjJbAN9XjQ8kf5C8OZxQR/JAcjdijZ18t3NY50ZyvxZ5F19v59wQyb2UacPP0ORbktXCwdamiGMo8geSxQoWWMi11lOCZcF+yVO3xIjesK/XOc3ORD5YPia5tSihmsPcrgZ/D16VWZRwneSWJM8G8gUigSzBdcHxPMXHdNgiMkhL0GE3RqDO9J8jbsaeda4wpvBQoQlAqhi44qfN+kg2k62A5EUjpAxA/lNR9paWeKDCZWraO0VA3im9kTyNTouGl8tIyNPBDcrRh6jp8uqIyB8c5TTewdCQSnaRkD95yNp5W48hjRQpkR/I80vjJGtV1Zca+YHc1sudNf5/SJG8oYu9mV6Yv6MKRN4UB4bPbIabWTvPA7gYhqrvQoipY7XesPafCjBspE+UvGnvW+cKcOWmZfaK0+bWm0CN29In74xQCqhjIO+kgCWGH0KIGsAbgLu83pYg75XBDJVThURh6Gz/zgJCCF3ELJAuCo0F9joXuCuerxJWgKqJu/vOAq4Ju8DVlmYfLUA18yuj/FeGnXyJ35/dtRxdFJCqG+hmGI1Nc92/4AYa829d6oCTxg32CZHfa8y/nlIPXBM//d654500Vo63+Dn5CCkX/ea+rAJefcb6G02l1AF4V/zUJeABnabR6nw1WTwMFZuEYkAz26d86VPJ1QGp7jsjIyMjIyMjI2MtfAHvmmcvXQn5pgAAAABJRU5ErkJggg==",
 	["ghost"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAC4klEQVR42u2b/ZHaMBDFn25SgDsIHYQO4hLcAVcCqQA6CB1AB9ABTgWYCvBVYHfw8gdiJkesT0u27k47wwwDSKv9SVpJ5gnI9rVNzOGUZAHgx9PHVyFE/+kIk1yQXJE8kuxotk7+dkVy8ZEDX5G8cLxdSK4+WuA3hrdb0iBILkmeGd/OJJepBf/K6e01iVWA5G8Aa4ufvgE4AagB9ABaIUT7SJQAFgAKACWACsB3izp3Qohfc/b80aKntj5DVk6prUX9x7mC3xsadgixjMll9GDwtZ86+LWmMX2MJCVHRK/xu54q+ErTiCbm5kWOhkbjv5piV9dpgi+m2EZrIHRRd4+auThJ8E8QWlXuieW0nHLOj8wJyxgOz7PMO798dJ6q9+sEdqF19FFAcqdwUiYAQNU5u5BObin2vmEU3EIufdEOI5EPY8Yl8cWiflWSS2YEaNpShQAwlEyuj5NcEg827225DnwVZAQMVdIk+Eymsew8ZwBD1lrMy43cmnYkNx7z2rV8GyvBDO39tx5JqXLw6Vxe8eygCzECCo8pUPokpJHlG8u2B5kCvUfecDml+ZTvfQJ5wRe3WADakUlqbPnZAZwsP4tVPugq4HUIklm5l6+th1+n8qpD0WwAUjkV5iSYAWQAGUAGkAFkABlABpABZAAZQAaQAWQAGUAG8GTfYlVM8qd8630P4N97BUKIP7MQcnkkJnU7F4XSu3LwWSk0CUqh9OzPBOV/eUZZq05NJtVfNvLbTVIALGSzzxcgCkXwLhcs9kkAcAx+EIJH8P9BmBrAdkTw7yCMCP4dBJWQKwSA2qNRjdQWFSRPI4I7yTpMGmFGk/FZava1slkLubtR8mrQCFM3UscCWBhk6laaYUcIB80qYQuhDyacttDqWwmmNYJLa4GjJYTw+mXDzY2dQz2lQunduvznqIHpdFNFeIAocJewLHHX5zU+W11Zz1Juc2vPTnnUUeIukak/5fXbbBHtL7+YiNVqO4FZAAAAAElFTkSuQmCC",
+	["glasses"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEHUlEQVR42u2aS2hdRRjH/5PUVkViMa0WX00JiKZgRWMN4gNB66YLN0Lc2AhF66KlSMW3oPjYigsfRBALIugiimAF7UIprUoWik1rMdBoqDYSXdyaWPL6uZmrl+vMuecx556LzB9C4DDz/b75zjy+78yVoqKioqKioqKiogoLMMBGYBA4J6Dd1dbmxk4cdA+wDxgH5vlXs8C2APbvBn5vsDtnWfuAC6oceDfwMvAnfp0IwJlMsF8DXgS6q3jrn9NatQCsuRScT9s2G4A+4Djp9GUA3uGUrKPAle2Y9hMpnJkHPgY2BWD2A58Af6XgfgeYMgOwJwH+PTBsZ4gpgW2ATcB9wLEEP3aVNfi1wBkPdLTUyP/Xly7gHY8vs8CFZUD3eoAfVJhzjHl82l0G7IQn2usqPIovAf5w+PVDaNA2T6Sf7IBE7GmPb3eGhHzkACwCvR0QgF7rS7PGQgGuAJYdgHc7KB1/z+HfMrAhhPGXPFPs5g4KwC0eH18oaniV3eiaNdGBRdmEZ5NeldSvq4XdYUmudf5KB1bjrzqe9Uq6N6mTaRHVI5KGmh7XJG2QtM7+R9JpSTPGmMV2VaKSLm3i1yRNS+ppan7IGHNrHsiAZ1397NkUl4CDNmFaX8KgLwYesQwff9rj80Ae4FvkVw14Ajg3wMDPA55JSMPT6I089f5ZimsS2FJg8DcAJwP4MQf0ZNkEd0paE2Dm9ksaB0ZyDH5E0teS+gL4cb6kHVny/lOE1RJwR4bB3+VZ50V0KtUpAOyUNJrg3xFJ+yUdl1TPBzZLGrBRvsnT74ykQXs0jUi6xvaRpGP27227m4/btxaSL0k7jDH7W0V/1hPBs8CjQFeLOv2xhP3jpxZvdsmeMmXxZ/KmlCvAYIYpfKMdTMgllJW/4rE1mOfoez3HJvZswAA8lYM/mnksnkRiJmnatZiO3wYY/HgBvms5TyfV1S6NFDjHH0wY2Jj9iDoMHEhoV4T/kMfmWlfjLZ7GQwUcuM1j84Cj7Rdt5A+4EqHLPXaOFkhAfN/mJjJwyuBf5goAnsZFrpx8a3fW8eyXNvK7XQ1+8zS+roAD13ueH/IkOO3in3YFYKaNDkw6nv1YRQCaa4BfHRvGSWB1zjJ2yvU9IaEGaTv/nxlgjEGS65anT9JzOaL/vCTXLzredxYlFfPrUbvKk6svA1szRH/IY2cB6O9Ufr3zmwWLkccTipHXUjhfKb9+CzyVkJkdBnbZJOMiYD1wO/Aw8FVCvylnBtZh/MZqajFgMbMAXJuxmquMX3figUDwFeD+HLt4pfy6E9tT/kgp6WNk7lvaqvmN9wMHc8A/A64O8Fm8Un6jI/fYa/L5FhH/ENhewsVIKXyTw5E1krY2FhRWS5K+McYslHwtVik/KioqKioqKirq/6K/AXFkXNeMp84dAAAAAElFTkSuQmCC",
 	["hash"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB0UlEQVR42u2YwU3DQBBFZxBHpJgOKMESBZAOSAfQQSghJaQEOiBUQDrAdOBUgCPlPlxyQbEV27P7Z1aaf4z0pPh7PPv3E4VCoVAor0TkRUQ+RGQtIhWat374jfzXN5L3YMCvXGqJ4q/pBuBBZczbGaB9UynftOUEXIiZ95Y80oDamDc3oO/7/QHy5gY89PzWAXmXBrRA3tyAhfIBFqUbUCtHuC79E+hTY8xjDCghBJlMgKcQlNsA9yGIiOh25DiuiOh54FiacoSdROQLwLdE9MnMuxz3+ZK0ufpJjbmP576SZlTHzPfaHcBUrjjFEtwWbMA2yds9L8HVxCX4NBBijgC+JaJdkiU4N8QMLKUlgncbhLyFoJwGFBGCchqgbXK0vLkB2iZHy7s0oAXy5ga4b4IslmAH5F0eg40xjzGglCZoThQe2wdUAyM8NsRo+egDog+IPiD6ANM+4JGI7nqW0mHkn9bytn3AwDJ6Q/Feg5DLEJTcgNJCEGwCPDZBuQyojXlzA7RNjpY3N0Db5Gh5lwa0QN7cgGKaIOQS7IC8y2PQbQhKakCJIQgyAZ5DEMKAozEPvwk2UyuplPysCUtsQEVEr+dtvmfmdyQfCoVCoYn6AzG+CJhsbOiuAAAAAElFTkSuQmCC",
-	["heart-fill"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACTElEQVR42u2b63GjMBSFz3UDYSuIOggdLFtBXAIdrDtwOkg6sLeCpAOTDnAHbAUhFZz8sDLDOCDzEC9JZ4ZfBg3nuxdf6QqAoKCgoKCgIF8lfS8kGQF4BJAAUJXjWxmAAkAmIv8GjL/V48ZXp2QASgBvAN5FpJiEGElF8pXd9EHymaRqOf6zvqaLTiTjMY1H+saG6lQHgmSsfxuqg84eq+b/9ojIrYxIKuMnI4y/t2V+x/GU6mMsHYaaH/PmplJq8rgxmQdwcKDSHUwQpMF8AuDkWMn/IyJZ2wzYwz3tWz0COvqJgwCSauUxZYCL0W/0tvEk+o1ZcJ0BqQfrn9QEQHkAQDWWQZIfACLHAZQi8qsJAL3oAYjIj0egrkS4qqrXje8doSqA0iPfZfgPaHgEPj3w/980D8g8AJCbABw9AHA09gNIFgDuXU1/EVG3VoNHX6LflAERLhsad46Z/wSgRKQ0ZoA+4cnB6D9dm6/NgEomZAB+O2L+XURqp/omAEqXjDsHUj9u2jvcGGZLBYCdA9HfDdo4JXlc8aaInYq2UgitzEsHCDmAh5Wk/VlE4q7L4VtKAJzXYB4dOtutAegaunQIZwBJXb23kQFLh9DZfGcAC4bQy3wvAAuE0Nu8jfIYkcxnLHW59feBekLI5qjzs5ufcbK0zJ7FRBCW3bAZGcI6ulUjQVhXq84yhHX2KS1BWKd5SxBenGjI9XzdNnWqJUtyS7JsYbwkuYWL0t8C5DemtmrKe5KZQMS4fAHy3bXJcfmypEBQUFBQ0HT6Ai9pKJJYB7C/AAAAAElFTkSuQmCC",
+	["headphones"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAENklEQVR42u2b32tXZRzH3x/ZUstmas2WOWoaDBIiDTSrZV5EV0FUF91EEt4VRERERC2ooMAgKaEff8CwLuwiiYI0y4Jc26Qc09kiQxyzYha2nLlXFzvCGM9z9j3nPOfsnDxvODefc76f9+d5n+fH53nO5yvVqFGjxiUMK4oIWC+pQ1KbpGtnXEganXUNm9nhSisLNAP3AbuAX0mOE8DbwL1Ac5Ua3ga8B5wlHM4C7wLXlbnhy4EdwAT5YQJ4A1hWpoZfDrwInKE4jAPPA1fM6yQIrJK0X9LaFD//Q9KIpGZJ7ZLSvNUhSVvN7FThAgBrJX0haXUDj/8QPbtP0jFJP5vZP7P8LZZ0o6ROSXdL2ippXQO+RyTdY2Yniuz2NwOn5uimvwNPACsy8KwAnox8xeEk0FlU4zsaCOg1oCUg59LIZxxOAx15N74FGIwJohdoz5G/HeiL4R8EluRFbsD+GPI9wMICeuDCiMuHTwHLg3inh3AK6J6H5feVGBHeDE12VwzZS/OYg3THxNUVkuiIh+SjEiRiH3tiOxKKYLuH4DBwWQkEWAT0e2J8LKvzxcCYw/G/wJoSpeM3RTHNxliUYKV2/KpH2Z0l3Izt8sTancXpuMPhGeCqEgqwzLMhG0/r8E6Pok+XeEv+rCfmjWmcuVLPc5nGVDFbc9dc8HIaZwMOR59V4ERqnyPuQ77nF/h2YZJucdzaW4FTuU8cttuAqxsWQNLGBM7LBt9LujWJAK0O23kzGy57681sUNKk49Y1WQU4qergdINt8gqw0mEbq5AAY3n0gKoLkKgHLHLYJiokwF8O29IkAlwyaPLYp1xjCNjisP9mZj/OU9KzTpJrfXfZSOK4J8XXmiHgmYLy/aMp4uvJW4CL+Dr6aJLHnv/bDHH1JJkDspyq3iHpILA8YONbJX0jaVOWHKkoAS4uOR8E7ADve8Z1bgIQIOgHgEcCvP1HJd0foiNlXQZ3mwOaLnl5zvOb7QEC9/l4SlKbJ6bdjTpPMgTMs/kYNbPXJb3juL0qgADXO2w7zOwtMxvNGn+SITDXsOh12FYHEOAGh60/RXdPNAQWpJgY/3bY8jo+m0zRsy3rHPC/RC1ALUAtQC1ALYADFyreLhptk0+AEYdt5RykrjreEMfox1PE4spAf0oiwIDD1gVs8GxYrpT0uOPW9wEEcGV923xlssDtkjY7bvW5nm9KIIAk9QIHHF2s0/NW+gMIMCDp4Vm29ZKOA0cd2Z6vNqgv6TZ0T8aC5tEQhyJAa+QrCz5MQ7wEGE5JeB7YFGxGg83AhZSxDKf+pA+sAQ6lKGV/MPi0Dg95Klbi8F3m8lmgCXgBmGyAcG90fpfP2jY9HD5vII5z0f8J5sxzLAF5i6bL2LskbZixgvwi6aCkA2Y2VMgiP10Z3iVpy4zldyo6k/hS0ldm9qdq1KhRo0Y8/gMnGn2g2JfASQAAAABJRU5ErkJggg==",
 	["heart"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAC50lEQVR42u1b7XGjMBBduQJ1EDoIJdBBKIGr4NLBpQO7A5MK4g7MVWA6CFeBSQV7P7LMcB59f2DJpzfDL8Oy7+1qVxIyQEFBQUFBQcH/Cub6ICJyAHgBgAYAqtW1YACACQAGxti7h/2W7NY3twwAMAPACQB+M8amTRRDxAoRP9AOV0TcI2JlaH9Pz9jgjIh1TOKcHPPFWSQEItb0my+OlD1Byf90iIguI5qV/SaC/V+hyL9iPHR0xcLRqwgiYgcAOiN/qCAtRW9BTQXyxUP/LypyJyp4a7R0PWls/GCM9S6R10VmWKexpnYcHKL3ZjKWqXYMukyzJd8ojE0mxCWOjgbER5dqTj6rhGhsjJ0VznHPTjJqyHPPmtXLuo9v9McQ7YVEGCRDigcq3KNzFkiiP4XurVRjDnR1gW1z8tkuCxTRD+rgRjPWzjoLJONnDj6z2k6EWcDnn5a4u3lGNFfvGWNzpos9Uf+vVAI8Cx4YMl7tinx/VgkgSvU5YwFEvnPbAshzZU/dQFkId9rFQr7j38j3nS7Vo24yxM+ARjc0diu1RsnNVcY1gEsyY5QNgS/B/U3GArSS5bs0ZU6S3RWeYfpzyS7TSdUGe0kadRlGv5MMgV6nnGgR8ZlTFlD0P0WLOlUX0E0f3zKK/l42rTdVb5ZMINoMot9KfDdf1Cl2gpMuiIrCh4j4amtMtr92SVEEIn+RbeC6GKwUQ+GSoAAXRepXrkY7n48OG5I/BtsSN9wlSkYEDfk+1EuSFGET8quXjSmJoCE/xqqySYigIx+tSxmI8BGzRdL7z3chbyFClHmCps9vQ/5eIiRFfmsRkiS/lQhJk79xcggtggH5Pqk1iWayZCWCCflUl6PeItBJkvzIG4pwVX1nIPLXbMn7iPAw5F1EeDjyhiIsx2Z1x2PzJG8hggoHeAQ4Hrft4JFA29WzAfE5h+13VxEqg4OS1ZY+sTsJUcP3YeqlE4zw/c+SCQoKCgoKtsNfvl0SuHTKehUAAAAASUVORK5CYII=",
+	["heart-fill"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACTElEQVR42u2b63GjMBSFz3UDYSuIOggdLFtBXAIdrDtwOkg6sLeCpAOTDnAHbAUhFZz8sDLDOCDzEC9JZ4ZfBg3nuxdf6QqAoKCgoKCgIF8lfS8kGQF4BJAAUJXjWxmAAkAmIv8GjL/V48ZXp2QASgBvAN5FpJiEGElF8pXd9EHymaRqOf6zvqaLTiTjMY1H+saG6lQHgmSsfxuqg84eq+b/9ojIrYxIKuMnI4y/t2V+x/GU6mMsHYaaH/PmplJq8rgxmQdwcKDSHUwQpMF8AuDkWMn/IyJZ2wzYwz3tWz0COvqJgwCSauUxZYCL0W/0tvEk+o1ZcJ0BqQfrn9QEQHkAQDWWQZIfACLHAZQi8qsJAL3oAYjIj0egrkS4qqrXje8doSqA0iPfZfgPaHgEPj3w/980D8g8AJCbABw9AHA09gNIFgDuXU1/EVG3VoNHX6LflAERLhsad46Z/wSgRKQ0ZoA+4cnB6D9dm6/NgEomZAB+O2L+XURqp/omAEqXjDsHUj9u2jvcGGZLBYCdA9HfDdo4JXlc8aaInYq2UgitzEsHCDmAh5Wk/VlE4q7L4VtKAJzXYB4dOtutAegaunQIZwBJXb23kQFLh9DZfGcAC4bQy3wvAAuE0Nu8jfIYkcxnLHW59feBekLI5qjzs5ufcbK0zJ7FRBCW3bAZGcI6ulUjQVhXq84yhHX2KS1BWKd5SxBenGjI9XzdNnWqJUtyS7JsYbwkuYWL0t8C5DemtmrKe5KZQMS4fAHy3bXJcfmypEBQUFBQ0HT6Ai9pKJJYB7C/AAAAAElFTkSuQmCC",
 	["history"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADnElEQVR42u1bS27bMBB9NLqvdt3qBlFPEPUE9Q3sGyQ9QXSD6AZ29gXi7rqzC3Qf3cDKCayi+74uOgYMR5RI8WOh1tsYtkBq5mn0ODOkgQkTJky4YijdBZIZgIV8fVJKVS43kvneA0gAZPJzKp+1fFYAGgCvSqn6YqyQzPgW2YB5PpN8JLmnPV5kbHYJAsoWg0rDsTnJZ/rFQchIYhGwazFi1zMmJbllWBxIPvgkYuaBrJTkCsAeQB742SQACgB7kgsfE75zdH4OYCWG2eCXCN4pjiJpSsSaZA7gi1Kqif4KSCiaoCG5Ibk0CV2JqHsZYyqWSTQCSCaGIreTCHGxIxHiagNtyIITIAa9GDiee34gCclCoik8CRoCfvY437g+cUMidj0kJKEI+N1x4ypmwkJyHVQTelg+x2bIDUVED8e1fcD4ZYdNq1gErAfO32b83DMJy9B5wHcAK5K3mutdBU2bSM4BbKwqOaWOuUBbUvRIcjMoRxDB85G2Zr5S7YERWwxNhT94SltXkXRxLtnlOe769GkW2LAoK4OEedlRO1gT8NWTbU8Rq/gSwGvL74uh79WW5B8HDVjrws+3BhisCvGbKr77DRaZIm2aOTP8RxAt+NZy6fYqCBC0RVJGMr0WAnTJ1HUQYNtOn3UISiad2MfRqahZy80k/e50PthSolkF9r4aKZr5C5sIWBr+5hMpgK3kH3mg+Y0JSAKntVXHtTwwEUYE1IHva9JH8E1E7boK3HhU6grARwA/AhFx4yoi87Z8MlBanFu24AqDOenUcRKj2pAGrA9siMg65kk1Y3IfGjAPRYBSaqeUygF8Mng1kp7miLuuSav7TQc4YsWoi4imq8uj2VKrhhhQakIpiVw65ydO1T3hb10OD9GBJUYK7w0RzV7cPnYUWDRD2o7iNIOKoY6EJQVwP8IAuNeku2tXVptgm5B+n/7BVjBNJy8079V2RARshyZNLlHgvgnpx/mVxrbaW5T62ISMrPr+7erZk1+OzPl1KKGpgu3J+wn7YVmfJz2giFES+P59x3SS0OxnBoeVvJ7mFMcfNEvdqfNZrBDsI+GYMS5ciBDHFwaHrevonWsDTTjFM8k7k36C1PN3FgeuKxeSlSsJ+LctbbsF3aD9qKytI09KqcsXZ7IkNYyHZnRVqeFpTh+OF2OsRs+JKD0T0cic43W8Y7UoLcTyXNzK0OquIpKRSr2eoP9PU/VF/zQ1YcKECdeCv0FzQ35RzSKwAAAAAElFTkSuQmCC",
 	["house"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACXElEQVR42u1awVHDMBBcZXgyg388MRXgDuIOSAnugBLiEpIKQgdAB+kAUQHhyctmhv/x4JjJDJYtRZZtObevJGOdtevzriwHEJw31FgnJqIEwB1/fVNK1WehOBE9EFFF/1ER0cOciWdE9ErdeCWibG7kV4arbkJFRKu5kC/odBSxk9+RP3YxEk+I6KmDWHl0fNlx7BOnRjTk28yubrq/2SfqDnNMpk4+6zC7us3heXzdYY7ZVMl3Ob22uYLcQTqqhLBw+meX9mURnqNICAunf/So/TjZhLB0+mKA7ho+IU51ek9/mUZC+Dq953nHTYi+nN6z88ZJiL6d3lOEYRMipNNPPiGGcPqQCeF7gs1QTh8wITYh1K2ntCa3SIjilKLVGE4fKCEq12K5odB+yo+kLMLeMPe8aczCUKupvb8ArKa8fc1zW/FcbTg5CaBj2LvnOWpfAVLMD6mLAGeDiwGMKQVwzy1o21kHbuMXpdRhDDdtctL9CXXWPWyLr0POfxFQxBJA2UOp8ngLvW8sArb9useSa64ZhwAAQjwgBXnuCGWCqWEhpS3HZwCubHI8JgG0Uiq3NTEAyyHWJme/DhABRAARQAQQAUQAEUAEEAFEABFABBABZo7aRYD9DAXQLgI0HbyM4S/sPMelrQDKUCQF8O7RHRmApKEFtSUPn/G54fdbp3cMHX+OiA0bE0/VIkDCit9Efu+/AchNL3aNKXD0qvkjcvJF21vt1hhUSmm+H7cRkt/ylW/1DeXgCSmLkbUYzTEuAVzz508A344EXMf/maTG7xb8AQKBQCBoxw8jpnX13oJTbAAAAABJRU5ErkJggg==",
 	["infinity"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACPklEQVR42u2Z4XGDMAyFlUzACGxQNigblBGyQbtB2CBsEDZoN0g3iDtBskHIBK9/3DsuDbZsbHK9vu8ufwj4WUKyZSFCCCGEEEIIIYQQQv4Xq5iHABQi8nRz+Wu1Wg1LTPoh+gBKADsAJ0xzsvfUGfTrAP0yteF7hHMA8JJA/8WOFcp+tiMAVAAumMe7DdngMI80fMwFQBVr/AbpuABoArSbBI4fs4l58znYKrS3mbSrkJx3ed8AaO2iVNhfba99anLToa1Zaz4d+sYThaXGAb1jkE65WptQJyiMN77dxTqjc4zRa97+FE1gGr0BGDRO8Bg/AHgL1G4c45WuB7vYN+9YS86ercpl/Dl2FY+yZaLIMHOrNkVKTIV8kUH36HrgHm2K0jXQCbOMH+m2E+MXU4vXPZKUtQFOSGK81qa1YhyTYjL2oLIRkavjtquINAkPNd65r2V5EPlfFjQOqFKlgIjsRcQV3oWIvKdKAc3c14pwqRMZf1A6sxKRQyIn1EGpMbFnHxNsR8eIbTCXrlm6EHI1MDpP6X1auhBKWQq/eg5VvfL8cQHwukgprJjMzheWdu/1hXwfqPuTEprD0C76MDSKgsEzkS2A59Fx9Nle03Rw+kjnj1ttU/pHz6GqDMndHLQK7fahDZFMLbEhoiU2PKwldhMJcyfyMaMp+pHA8dXcIqZU5ua91lWKIqpWttp+rTU5vg90ngbH2d6T68OIT9/Ye9SGz/k0dhtaZuFPYw/TJ4QQQgghhBBCCCF/mW+iffIUq9Q4UAAAAABJRU5ErkJggg==",
 	["info"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADcUlEQVR42u1b7XniMAyWee5/M0I2uGxANiAbHDdB2eCyQdkAukGYoDABuQnIBqQT6P64Rxr8oSSWHZfqX/NQWXqtT1sG+KbHJhFiUURMAOBn7/NfIUT75QBAxBUAFACQAkBO/LcjADQAUAkhDlEBgIgpAKyksoUjtpUE5TWElZDNGhH/IOIV+egq10jmpvwzs+IqIJ7noHiBiBcMRxdEzIPEALkDW+LP36UfN9KXAQBaIUQteWUA8GHWuQyYBQA8Efn/FkLsfe78jrA7DSJup+wQIuaSR0NYb+cr0J0tgrSIWDKsXUreJnpjC5AE5VspZMK8ATYgziwyWJRvpB/7csHM4hZvPn2+DpGXpTXU7DEBETeGRfYQmBBxb5Bv7SLPz1Z5Igj5FMa6IqeeYSmuc4eLa9NvZleL32KCLjBuxjC7alJd5lDoJSIuHWeHVtM7JEMYlRokS4e7debI3ZNlR8TUsPuuhNxMNlMzuGQrWCh4FJ3GpEtbh4cRKjfKXTCWMqqatIR0QIOIlSrwMbTRbnP2/RqqgFhRzEdFW3BMnZqeq3naqhQZW/jkEBnJVlpFxdCKqoVISRMM96YgmGpOZGMlleypCQBVUdJEDIBK9qUtDfbpGDEAVtl/dDOAZ//MAOCX/PP144DUV99wV9MYombGoXzAdT5lNasLMO3MmvhtalVolX0RyDcz4jd2WhDMKI24DsiGAKAzl2gB0DR1n3Rd9Lqoh6CurouR/hoL5UNjwOmLAaBy35MJAFXpuIoYgJWtPF4Qmock1nZYEwQrEwC62rmIcPcLTQDUAyCj4+GLuIFK5gOlEFJZQcpxbNWj1qH5l6PPNoYeK48UkPtYfNqxvqeLkZrjit2J7BYryByaau4ywxja3+GXOobL0cuML0evTi5HO0x1t63nGQKgG+FppppouLE0upw7lgEJiysEB0Ga/Y5tRKaz0N77WBpN+bO3ER7LRNYlwJicaTj7yIV4HXKUvTOSj0HG9ggg/AeCYW3KW4SjF3e0xISuW7xMmQGSM0QvxJH8UT4/ZVx+DQDULNDC/bj8e29c/qlzjJWCflJFRX7H5Xt1AmWUnYuaWRzWyFqh9ah466p7dB0gS2Yg2EfyXQGx1gxbjaVK8nSuuI+HkwXcHk5SM8IJbg8nK075Qj6d7VeO9SPdTn3TXOgfj8WYhInCpccAAAAASUVORK5CYII=",
+	["key-round"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEiElEQVR42u2ab2hWVRzHv2caJDV1rcY2jWVOimHgIFuj2ZuIxCW+sSCLgl5HEr2pF1Ev7A+LXlSY1CIzLClGKgj2R2iGY4KKkP1xLtfAaCXWLFPXPz+98A4exjn33uc899zdR/eFMZ5zn/P9/b7fc59zfvecK83g8oYpamJAg6R2Sc2SGiX9I2lc0mlJPxtjBi6pkQBuBtYD24BRknEK2AR0VbvwlcCnVIavgNXVJnwVMES2OAjcXg3inwIuEAZ/A2uLKvwK4CPC4wLwZBENSCN+H7AB6AbqSvrWA23APUAPcCQF14tFEv90TKLngF7gpjI5O4GjCSY8XJQJz4UhoLVC/mcSTOicTvGLgDOOxPqB2ozidAInHXFOAo3TZcAeR1L7A8RaCPzoiNc3HeI7HMn8AjQFirkMmHCsDG15G+Cq8O4IHPdBR9wPizD67+cU/xPHXdCalwFvWhL4D1jkwbUGGABOR38DQHdCnzsdA7AhLwNs6/NWD557Y5a3VQl9D1j67MlDfJ0j4ZUeXPtK+o9OmeX3JfRd7yi6TGgD7ncYUOvBdaqkYCo1AuDXhL4rHHncMvmdmkAe3GhpO26MOVPBrpXPqB10tF8f2oBZlrYxT67vov9LJJ2Q9JOklinX7M4Zc17S2bitwDwN8I310pSRay75/LxnLgptwOxyE4kZxV2SVksalPRHtDE6IKnbGLPbMxcTdzEL2Ixt8SWLTNjlMYHWOjQS+g44YWlrBFqUL25ztB8LbcAXjva8n8s7LG2/GWOGQxswJsm25N2aswG2HeLBoJNg9Lv7TJKt6GnO8WGsUdLdlkv7Qwad66i/J/FojgZsdOSwZLrE9+Uo3vUkuDNUwFrgcIz4j4FZOYm/LtpxsqErRMD5KcTX5CTeAIOOPA6EEv91QcTXAZ878pgAluYtfluO4pfH7AYDPJB1wPok8TkJbwM+AP6NyeW1EJNMnPh3PXkfAXYCL8RNVsAN0bnh7hRng3uzFn8t8E1MwM2evO9ZuMajk6N+4EtgpMwT4j5gbpbiGxIOIrd48r6V8dH4X8DjmZeVCeJ7PTjbo1HKEoPA8qzFNyW8ytJbBk8PcCjACxE7gBUhZtkmYDgm8BspedYBZwMI31zpSY+JSXqBpL2SFju+stEY81gK8a2Sjki6MkU+RyXdJWmppC5JDZLqJc2LNkOHJA3r4g7z4ZDr6wLg+xjnXy2Da2vK0dwCzNd0IypyRrIqLIBjCcIPAWtUFET1uwuvePDZ8CywWEUD8FCM+Nc9OW24T0VEzBL1cgWcVWWADZvKqBR7EnaFcnlDxFd8uyPZhQHW+auKaMBaW6Zp1nngfBnie4ukuyZNUZSA51IWOZL0g6QnLjUDOlJ+b4ekZcaYP4tkQOnBIZ4crY67YnIz4ndJo8aY8SJO/LMzuANs+NYY068qQI0uc5TeAWOu2sCDd6xaDDAlQudIOpcR7xxjzERV/QSiF4reyYDz7WoRb7vda4HjFezQjABXV/WkEJ3ybvcQvz3Tbei85wCLEdfo4otN8xI4Cr3Oz2AG8fgfdlGs1EIUa4oAAAAASUVORK5CYII=",
+	["layers"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAFCUlEQVR42u2be2hWdRjHt7yQL7ZlOlCTNBEWwmQDA0szbC1pJF2UkdXUVAjMgaFkQqTV0v4oKsVuNLuAFHNFRaRZqZmTvF8YUtRWVk5LlnnJe37653lhrPM75/ec3znnPZv7wgsv2/t7Lr/fe57n+zzP783L60Y3cgagFCi9nBzuAzwKfMP/sVH+16crOj4QeA5oIxht8tmBXcHxkcA7wDn0OCdrR3ZGxycC64kO64GJaXe6NzATaCI+NImO3mlyvB/wFHBE4cjvQA0wRF418jdbHBGd/XLp+AjgVeC0wvDdwFSgh4e8HsD9wC6FvNPAa8CIJB0fD3wCXFIY+gVwu0JHObBOIf8S8Clwa1xOZ09nh8KoC8BqlyguWeQ94LxC7075lvWMwvECYD5wUGHAKeBlYEiEBzAYeBE4obDjV2ABUBBW4UvijC3+AJ6MMzDJgSwAWpUHssL6QIDHlampBZiTgyA8C/hBaeuiIKFTFMK2AXenIA3fBWxW2P2AX6BrtYy2t6SQiJUBa4B/A3z4E+hlEuDHy+sSzbfhN2K4BT8Z47XwTsOH3wUGdcJ6ZIBkIy9M9low1vDhf4CVwPBO5PxQYLlPFqswpZggfASMT7HjY4EGCz8GmASssoyku4CqFDk+WbKSDd73E5QBvlSyrcdCsS13p/tKFfmLwt7NwFU2wu+Ryk3Dtl4ArkvA8WuB55W0uAmYGkbZBGCtQtFF4ANgdEx5frUUWbbYCFRG1dvTVmXfAvcC+Q5684FJ4ojmEOqBsji+ftmq7KTCoJ+k3Z1Rts8fAb5XNkdWAkOTCEAFwCLgsMLAv4Clfu1uoAh4BjiqkHsUWJKT9pg0QmcrT+q8sMuSdnKKhWqfVchpTtUgRZ73ncrydLsif2exJ00cxMTGtD1DG3wOTIjb+FLgO+AY8DFQ7tg1fkv5tTY9LsUOdpSLL8eARmCUX+T92dDKrnIwoAhYJgbY4oQQq8EOeqsMZK4FuNJrwaQ4g45Q1/nAbz46DgELw1LrdtPnlgBfKk07pkk7/R1OZ5ykuw8lXjwL3OZY+z+tSJ9TTIIOKL6mZ4A3gGE5DLjDxIYzCrv3BwmtVm4Ewv9LEnS8RHRqcACo1iipUI6nAL6Kc4wtY/evlTat04zlTIXQ28pLDnuBB72GoCH09wQeAvYpL1esivRyhfKaSxYHgXmaQqhDc2aecizXBtQCRXE+fxlgrlR5mkKo1iZzCG+olTW2+DHxukBq9fuArcrM8bpXh1n6+dqIvsW15xDVZoyWqYwG9UClvOqVa9fE0XWKqh+/QjlVtsVJ4JVYGx7ANdJwfNNlh4FCaZi0RuB4lh4XOthzo/i0zLdxAmzooLxRnvP8kIp7ATOA/SEc3wtM8xxk6mJUY0euYlpwc0AhVOMSZYE75K5QENa6EBfJUjViswk3eS18OIlrrEKslsiQ4jjwt7xfDNyQEE+pNuXfUzljWskx1ePA1X5dnDrls/qZ57Q1fscrRLcGdcD1cdHefcD0sEFLEVSnK4NqeHockvYeAp5wSVsRpdXo6LFPSgkamC53IS4WFx2Sp8dCexssLiO1n9U1aIhVSB3J0uOQp2MkVsAVIYqr+Omx5fOpvb3ZDMyRGJOR982K9a2iszAvLQgZoROlx0luhi3ttYUTPc41Swv7o6mzwjaL8zo7hFgttWxzxd/Xy+FGZIScbDLc5+maP5z02ZAyLqefznYjhfgP/jbKRzcZ3WYAAAAASUVORK5CYII=",
+	["layout-grid"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACvklEQVR42u2bv2sUQRTHvy+Kepp4IRpBjZfCYJHG/BAbMQaxFAsxlmJlIULE1sI/xJBShJMEW6ucYCmnFoIaf2HOKyxiolw8iHwt3Epm9mZfZkBy71u+3ZnPzJfd2Zk3O4DJZDJ1saTTDSRPALgM4AyAPgXjM4AagKqI/AgpQLIM4AqAKQDDCuY6gGcAFkTkndodkndIthlHH0lOBjAns3tj6BfJW9rO32Z8tUiO5DCPk9xIwJ0t2vlK1tgUquVwnyZitkg6X6UeT1suASglGnemSPY7On8IwNlEzBKAi64LOz0FTjpi3wC8VsDPOWKnATz5JzbmKV9TMEcBDAb0yWtAvyO2JCJXFWMJHeFyIBMiMq1gVrOvSMf6e7p9HmAGmAFmgBlgBpgBZoAZYAaYAV0q32Ko6YjNeBY2GjUDY0jM9D4B9cTGPw+MxVS9iAELABqJGjInIhuOZW8LwHwiZhNAteia+gLJzcipqQ8ke3OYfSTfR2Zukjyvsi1yhnYxS3d3Ypaze2NouVMmOmRfQAAcBVABsEvh4xqATyKyWtD8AfzdEygrmG0AXwA0RIQwmUwm7SCYDUg7AIwD6FUwVkRkWfkVGgEwpCj6E0BdRH5vyR2SwyQfRtgm+0ryLsndAcw9JO9lZba6HfbAtyUWOhFqR56UvOkwEdpH8m1kZrvwRChrSCPRRuX9HO5cIuZKnvGuhlxnWu11MEuJmdeKLIYmEg++447YqcTMiSIGHHbEqqKQp/4jgUwomY8CmZYRMgPMADPADDADzAAzwAwwA8yALpVvc3TNEZsmuRSJ66r/u2dprmGOhtbvM+ClIzYI93+/Gr0IZCIi81WRhMhBkuuJEhOLOdzHiZirJA8UTYvdTPTf/lAO81iicwo3VM8MydltcGQm97TI/3poaj+Amez9ryiYcQ5NmUwm03bXH01TyTeRORVxAAAAAElFTkSuQmCC",
 	["layout-list"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACN0lEQVR42u1b21HDMBDcy/APHeAOMBVgKiBUQEqgg4ROoAJMBYQKIirAHSRUsPyIGQYkEzs6IpHbmfwoHp200p3uIQEGg8FwwJDfPiBZAbgCUAOoRshw/vckIpui2CE5ZzqsSTYlTX5BHdQlTL6iHlY9cmuSq8Ty1iTnuaz+J6oI6WtFmdPQXI8iHISM3bs3ZkNxEem/C7SdKG7sBkC7CwFORJoR6sQtP9U+IbpQ4ySb81jEAbhT6v4VwP0QFdgXCQuSbWpVEJFl7L+sCPiyE/4MExw4jAAjwAgwAg4aWR2DJE8A3ACYJuzWAXiIHa+5+QHPPvGSOga4JXkeImGS0eo3CpP/itkQGxDaLhdjYtBSjaCqOxryzX3bq6LYYDAkPcaoA3CsMJAHEZn1yJ15vU0VEDkA94NjDJKNQlbG+UmWAZ+jc4km3+Y4edmSiArjagK/xuMGg8FQihE83cEIvhTJTuJS1WNpPsBUoy6YGwl9rvAbdEpVrYhc55IPiK3+TLMy2iN3pSi2HhIN1srq1eSeDwgN5EVGoNR8wN8boz3lA3LLCTZZ5ANILgNGZDlS30NoTAWMACPACDACjID9I7s7Qt5nT1qP6MtH5FYdXgCYK/TrAFyGbqtPMlv5uVL3dSwYiu2ADj+vuJ6RfFbkQDtRUg0hwPnExPcBpnJhu0jbO3TqkQCwHLIdNa/Luz41SFiK+8TG25bhBulgH0wokbDJ8cnMto+mptj90VRb3KMpg8Fg+O/4AJOFg3oMhGPGAAAAAElFTkSuQmCC",
 	["link"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADDklEQVR42u1a0ZGbMBBd3aQASqCD0EHo4JwKjg7sDnwdHB0kqcB0AB2YDsxVYK6Cl5+9icOABGZXls7eGWY8HlvSe1pWek8iesQjogoACYDsXsCmALYADpiOI4C3L0UKA7eBnooTgJfY0/sN6+MYXUYw+CPk4gxgEwv4jAesEYWtbxMCeCKqiSix/OydiFp+Gv4uu3i+O7r5aYypYpz5fk4ac9FsHK9DFhv4CkCysM1XW2GMCXyxsm3xdqWr/UlzkJZMOIVAQO5jhiw1IQ8h/dXTkwvjWJQhZMFvH+/mRBYcQymEGwA7AKlHogEA9ySddy4Cnr44B61l93kXBExFdy8EjC55xpj+8/M3TVODiJ5Z5CQsWojFTEtE78aYVpmA1CvdvMvbL9D1ZzZAUqXxjI2j0QK/XanpD0vFz4xldix2ITs5Z4mtKo9pajIySfCZQ9iouDgzxjVlqDbS4OemfMvb0gZAp0kCgMLSZuYLfM+SNLekaMHE2CIXBF/6At8uYZq3q/1a/e4A34oU2BngX1e0218rXBzge5FlVtPGspBQCYDPggc/6Keda4pGAZ4LXi19ZBXNzPNMinr0vsCnEmkvfVDBWkMdvGt7Wyxoq7OQsF2YjUd18DYv7ZqC57DBP+vCy1TBA/DDMevi4HPP29PhBYean7kaQw48D7aeOqtTLFzXRqeh7qZYToSyqxcCL7O9nWMjS9604AJbrQDei5saF4MbO0lplfpKAZQLMqJlhSk662a4Zo/85o8xpiDF4Pc4pX83PhI2Tnt+KmNM58PUFFN4scTTwMYei+YuCPDuoYdGgDGmCeJw4YYZMBWZVue8EuwBPAfBxoRwaZT6Gu4Mf4VAQDmxEqTK4OUPLYSFUO0B/O0vMDn0+04ZfBdKHVA5WfFiYwmSYDux2V8hfg7RgL+QxTaRUs8pjOz0nEMGbyyD3xDRwfH/dvAk9P81dhtJH0SUe7glEpyLE2ba2zJB0MXRcXI81YRGAHwZtXDgV6K7AnileSX2VhlROrKi0r4LHBopaXTv9iMeQX8BLLm8bGKY5nMAAAAASUVORK5CYII=",
+	["list-music"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACS0lEQVR42u2Yv2tUQRDHP3NEIv4ACRaJYmMEEUXQiGkEDWIXOVOIhdoIgpWlf4CFnYWFgiASRMQ0kcAVomirHMGIaCVaCGIi+APRQsF8bZ4gYdf37s54+97NB66ZnTdv9vt253YHHMdxHMdxHMdxehCLDUgaB04Ag4nkugjMAVfM7FWe8x/5A9w0s0bhN0maULp8kDTQRv71kG8tEqOe8KodAHbm+ITyH2tFgLKzKmAbakWAmYQn9w549q+C9QUro9kdSYcTLYKXzezjsgqQidAAGlScGj2OC+ACuAAugAvgArgAvUtfAv2A+Zbv68stgKQJYPo/5nFM0hEzm0llC3SjHzCW1BboAiuLOkraBIwDe4HdwDAwm/0edVzbutQSqxfIyySdlfQ1J9aXgG0q1X7APDBpZndzJr8RuA3sKxBzbaX+qrIvP9vhCpsq8zngHDBS9SIY+/rbgfOBoZ/AVaCZbaMtwFFgf9WW/6XIkh6N+F+M+N8vqwD3ApO58Rf/fkk/As88LmsN2BawPYk5m9l34HNgqL+sAqwJ2D7lPPMmYFsoqwDPA7bhNkRrlFWApwHbcUkrIjVgD7A1MDRX1iJ4KlLVpyUNLvE9IOl1xH91sGak3g+QtA54AWwIDC9m+/33OWB95B3XzOx0aS9Dkg52EPdt7OuXph9gZg+A623GPWlm31oVIMV+wBngQnYELsICcMjMHlamH5DlNiLpZU6sW1ntyCWVIpjbD1iSWw3Ykd0QdwGbs9NhE2ia2Xscx3Ecx3Ecx3GcOL8ArTEhrSbbb9sAAAAASUVORK5CYII=",
+	["list-plus"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABP0lEQVR42u3avUoDQRSG4fekEktBiBdgY+E9pLNYWNJ7V/7UChZqISwIWuklBCzstFUQYqVg47FJFWdB1uwyu+d7IM0k7Ox+CWcmwwEREREREZGArO4Ndy+AfWCcyb1+AzPg2MyeWg3A3afAVaZf2hzYNrP5Ki42qhkvM/7VbgC7q7rYKHoNqAugyvieX4CHyEXwyMyetX5JcO5euPv54lVEe/ip/9Zo6e7rMph62EmkANYTY1vaCCkABaAA+rIV/gDugEMz+2ow/w6wuTT2BjwmPvsKnJnZ9X/X2Tacdjh/meN5QNnh/JPoNWAtx/OAqsP5b3IrgvfAQUdF8MTMbof0Z+gyUeQutA9QAApAAUQJ4DMx9h4pgOqv6/xgLR2K7iHSq/OAJtQfsKD+ANQf0P5GSP0B6g8QEREREREZsB8sQV6BWWwkmgAAAABJRU5ErkJggg==",
+	["list-start"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACI0lEQVR42u2aPWsVQRSGn3OTSiVFqiCKEA1YGUEMglqIlpGYKggWltYWwcom9lbxF6SwikQCQfAnGD9SWESNFzGxMgQ0QgjJa3FXRNnZ1etsnM2epzx35+O8s/PO7OGC4ziO4zgpI6kl6bSkg01M/rCk5+qwIelKk5I/Ium9fuWLpKNNSP6YpLbyubXfkz8uaVVhzu7n5IdKkr8XczwrmMgocAMYiDTWLvACeGBm7wJjXgYeAwcCfawBbwr6bwOvgZdm9vRfVmFc1fFZUn/A7XcijvPwT47NViA+VuFb3g+cyonfLphPN0wAzyQNdiPA/2Crgj5PArOSev5WgLkKE/0ELOXE7wM7FYw3DNxNyQSnzWwlMOYF4EmBCa4CbwsWcxjoy/lt08wO1eUYPFFyDE6VtJ8MtDtXp7vAYIkIZ0rav8ppcyd1E/y5Lztb5DzwIfBI2WouB7ygHgJkIrQzEX73i29dmnRPrQTIRPgIXAQWs9BX4FoWj0Jv6n5gZmuSRrJXeNnMNmP2n7wAmQg/jtDotGg4LkDTBejdw6tw5fWEaAJIGgdmE1ywS8BNSUNmtl7lFhhL+K0N1RPcA2IKMJfwnEP1hHgeYGaPJF1N1ASnY+3/wlPAzOaBeb8HuAAugAvgArgALoAL4AJ4PcDrAV4P8HpAfdjIia03qR6wkBPL/bLdy/8HxKwHrJQ9nPnYdWAbmDGzBRzHcRzHcRzHcZwO3wFwjkWWkOiY4QAAAABJRU5ErkJggg==",
 	["loader-circle"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACrklEQVR42u1b7W2rMBS9jvr/eYRuUN4EZYOyQbNB2SBs0GxQvQkgE5ROUDpB2SBscPrHlSIe/gIb2YYjRUocJfY5vr6+99oQ7dixY8eGwdbqCAAnogciym+af9+3N20tY+wjCQEA5ET0JIhmlj/vhDAXxlgbjUkB4ABeAHzDHcpYiL/CD66hky8cz/h/8DX2OweOrR45NhPInNyjpP0SnAAAMiJ6M3RuF+HQWsZYZ/C/uXhx4Qyr0Ew+A3DVWG0PoAJwn1TgYEB+AFBRigBwryHfJDfjo23uU0H+nHTMDKBWkD+mTr7YMnmuCHLSNnshQCUh326BPFdsdUl4+4Pme9n6PjPG+i1YwNTaT5+4xvOXWxHgLBGAb0WAqaivSY3nQZHnT6W57SYEUOT4mxFgssKjK2bECJuK0FdsdQsiehYf/8kmz0aAITLynzdNJYC/UyLY+oBYcDSNag+xz7bFBHIbAVIMd/s5ydAt/kRE1nish4VmFdMSGGwEaBXeNYYdYAqdjQCdTYAUGPLFAjDGBkngk0UqwJfglHY6rCjhnec4QVniE3JBpHSaxIkDzjG+A7YAtyU8AKXEpKoAyVfOS3iKNXUNqSyuOLQdFvsshbLvAQnw7s1ShRX0oR6NAXhTXNDgrjoJ8nAUwFExrtx1Z01IImjIN76CjE7R6euK5FX3ETtvwZrwtoOi89rn7iD6rzX3k7hv9TONCFcAJw/9ngwuZ2VrmaBOBIio7LTEIsSMnwxuoQ6rp+picJ3hTddaXKDODMV90Zj6eM3PFpktdYxE1JD8iispcvNxespnpNsfRFRYp7oerKFQBEs+0AMoQszFKwPfsASD6CPYmsSvEKVji+jFfzonvsYjM4VY248z1ndHRI3PR2bYytaRj2p22UTBso3qGaEdO3bsiBk//U6xgIAml3oAAAAASUVORK5CYII=",
 	["lock"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACLUlEQVR42u2bzXHCMBCFdzO5hw6iVIA7iEtwKsAdQAl0wFAB7iCmAlMCVIBTAaaCl0N0YDKS/A+S2XdDIyy9TyvJWgGR6LnFj2gUwIyI5v+KT8xcTZIygBmABYAdgAvsuug6Cw1pEuaXNaZdMJYhG48AnNFfZwBRaObTjqPuioY0JPNjKfXdfFJjoAKQ6Xrq5ntKl2W6jkuxz3PeFfbrJiu73jHWNdMh8hFA4Rj1uMPzYkc0FL6Zjx3mo55RVXk/FRyjn4y4qBa+mFeWDuYDtnGwtKF8ALAau3MOyKu+z34ZoH+muXhi5nKwE9vfs34atn13AKat7TBCsOUN2747gLmhbIxjbdWwbS8i4DgCgKOvEUAPjADyFUAwEgACQAAIgKfWa5cjKhG91b0cAcDAfZ1b+vN58/HKzMO/g+jzfoFwVAySL9DpqQ3C1ab2oFUD4JuIksCnec7MX60XQZ3NSSawziWuzBTbQp+IzkMcNjxRRUQfjS9fHUnOzIs0lDtzlPVOolry8mUoww2gbJo+s60BplEuAwp5U1+jvgBCl5JXYQEgAASAABAAAkAACAABIAAEgAAQAAJAAAgAB4Bygl7LNgCOhrL3gMy+N/TUCoDS/+dRvrrWafEdmfN/RgCui5GS6m+BQ9GViJTpYsQYAbpiOqH5n9puhay7ADPnRLSfgPm99tJ+G2TmhIi2AZvfag+9F5fY8ZN1H3VoehfIHWBE5O+tcTXKT2REE9Yv/XAiSytrVkYAAAAASUVORK5CYII=",
+	["log-out"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAC7klEQVR42u2bvWsUQRjGf+8lKKJoJQYEEQQFEY0EAoKCimAw0WA+5BARW0u11MZaCwv/AAVJYmISI0ZTCdqIoIilIoJC8MBOoqjk7rG4EQ7ZiXe5zbmzu0+17H3MPr+d95nZ2V3IlStXrgzL6v2ipCNAJ7AT2AoU6vxpCbhlZnNBEpK0TtKkmldvEv0V/mF+G/ASGIihrWNBAZDUBkwBO2Jqqy20HnAV2B1jWw+DCkFJ34E1ER99Bd4AlTrbmAfumNnjkIJvvyfILmVibJR0JcL8izR69WXAroh9H7MEoI2MqBBISRYkdUpamzkAkjrcZOw1MC/paNZ6wAiw121vAGYlDWQCgDv7hyLyaVzSYBZ6wBfgkyekxyUNpRqAmZWBIvDTc+x3JQ2nOgPM7Lm7kvzhOf5RSSdTPQya2ROgF/jlKYeJ5UIIAkANhP64IQQDwEGYqwNCMbUA/oKw6IEw0giE4ADUQBj0QLBGIAQJwEF44CCUm4EQLIAaCMVmILSv4DS2DzgDdLSAxVuq9yuiIIxK6jaziy0D4IajqQR1lguSPpvZtVaVQH8CK+Z86jKgQVVaCWAmgQButCwDzGxa0vEWhuBGTwj+0XUzu9lIiE1ELIuPJ3TRZEjSouc+RkXS2f8yDLbI/AlgjOhVbAGnzWwslRMhZ36yGfPBAqgx396M+SABSOpZwny5EfPBZYAzP7OE+WEzm07leoCkw878qrjMBwPAmZ+N23wQJSBpH/AIWO0xX1yu+VAyYGwJ80Nmdr+ZP29P+NnfDGzxmB80s6avOZJ+Z2geeBphfiAO86GEYBF45bYXgF63FBaLEp8BZlaS1A3sAd6Z2bc4/z+IiZCZVag+IBG7fCVQJiPyAfgQsW9TVqAg6ZRngaErbV7NA2A71bX2KD1zl5z1qgTcDupRWQfhnuJVcO8LnAPex9hWWADMbAHoofqM3oqVWyjlcDmGEugLJgQ9ENYDB4EDQFcD0+jw3hfIlStXrqzoN6rCUoQJfolCAAAAAElFTkSuQmCC",
 	["map-pin"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADgklEQVR42u1b0XHbMAwFs0C4Qb1BvEE0gjewNqg7QbRBvYG1gbOBtYHVCaxMIGWC1x/6mvOJJAiRlOwGd7rzxTJIPIDgI4gQfcv/LWqOQQFoInq5+fMfpdTwcAgDWAHYAjgC6OGX3ry7BbC6Z8O3AM6YLmcA23sz/IL4clk0EADWAE5ILycA66UZXyK/lIvYBQD8JqId49UPInonooaIBiLqlFLdNVES0YqINBEVRLQhoh8MnXul1K85PX9keKqShKxZUhVD/3Eu4w+eidUxtjGzjdaesQ65jd85JjOkSFImIgbHuLtcxm8ck2hTkhcTDa1j/E0OVtc7jNc5aLQDhD4pe3SsxSzG34DQ2XJPqkGLnGt+Yk5YpxjwNHXdGc9dD0aXG5p7PQDpCPnolMv7TYCOt4DT4FuA3iZ5FADYWwYpmF4/CTm/nuCcfUwALhLvG+PPE4/CWhgFl5hbn+gwwqTKmMryHIexVQwAdhLlHsI0mC11Z57aw/IKoZN2MQAY2/tb4bIBgPexsDbLxZbQLozx2iR5wDKpmrFHQwhcK4y4WpKnnoS4dJ7vbSHLKWLY3tlMnJMYgBeB3rHM/aGU8kaAeeeDqXPy3J+ExvgMWU/0UMfU6ZuTjgHAp2AyYwY8BwDwHAn0zxgAtILQG8YmyCQ1mgEwV9oYAJAgAmzZt2LorgJ1+hLv5G2wEtLgIZRBAvhpI06M8cYodxUjAsYGf2WEs42EHAxFfjXkR5vPR8dv9j4maInKIUYEiM4CnqpNiHQ+sKV0PQSEMUPeI1RyfcKqNhl6Hcw6Y9QDdEIQuMbrHPUAG7evAn7fBBjfcCs6jtujdezdoLOUr0JqeKUlXL+eFMsAfdpSZusotjiKDpVAlzalrK+PFuipUt4ch0TBijKLY3fqUg5aZr2MCD//p/O+JwpYFeKIc9hk9z4jCnrkuxvsZ/G+p0yWpVnBUWluciegIfcVtSP0h+yJ2MG/+4QNEv2szREBS+EcMx94bpgamks8S+EccZzzYkI/YFeI0rzkacYqaQniaWerlqY3NzMTecoTWTUtTRjNS0WALmcnGi1VGGWwcqLnO2RsxpqyXw8SEDzGz9KMJQWhCO30ZnScF3RPwjColLx7byAUnuXwZp77D/u5qsKPCsLjGC8A4fGMDwDhcY2/IUu15T9MspMcNWc00L8b3ZbTP/Qt3xJf/gKE05cOPvchFgAAAABJRU5ErkJggg==",
 	["maximize-2"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB60lEQVR42u2bP27CMBSHfw8xdmBBdCtjR/cE7RGyMRJO0ZWVjRuUjr0FB+iQrRyhFUOp1P11wJVQlT+Ok6h+z/5JDKBg831xHo4xQEpKSkrEoVA/GDMbAEsAxrOJKwDXAI4ANkT0IuasMLPh/rMo62sUqIN8gDYfJQkYIlNJAnYDtPlR9uI4yMpMVDDznb0UXIrgDMBtwzHfKsc1M+eORXCvrgYwcw7gqUsbo5jhxQpwgD+oFeAAv6qq+DEUvNwet3ctgurgVQpoA69OQFt4VQJ84NUI8IVXIaALvHgBXeFFC2DmrCu8bWdb8t5t6PBzZv7sCm/bKltSM6ELeOgD/o+ErX0YCcPf9AUveca3vgA/MXM2+OpTiCMBwARAQUQnpKSkpEgvgsw8B3AD4IuIiqgM2+nt5QxvHRN81Y1NMDOzccP38dI+fW47dBtWbycSp6WmhzP/O8MLXoD37aTD/Xwm4dr1WlDoYzFDrAA18D4CVMG3FaAOvo0AlfCuAtTCuwhQDd8kQD18nYAo4GsEvEUBXyNAJXwfe4RWRLSLVYBo+MolMVvx7xveewDw7tBH4bOe8N814HWA/fpG0iUwG6CvXJKAIyJJlYDNAH0FWSyppg4scP6byRTnrae+++0LALvofg9ISUlJkZAffL7O/1TcY9IAAAAASUVORK5CYII=",
 	["minus"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAj0lEQVR42u3UQU0EURBF0VsoaCc0DkYCDkAaOEACDhicjINmAQLohEmazDnrWvz36qcKAAAAAAAA4AbMnuFt25bqqXo8aJ636nVmLtcq4KNaD77U88w8/Hb4bkf40z8IX7X+vPVvC3ADvn/Bubo/eKbPmVmvVcBSPVenajlY8Ev1Xr3sOYIAAAAAAAAAN+EL3sMd42H+NtUAAAAASUVORK5CYII=",
 	["mouse-pointer-click"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAC8UlEQVR42u1a25GjMBAcHAEhEAIhkME6A5PBksGSgclgncGSgcnAzsBcBOYi6PsZqnxeIQlJ2JKgq/jxA2mGpmemgWjDhg22AJAD+AFwBnBYW/AZgDv+R72mBFT4jVso+985OMcg+CwDkK0lAd3E5/tVJCBJkp6I/gi+KgxupxTAMTgxBdAIdOBuUEnCFFMAe4hRWAQ/O4nvToIItUXwANCHlIBOEMDFIngAqELvB6C4bWTBh9VMcUf4jKvkystQhtoVlg9BDADyGVXDj+D5Sn4COJh0c/z/wqBsehG8SJQu3Jx8OF7HP9oDaKHGmRmSOUhCw0fucymLT6w0RUwXaWxJqAH0MxJQSM5VPAw3n6GMyI9qXrEuDBPBD1MMkLDpx6WgvjIhBbPjOjY5kjqfKbo8ALgxK+K6hTgBp5k68q07OYakIya4cQP2MlbsFjrvYPi/jIhORHRjVuShMiCTiOZcXIJ81iDpKjODUgsW1aM3pZRb2SMf+QybrH76TWvAiveaphPBiZLQ6zw0eWDFYCCaXy9lhcTGanRdIgB7RTveGbBi+QZL4eGJEpBO/LbVFNLGkBXuGywNAzOf2RRlmuumzIqrASvclFKN4EtFC+3E9OR9nAxYUdsEn5oGrxDDu+WeKldTq2oxawNTIoalA3YWmrNHbbpAZ7t5vmIi2p4tWfDBfchFIwGt6UKlo/vXhRgeWNhuBoJY2tBsbFJ608dVkochjUbgXxr+ggwD+YCJUnaXuEqpZeDgW9ib+aGcQ09DX2HgoGvvxmmJGF4MbbUx4JYrjf/+gaSs5pps6VlQyyANE4lZctKoGn0snmGnEsOJUncKxRNUQRRISkTlqBXsDz6ji8k5HqbMEomblMfCACIiUQM0vlsgGlz+JklyjYkBk2I40du3FBtmGqLVEnvYvTkHc1S9oxihaWosNszsPMiBDguuMSegWS39NcySxeq/bwnIJU5v3FdfMf0NQb1X5IgJ43tJJW3YsGHDhmXxD/ARg9SsUOzOAAAAAElFTkSuQmCC",
 	["move-diagonal-2"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABkUlEQVR42u3ZsXWDMBAG4Ds9BqAkHSMwgjdwOrd4g2wELlMlG3iEJBskld0lG/xpcJOHHwhJgTvd/54ro8P6niSETGSxWCwWi8ViyTPs2wDAgYgqIroOn6X5YuZPUVoAzoiXbwCNpM4fED9va/fLeVz7kOD+jSSAa4L7n3IGOBHR09oARYKaR2bupaxtLkHNDkCbM4AoBJewtgiEGABHLdNhaiO0G9vJDN+1ExueVjVAFghTAOoR5gCoRpgLoBbBB0Algi+AOoQlAKoQlgKoQQBQA/j588N7j/YqEBoA77fOAyg92+vfMf43AoASwMvtjFHEQWtMBACvI6fNdTYId9ruspkOogFiIIgHCEVQARCCoAZgKYIqgCUI6gB8EVQC+CCEAhRbBWDmfnjZ7O5c0s18GVU/EoJGgNs6wPBH6zFVfSdhFKREcFKmQiqEYgNzvBwWusc17r+Fp0BPRPvINStJU2CfoKYogI8ENS+SnvPNyGlzSM5ei+tGEGoiqgOHfEVEF2Z+JovFYrFYLBaLZTK/D15RDAfisNMAAAAASUVORK5CYII=",
+	["music"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEC0lEQVR42u2aT2hdRRjFf595jYb0D1VrK6EaNZWYFFsR6p+V0IpVRIJVunNRXKkUN9mICKEWN26k6lboQjShStGFqCgoFK0uVGwb6etCUYRoa/qqrX1NclxkwJjO3Hfn3ffHvMyBu3jffWfmfme+e+7cuQMJCQkJyxjWSclIWglsAYaBzcAgUAHeNrOJjhFA0pXAkEty4XFDBu02M5tcHCwtgWSH3EhuXZDopjqaegrY+78UQJIB/Z4RHQS6G9TNBl+w1IZkr/ckOgSsbIf4pSYnewdwj0ty2BnUmnYVWssEkLQBOATc26LkfgGOA98713/cVVXbKmB3E5IX8KNL9D+HmZ1bNADDHgGslQLcXZB/asGITi5I9HxO/lxbb4Gc7c4AZc+ITprZxYL9X5F3ztMsAWY9sWPABHDCJfldEz1hNmdVNE2ALk/suJmNtcgUu3JWhT+4nJAESAIkAZIASYAkQBIgCZAESAIkAZIASYDliNJSulhJ64BdwH38+yVIwE/ML7h8yvxibNsvdEKXY7xAeyVJz0k6p9o4K+nbvP0vhU9jfcA7wLaclNXA7R1xC0haAxwh+6NnR5vgW81Mvq4KkDSYZUJm9kODRv8xYGfgdMWZ3Sfu93ZnjquaWY53Sfoqhwl9IenjoiYoqZzRfr/n//2SjmZc13iR5J+RNKdiGI/ob0ugjbKkqzJ4PZJOBrgf1OUBkl4ADtDa3SQ7AvEnzOzvEMnMLgB7AqevixZA0qPAWBvMb6MnNmVmR2oRzexz4JLnVG+UAJLWAwdr9HfKHbkqO0KAazyxbyL4pz2x7tgK2BdQ7aKrij4zGzCzAaAP2A9UswYnIoELnti6gk+3SozprZZ0yWMkf0kayOBtkvRnwIQORfS/z8OvSsrjWSskzXr4r8VUwAMBFfeaWTnj/jsJPBs4vT5iBI96YiuA0Rzc0UBe78VUwEseBc9H8Gc8/GMR/G5J0542ZiQ9ksEbCTyuT0vqiqkA35ayryNGcNoT68lLNrMq8LrnVBdwWNIrbq7QK2mtpK2SXgXeDXjNATObjamANzwqfhbB/9XDPxE5+bpWUkXFMS1pbezL0JQndmfE9V/tiUXtCDGz34GRGk+WWqgCD5nZH7FT390BNffk4D4Z4O6qcxp+v6QzdYz8GUnb6537rwo8BiuSbs7g3RRYtalK6i2yKCLpw4jk33cLKYXe/t7MuKdGAg48HeAcpAGQ9LCkjwJOP+dE2hF1q2V0NuTe8bOcvuymmDcS3gIr4Nas+UMdQmwEblkULpvZz41eAxhtgAs/zVKGpLECyT9PJ0DSg5J+i0h8StJOOgnuBenlGmvzZyW9WMTxWw2rQ4ge5rejb1u0KPolMNGAfb4JCQkJCa3CP7KSrN5zxoTeAAAAAElFTkSuQmCC",
+	["orbit"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAGXklEQVR42u2ba4iWRRTH/+Ou2u7qes1W1/ttLYJKzZTAJAIt8FKGQUSB+SFTNKKLpJlmkUJqYSVJVliEZVEa2AUh+xCZipeyMi+pm+66q9vmPdfVXx+cBVtmnve5vbtreeDlhXlmzv+c88ycOefMPNIV+n+TaWhA4BpJPSX1sL+zkg7W/YwxZf8pCwPjgQ+AncAZMtMZ4CPgqstZ6THAh8Ap4tOzDSFrbopKd5A0U9IkSa1TYNk7BGaJpBGSrpXUT1KFpF8kbTPGrGuot50HzAKOkS49kgF3MnA2YPwqoCDbyg8FDpA+7QTyPJi5wLsh+fwK9M7KLgA8J2lOyO7Vkj6x07NM0iFJh63nz5HUXlI7SW0l/WmM2RGAO1fS7Aiibpc02BhTm9Zb7wJsDGH9vcBCYDjQLCXsQcD5GDPq+bSU7wtUZgDbA4zP0pJb6cGsATYH+KHTQG5S8F5AeYDiJ4DpWfY5LuN/CbS1zw3wlEe+oUmAuwKlAcpvAbpnWfkBHuxejr7bHf1muPg2CwGcI+kLSd0cjy9IelHSEGNMaZZ33G6edlfofNDR1jOu5ed7LH8BmNCA0WVRmKltt8kKR78pcUCHWEVdNKkRQuwKj9O9CygAbgWqPPIOiwO418Ps1UbKMebFDKx+tEs5Eth0D7MdQPNGMkDLDM7YR4ujArX2TKVTQN8mkGlGpeNAxyggL3kYPd2E0u2qiEaYF2WanXQwOAS0aEI1h0625lA/ODsJnHPIX+7yA67w8F5JrjRyhjGmJo2Axubw10vqLglJpZJ+lvSNMea3ULU8Yyol3Wd5tpFUIumwMaYUmCzpjXpDiiTdLenjTAJ+7Xr7KSh+C7ApxFTdAAxOiJXrCZvXZRrY2bPvz08o0NSAeMIXZE1NiLnIw7t90KCJnkElCQSZnaAw8kwC3BIPz7FBg5a68voEQtyTQnVodAL8fQ5+i4KSoZsdfDYkqP+vyNBtr/0F0fuR9vB/03eOttuCHEeNw2JTYxpgmeeN/g3MAbrUqzK9EFDkXBpThkcdvM4DrVyd+3jAB8cALvTsxYGRJNDPE4PUOIXOLMftHp0GuZZAWw+ffTGMP9ITY0wzxuwJ2Nt3S3rM8ai5pDtiyFHpaS+MYoDTMYAHOtrOGGOWhwhw3vJgDmwUAxhjzsQALnK0bY4wfqujrUtUIWy06KJWLgPkqOkQLn1i8rrgaDvnMkCVx5G0S2nqDYow3tX3cAwnmO+pe1a7DHDUw6dDDANscbTlAxNDCD1JUl5InpnI59eqXcDFadXTbUHlnKcw0TtgXC97vuDaBgtiyHGdR6c+UWbAgBjO54SkVY5HrSVtAcY5hB1nnZ9rv19pjDkVYwb096z/Az6L/e6w1vJYXsxv/TqqtunxduCvDJlh35gyLHTw2xw04G3HgF0JkpEnU0iGpiTA3xQprAYeykI6PDeB8rMS4BZ5ahATgwb19AiyKGFx4k7gSATFK4FRCTFnepZTx0wDN3sEyk0oUCHwssfL19ExmxUmvtoC7Hfw/yrMwIeD1iLQ3R6ZFcYULA94EHgNWAOsBpYADwAtU6oYT/DocH+YwS08Fw1qHKlqGfAecHUTKpe3sHLhKJe3zJbjqgLGNBED+GqQC6IwaRXiKoyLxjWy8gNsxcn19gujMnsnhgGqgE6NpHwBsDuVW6f2fCDuxce1jWSANQEvJT8qs2keZkeAYXaJjPaEzthrsw2p/JKAFzImDsMFDkZH69/3szcyXHRDAyq/LED51+MyXeFgtsaz7lw0qgEULwTWBii/LUzw5uvgumXVJmSbJJVnWfkbJa3WxdNlF+2XNDL29VhPJHX20np6wFKpSXwr0y9XG+AVT7Gljv4AipMC9fcwrwW+BdYDP3n6bMqC4jnAFOuHgqgc6JEW6GcNfZhZD785MNIe2JaFwP3h0uO20NWroLqeLURGqcYsNsY8HsBzmKRaSQfqavb226CukjpLKrb1/5skjVX4L08CcZO8hT4hb3Vg12auh89QWwJLm04EnvenZIRc+0lMjUeIUmBEBh6fpqx4LfCmPYJPRCaCIQp18Wx9uC5eSPpe0npJG40x5zOMrZCUVo7wuaQnjDG7dLlQyC9MgmiXvVNQosuRbJq6NaLS+22cMTCbsjXGp7M9L/H4xZLyJR2xv8q6f2PMcV2hK5R1+gegQ0oiUwFgxgAAAABJRU5ErkJggg==",
+	["pause"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABZklEQVR42u3aMUoDQRiG4X83AUWE3CEROy3TWHiDeAxBQfQQQk6hqAcQK+3tbEJCkBQSkJxAg4VK8tpsYTEuzAwzAfnecmG/3X1ItlozpZRSSqmAgCZwBDwAc9y9AtfAnsfuPnBTnevqHbgHDoHGqh6+DUzw6xIoajaL6sF9mgDt3A9fAE+EdVqzexa4+VgHmwLggPDmQOnYLIGPiN1eyLOUgQbdCL9NM9txHN81s42I3W5OgE7kj6iTaTMZQOybt5FpMxnAv0kAAhCAAAQgAAEIQAACEIAABCAAAQhAAAIQgAAEIAABCEAAAhCAAAQgAAEIQAACcLeIvO4i02YygGnkzU4zbSYDGETc6LeZjRzHx2a2jNgdZPvfAOvAOPCLzvOa3X7g5jOwlvXlAWwDM88bvXV9JvtrswnceW7OgK2VvEGBFnAFvABff9zgGzAEjj12T4BRda6rz+qaF0DLlFJKKaUC+gG66yUkdQRO7QAAAABJRU5ErkJggg==",
+	["picture-in-picture-2"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACwElEQVR42u2aO2gVQRSGv3M1IBqQBCWFIgiCuYKJJIVIQIsURrCyEEUQW5WoKCgogqDYBAvBzlLBoGClRhAfhYIP1JjCKIiCTfARDRqC4OO3yCp6mc3d5OZmdvfO1+3Mcmbm35kzc84sBAKBQCAQqFVsokpJO4G1QBFYDsxJ+XjeAM+BZ0CPmY1MSQBJi4FeoCPDH/cdsMPMrk9KAEktwD2gPiez/KCZ9SQSQFIdMAA052iZ/wDazWzAVVkoeT6es8EDzAZ6Jc1KMgNGgXmO93qAO8BYigdaAFYBe4EljvpOM7s1kcdfJDdbsvS5JS2QNOIYx65yS6AYY/NqpvZ1s4/AE0dVsZwAjTEGv2Zw3Q87ypqSOMGaIwgQBAgCBAGCAEGA/OHKA3wqJ4ByJECfo+xKXKSUO8zssqRNwFbgO3DezPrKBRGbXZFQ8AFBgCBAECDPpGIXkNQIHABagRXA0gpNfgNeMn5HcNvMzibphJddQFKXpPeqLneju450LQFJh6JDy8IqN9UBDEpamRoBos6cmMEm64FzpenxgqfB1wEXPfigVuBYGpxgJ+4LmLfAaaAf+FWB/blRG/sddbuBo74FaI6J4FqT3Ogm5JqkR8CFkvIGSQvN7INPH+DK0T+YxsH/4Ua59n0J4LqD+FKFqHA4pqopnAQdAvysdQFex2xZTTUhgJk9jXlnTy0FQ/2M37H/y2FJG4HPk7A7Btw0s1NZE+BkdEIrpWUKtjdIajOzbZnJB5jZJeDMNNpfn7mEiJl1R8fRajLkKJtfhZijoVz7hZgDxL7oLD1UYR/i/tHrd5S1R4mR6aQrpvyvw7cEKq5h/G/RdVGQUbETlNQGPPYUDL0ws6L3tSfpvvzQ/d9s9yjAMmBwhiPSh2a22ntCJPIzr4AjM9jkKLA9dduQ76SopUQE/2nxQCAQCAQCNcdvytZZm8T3hdwAAAAASUVORK5CYII=",
 	["plane"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADXUlEQVR42u1b7XGjMBBdMvl/lOAOoqsgXAVxB6GD0AGkAvsqgBLcQbgKoAO7A3MV7P2RZzxEK60+QJjj/cmMB3b2rd6udiUCsGHDhg0rAiKmiPiKiOn/RPgDEb/wO66IWCOiWCPxHSIeJEkOxJrIH9AeR5Wt50eTOwB8AYDLaopHX3VhIXclHpl8zuB3QcQKETNELIhndmskf0HEfPTOfhUKYJBviPcqxbN9qK3ndSHkc827Z8XzJx9nSkTsRgY72WS8h95jPclT7xauzhyZRfYqu7HSpxX1Ia9Z/cHJH2b11eEsVfLBUUkA8jXxXuXaY18xPG4qebtflQDkde/vXAJQ4Tw4E4NMKPJH19xviVy6NRqN3IOnhg/51qcSq1ATqbKXimllkJZAfkCfMwFCAbccFoy+PZcq6SOQ9x9/GTWgtCyomYVK8il3CxunTY52rpGWXWUu+4z+rq/PopMfSZmT0yXMgFnJj5TQMILQ4YTHTlHIjxzImNteuTryIzUc51SDDHx88rHUQAw38cjPrYZFkndQw9X1PI5opE6h/H/yNZAkSSuPnH9rHksBwHXFVP38y2ICIIMwJElSAMAvAPgbWGSqs7xdqLu/pwmy4gfxexMwAAAA2dJOcFNNxa48bQ+hbU4RAGpH6APYboPO+hPtBJPdylKTaQjfn5kOvAPAXlZzFSiSn0mS9FTQAOBN2vxMkuRi2AlK1bBG2Q+5urXjgUavqRUHRZ8gDPUl3Fn/DOSV0pepQhXKzqEhapZKvmKsutVuQYzkXazZmy19w6qzi6bGp3SKImhqMv4Qv59uDY90rAQA2zytAeCnRUMkiHbZSwGFz4QnJd8xVnuwSYUpmiwdgd513mcEsJfnjZllEZ23IWJej31Tg+ZOQVUgj9xdgfDnOvVWKJhqEIYAXIhVTTXnCeNg7aN9A8hQQ+cqVW4qaBqi2Q5FTWqoXHOVmwqEWhqYEwY1CMcAsFJh1obIMQida7U2pMJOt8PEGoNtbn5bpk0qFb4MQRIxAiAmCIAuFWpNgyViqYD7Kc3JwmaGdhhinwhxUiG3tNlYBKCKHQBTKjQONjnfJ9za6hRiQ5MKjYdN00zSLOp/gxTONgFspnef1qD8Wyzy03fpbIGIp8VcXm7YsGHDBhr/AAIW7ksw/eNGAAAAAElFTkSuQmCC",
-	["play-fill"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB5klEQVR42u2b0W3CMBiE70cMkBE8QkfICGzQdALoBNAJYANgAugE0AnIBoQJCBNcH+pIbSWgSRxq+89JeYyl+3L2JYoN9OrVq5diSdsBSD4DeLJXYa+1iBRRkyM5JXnmdS1JmhiNJyR3/LumJJOYAGxYX0c7VYI3n7GddiSfQgZwoBstg5sWJA3d6kxyHBKAlN3oSDL9L18DD9gaADu7uBqNACqNABwfXZsDD2fbDMDhUbU58HTJMQBWj6hNXwFUSm0aOqtN3wFUyuz6MNYKAAASAAvXtRkSgE5qM0QATmszZABOajMGAK1qMxYAjWszNgC/a3OkFUBVmxuSE60AKs1vJUEDAACYawdgrqVACwDg68eNagCJdgDQDqDUDiDXDOAkIlvNACaa14DXa08fAIYRG78AyG6ZjzkBawDmnvkYE/ABYCIiubb3gBOAFxFJ65iPJQFvABYiUja5OWQA7zbuRZtBhoHGPRORvbZvgYvtdOPKfEgJWNu4l64H9h1A7VqLZQo0rrUYEtCq1kIG4KTWQgTgtNY6UwcbJct7f218hJA7Mr8Kcge5g83S+6A3S1sI2wbGC5JZFN+d9sDEvob5WVQHJr6BmNmF7NY8N777cHFoKsPPQ1M5gG30h6Z69erVKwZ9AsdP8r9mGJ4+AAAAAElFTkSuQmCC",
 	["play"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACCElEQVR42u2b7W3CMBCGz52AERghIzACG8AGZQPYoN2AdALYINkAdwKyAdng7R9XSlFMz0mIz4dfiV8EpHtk5/EnUU5OTs4Lx4z9AwAbIircp3GfL2NMo5ocgD2AG/w5AlhqLHwBoAI/ewALTQBOCM/VdZXki99iXCoARcoALp7CWgA1AMsEcUyuWwBYeoqx3WIArAE0DAg3AO8pAVh5Cik8zx9cy+C8H1bJAmC0mpLZLU6itTkEwN1vbdLaHAPgziJtktqcAkBnIPWZnDanAnD3fqiT0ebUAJLT5rMAJKPNZwMQr805AIjW5pwARGozBgBR2owFQIw2YwMYqM21OgADtLlTCSBQm2uVAAK0eVUNgKnN3lbwRopijCmJyDdMLtQDcBAsEX33fLV4CQC/vYH7oDoAbiTY19xb9QDcfKDyfG21a/DyQION5oHQ8SUHQozteZ1DYTcZujIKb1VNhlxz555LKNVMh92CyAez8FrVggiADbOfNwC2apbEGFrr5qBmUTRAawBwVrUsHqC1RtXGSKDWdhQrT9ocjae1WADEaC0GAFFamxOASK3NAUC01qYC8OCYnGytDXxr9+XSc1BSvtYGQrAP9uGqgH5eIsUT5BMclpajtREQzgMKl6e1kfPzOqD4AzRdmOiA+G97ukzhyswUl6a29PfSlCWis/pLUzk5OTka8gMh94h1za3nuwAAAABJRU5ErkJggg==",
+	["play-fill"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB5klEQVR42u2b0W3CMBiE70cMkBE8QkfICGzQdALoBNAJYANgAugE0AnIBoQJCBNcH+pIbSWgSRxq+89JeYyl+3L2JYoN9OrVq5diSdsBSD4DeLJXYa+1iBRRkyM5JXnmdS1JmhiNJyR3/LumJJOYAGxYX0c7VYI3n7GddiSfQgZwoBstg5sWJA3d6kxyHBKAlN3oSDL9L18DD9gaADu7uBqNACqNABwfXZsDD2fbDMDhUbU58HTJMQBWj6hNXwFUSm0aOqtN3wFUyuz6MNYKAAASAAvXtRkSgE5qM0QATmszZABOajMGAK1qMxYAjWszNgC/a3OkFUBVmxuSE60AKs1vJUEDAACYawdgrqVACwDg68eNagCJdgDQDqDUDiDXDOAkIlvNACaa14DXa08fAIYRG78AyG6ZjzkBawDmnvkYE/ABYCIiubb3gBOAFxFJ65iPJQFvABYiUja5OWQA7zbuRZtBhoHGPRORvbZvgYvtdOPKfEgJWNu4l64H9h1A7VqLZQo0rrUYEtCq1kIG4KTWQgTgtNY6UwcbJct7f218hJA7Mr8Kcge5g83S+6A3S1sI2wbGC5JZFN+d9sDEvob5WVQHJr6BmNmF7NY8N777cHFoKsPPQ1M5gG30h6Z69erVKwZ9AsdP8r9mGJ4+AAAAAElFTkSuQmCC",
+	["plus"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABGklEQVR42u3aQWrCQBiG4e/vDSotuG4RREHptew5Sk+gd7BnEYQuXGmXFSoIdufGr5uI0mYjpmbaed/lEMLkSTIkIRIRERER0cWz3bbdzvHAm7YnPjSxfZMTwLN/9lTHXK5qMngoGevmBPBZMrbNCSCZAAAAAAAAAAAAAAAAAAAAsixO2dj2naTH4n3+HLyOpNtvYytJszP2uZM0lTSKiEXlALYbkuaSrhM/qWtJrYhYV30L9P7AwUtSo5gra0DVAK/F5ZV6y2Kuv7II3ksaJL4IDiPiLelTZPul5LP4mOcAAAAAAAAAAAAAAAAAAAAAAAD41wDvJWPLbNRt921vjj6GbGz365hL1IjQlLT/TXYWER8iIiIiIrpYX3xlhbCXSpmxAAAAAElFTkSuQmCC",
 	["power"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAC/0lEQVR42u1b223jMBBcGvd/6uBcglKB1cG5g6gDOxXEHUQdRB1EHZyuAisVWB3IrmDuIxRi4EiKpLh6wBzAPzSw3J19eLmkiSIiZgOAHYDdIxqeADjjG2cAySMRcMT/OM6hy2YmDvaKteyRCFAheXQCKBIQCYgERAIiAZGASMDyCQBwAHCRn8OMLfXrXSv9Nmcfv3eUUStk1I4y9goZ76wRACAjojfL3p4bqWItB5CzEAAgJaIPzdftDARcNevv0lGs5/d7tK5n+RApIOU0Gp066bBgBBSaja4+GwUkIJE6qPAnlPFb6JF7ygxCQJ+aBhKyEASUGuGnETKDESDl5Rodz1zeb0fKDUqAQaZ3lPZCq+BC+QjQOesyRihCK8pFwEC6bp37AEN3Vyy4tdfVpb1PI6SqoDchRLVU64UQLRF9hiLgt2KtpuVD5aCdrlnb6AoKEW0tha+BAN3ZQRsBuqKx+AgQQjQuNm08cmwN+BxLQMqsYGO5FvqkaE1AYsmqL0rLNe75Af3gYNUmTwE8EVHfUZaG3PVBTUQ7C6c6EcBRrI5M4rOxKaDy9tpfctQuBDQrN/bn2AggQ4O0BqS2Ncw1ArKlW24Y0TXWBAghrkR0WyMBBh0bVyZVZ+tuBRGgml43PjVAdahIgs/cwxqfaPK/8hXIN27mIeCk0Tn1FVixjZvDGx9+gAsgW0sUGOaB+VjBunHzcUHGpxzj+6HQQtD7t3H6dSzetwivbs7ucODStg7Nsu7+bbaX3gA+JotOQ571JKQL8Xy40FdsnBs27VyfyoxwxMWgR8GtQAEzXrlSAsCzoeABQDVVCJYDJHQAngPutx/wOuRrkWTKAnTCMC7ySV3qWXgPA7neo/QezY31DH1Nc20mMK0cS7V346mbHFT8ujvKJvR1l2f78/oihChoLsii1GJ6XKcoui4/SydDrxAaxSL/ZXZHBBfKVcwlZQE7Gt7xuaCRHmcxXEwRFbKoZbKwpQNF868sjDURVdwXsmLmSOkHK40cxEZETIx/e2oVwHHp1xsAAAAASUVORK5CYII=",
+	["radar"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAHFklEQVR42u2be6zXYxzH309yKUop6rgVohpWYpUMW2O500QsMZdh5b4yDYcNMzZNicrdmKiJuS1mtXIZTS61k1K6SUfpdDuUU51e/vDEz/F8nu/3+7uc35E+22/77fl97s/zfJ7P5/M8P2k3/L/BNbZAYB9JB0hqK6mNpK2SNkja4Jz7ZZdzAHCmpL6STpLUR1KHBJKFkr6SNFvSbOfcZ/+pJQU0A/oDzwDrKBw2Ay8C/Zq64a2Bm4FllA7mexktm5LhLYAxwBYaD1YBlzcVB3xC+WA60LVsQRA4RNLKFKiLfGBbLmmZpCWSfnTOzQdaS2onqb2kwySdKKmnpF6SOqZU5Rrn3AvlCnhWoNsBvA+cVQD/nsDzPhAmwePAHuVwwvAGimzxMeGYIspoA4wENiU4YQXQqRxOuBiYAlznl3Sp5Bzkj8QY1AEH7tLpK3Buwmr4sGhB0J+5wySd7oPXWOfcD/nuaUnHSzpC0pE+6G2TtN5/1kqalib7A26UNN74ea5zrkexvP1SA+/WAO0z0B8F3AcszHC8fQ9UAodGVsC2CP2pxVxuGwICLkpB1xmYXOA5Xwc8C3TJ4TswYvwO4IZi77dMDgBaAU+WIOkZ643fHnFW/1IEnNcbCFpnbQFv/JclzPx2RIzPK99IEwT3lnSTpP6SFksa45xbEsBrJ2mGD3JJUCtptaSfJe0jqULSIXnO0VZJFzrnppXzWGrlK7UYrAEeBY6M8OkPjPa4aWBbbOaB9sDVwJBSO2BKRMkNwAjfCcri0IdSGH9BhEdvoDoHf2apjL8xouRHfmvkw/eyyJ4nZryn/zhAM7TYxh8fUfDpAvgmGX9LCh6hvOONNMLvAlZ6gpeAigjuR4aCU0pkfD1wXUo+TwToNyUR9QoQPWbgdjOUXArsF5FxMjARmAWs9Z9ZwATgnojx24FBGRx5tsHnjKxe+8LAnZhlbwJ7+VOgPo/zvz6L8TkyQ2260VkDxysGbqgaqzJwmwOzC0h+huS5nd4K8FscIwh1XkYG8LoYyg4y+D5YgPFDC4gn1xt8W4WQuxrIZwZwhxrL1AVwT8xz2QNURozrAtwOXAI0N3BOMvgevRMnl7CzIWtJYKxvYKzKOUdgfLikZoHxtyS97r8/bMg/2DDsNEnTJe3sAVYD3Z1zGxugrjZsqvCN2n84wGplrQ2MhfL2VQZ9t8DYZOfc4ByD3pO01HeHk2gl6coc43caNFTSuJQO+KvbnDsz+4ecHfCqJNUHxuoMYaHm6Af/qMicq5V0bwCvu8HzoMDYvzpAzrmtvtOUygEtAojrDQW2G1VZCLYFxkJbYkfKMWuyag3c0AS2CimyLoDYNhTYJG1JOSuS9HVgbEBg7NzA2ByDZ2i7Wlleu9jE5jpgjdEvCDU/FgTGjjMU+CYwNgh4E7gUuAJ4X9L5KZ1nOaA2lHzlznYO1IQiaw/jyDjWaEqGoMLoDdbleS3eKcCvrdEWuz6Ae2xSOpy0AqyZnWfgnh8IRMsk3ZdHHlPpnFseGB/c4ASIrbTeBu+FVnKxPuCtiQbudxlS4T2AzzPM/mehez7PZ1EAv9qQOz6A+1MsdZwUIFhk4I40lL8qUgw9kpAVbgce9ns3xOM2g260gT8nU6kOXGsI6Gj02+qNFtiBKcrhmb7DvNZ/nwD0idC1jVyH9QvgH2aU1rfHHHC4IeBuA/9tA39OMS9J/eqZYciambEA65Qk7PsA0TqghdESqyulE/y+fydyH9DZKL9r0jqrIfEoQ9itBv6IyJ7+Mt+mqOfdDHg5wn+UQTc8S3xqSLyfcRr8FCk7P40oOa4AB1RG+E4yToo2hv6/+kueggTfb+AfELkSm1qAA6ZZTVfrOQzwlEHzUBbBbYBao+nRy6Bp6ZubqS5SgfOA1/znvAzbcWpkJV5kGF+TOR5F9tEPwL4Ruuc83m/ATQbOwADfgUb0z71inxAxvmvkMdUd+S7BDw2GrybQdYgFP+Odz4sR/G5Ah8jvrYHFhq5LCjmCKiLP4CYZpXIavpkckMDLRS5ofgdOKPQcvjBrJE7BM9UWSMFn30iOADC4WJlY7Gna5Dx5JgbBBPqjjIKs4OPXuth4NyLsa6C7GgmAAcDGiD5fFP3VqHfC1IjQrcADViVXRD1GJVSUq0r2UNLn5ZNSPHHrW2S5+wO3AlUJsheU/Kmsj7pJTti5DO8MFSsZZJ3ir+jTPJZ+J5afWOAKUG6Yv9FJk2HNlfSupBX682FUtaRq59yPuZWl7+33kHSC/nwyn7aQqnTOPaDGBp8nfFDGP0xsBAao3AAMzvCyqxhQ4wNuOzUV8C2rl0ts+HLfF2w6f5oKOKITMMznDZuLZPi3/gKl6P8IaYw/Tp4jqZ/+fh7fWdKhEZKvJFX5wFklaZ5zbmWp9HPlXCneEXv6oZ+dcwu0G3ZDo8If2HFg26uXPmoAAAAASUVORK5CYII=",
 	["refresh-cw"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADfElEQVR42u1bvY7TQBD+9pQed5SYJ8A8ASmvI28Q8wTwBhcqRHV+AKT4niAp6WKk62PqKxJKqjiiQ+iGgkGKrF1n/31J/ElRFCc7u/Pt7uzszAQYMGDAgAuGiNUREaUAXgBIAGT8OOX3Lb/XABoAeyFE7dhfBmDKH+9c5dkO4g0R3RLRmsyx4bZvbZSXyMtiKZ0Q0ZyIduQXCyIaa46hkLQvYih+E0DxNla8nbrGUknaVbLfXnlSfgpgA2DGezwkxgA2vMpSV2Ej11kHcAsgN2y6Z4N3iAzAMwMZOYAJEb0TQiz7MHCJgXFbEtEHnRljuTm3aTTl39huAesjRmOvb1mRxLGviUIhmZFMghOgoXxDRDNXxSX9jjWIWPMKCkMAC+9SvvKtuGJFNEdIuPdOgMaeLyPan4yI6o6x/ApBwLyjw7wnI1wZ+A+VS2f5U1K+NbbShYCRDtN81stwJ4QoIyj5/yIlwxzAcwDXoTqfeV9S/o9cHdz7tPpNaGt/MIa1pzvEg81doFD49oUQoom0zX1dY3/bsL9TeHhJRCO39LQCPtl4Xr1bfd6GpYPij0S0sum4UAhMcAlQGJ/luel51XHuyoxPdREEHERr21heCgHSfS6E2J4bASODs3d/YjYsg21eQOH+VqekvG5ewNQGnApyzWdKAmRubn1CBGS6dk1FQKn57JSw1TaCQoiaiF4fLJuyl+SiPV7hkqFw4Sc21+FTVD41sGvnRwCAiYkNOEcCxpJn38/Ri1XFDshLbQDn4R8dCxqSyASowveZqaAvnsJQZeTZ38gCuDbCHnyVc0QkYOZz+fsioI44+1bhe9Up8NPDuPYwrxyxxQKW4XtVPOCPRqdfAXzu+L6OkTsgorni6PuBf3kNK6G6Wdd5z8demKStYdp50Ueo/IjypavwSrPo4LAqI4uo/Dyo4VUQcH+kKmPH9YKhrf36SH1SEoqAigdQa1RyjgMofqwKtfG2CruqrHgwOgnLlU2hs0TxqcLDaydsM5+MHy0z6/C8ZFtjwYokGn2nRPSe22g5W96NsG6dnUbJWhcpq9Zr92TuGiaFhjxjJcVF4ytN7xwQEUJshRA5gJcAvgU+AfcAPgJIgxZnufzhgAsrlgFmvIjmcPn6ywnbiIKttPFNktsGdbBEFwnwmBdgeUkrbpe2ApY1R2+3FxHDGzBgwIC+8Rfpk9r05V6w2gAAAABJRU5ErkJggg==",
+	["repeat"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADaklEQVR42u2bXYhNURTHf2saUr7lK1+NR4poTAnlWzLGzJSHG+WVPAhPhpSPmkxSPMm7Jx8hH/HAg+ZBJPHAswZhSgyT4V7z93KKrn3OvXPPnTlnO/df92Wd7jr7/z9rr73W3m2ooQavIGmVpP2S5maR/GH9wWdJq7NEvkn/4oek9XH81nmkwUqHbTRwR9LGLERAg6R+uZGXtCULImyTVIgQoaUmgtScBRG2lxChPesiFLIkwq8IEXJZEGFnhAiDpUSwGC+eALQDi4GZwHRgVEI6TAcWRDw/ZWYd1VJ8kaSb8g8HY0WApDHAWWC3p7PltZk1FBvryyQ/DbgHLPU4XRRcxvoyyE8FHgMNnufLM0MWIAj7m2WQ7wNeAQMpTYJnzOx8JQnvZERS6ZWUkzQrxbXAYMW1gKS5kgZCHN+QNNmDajAXx/mVEMfX//tSWNKUEMcfJU3675shSW0hzjd5QL65Gi/pcDh/lwLybREJr6INkbBlcIbD9iZh8vOAi7j3MQtAq5ndqZYA0xy2twkHQBsw1mEfALaa2f1KnIYJMNphyycswGOH7SfQbGYPKnXqzba4mT0CjhRVn5vikI+KgP4ybSMtQqekh8Ay4KqZ9cT1GSbAc4ftaUoioRvoHomsey4ofN5K6qIGvxB8wPfBrytr5A86CqW9w7YKSJoXnNmvTIkGSxy2xuFSe62kvr+U7khBBFx2RMClqkeApA3AXWD8X+ZOSY2+TJe6GOQ3A7dDqsblCfMa57B9r2aIbQ26Lxf6Jc1JeAp8dozrdFUiQFIrcC2kiPoF5MzsTYLkZwETHY/eV8N5c8SXL0jaloIEeCxkfGviOm4vQX57CsjPD9nI/SKpLo7jXIkNyMTJB+N8EDLGrrjkB1P+5ScHW/UufAtOsityvCvN5CXNlrQjaNrCcDyyu4xqJoB9Ef99CfQmxH0MsLCoAHPhCbDazL4PSQBJR4ETnvdEr4EmM+sdcgRI6gHmeEz+GbDBzD5VWgrnPSZ/AVhRDvkoAc55SPwWsMjM9phZ2cf0vibBPPAB6AFeALfNrG84lpnU1wAjsdZ6UQUOtwjtNRGiRcinoRMcKRHyWRehtcR0yMSlhZaISPiaiSttkrZEiLCHLEDSxuDqWjGayAokrSs6GDlE1hAcjR1I0dFYDTWUid+iLAtnOqQewQAAAABJRU5ErkJggg==",
+	["repeat-1"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADvUlEQVR42u2bS4hOYRjHf89nTOQSQnIdS0KkKdfcJWPGTFkMytZkIZeNIeVSMguhlOytsCCXWBA1C9EQibVEzEjMDIZvzN/CEX3Obb5zZuYc5/svn9P7vO//f97zvM/zvB0ooYRUQdISSbskTcki+f36g4+SlmWJfKX+xTdJq6L4zaVIg8UutnLghqQ1WdgBFZI+yx15SeuzIEKNpG4fEapLIkhVWRBhU4AIdVkXoTtLIvzwEaE+CyJs9RGhJ0gEizDxSKAOmANMAMYDgwdIh/HADJ/nx82sMS7FZ0u6qvRhT6QdIGkIcArYntKv5aWZVRQay0KSHwfcAualOFx0uxnLQpAfCzwAKlIeL0/0WgBn218NQb4deAF0JTQInjCzs8UEvKM+QaVNUr2kiQnOBXqKzgUkTZHU5eH4iqTRKcgG66M4v+Th+PJ/nwpLGuPhuFXSqP++GJJU6+F8bQrIV8UxSaOL8zcx+K2V9MgJTr/xVlKTpEEhx//o84aIpFMuEzyI6HNaAfFC7AgYP1VSZ9wtMa88YJyL7XVEXWcFpN7zA8bXAsNc7F3ABjO7HacA5S62fEQBOgKejwh47rYDvwNVZnan2EX1Z1v8PtDit8t963az+8CBguxzbRTyfgJ8DmkLDTP7DiwAlgN3i/RxDFgK7AZmmdm9qG/F6xN44mJriTqZmXUD9yS9L7Y0N7NmoDmubVnmMclJSRXAZufbP29mZyghtmTmostRdiHmOU47OcZbSU2ZEkDSnrB5Ri6mCac6d/aLE6Lx3LB5Ri4G8iuAZ8BJoFlSYwIEGBo2z8hFJL8auFng/Jik+WmJR7kI5NcB1z2yxgUBw2PPMwow3MX2NTYBJG3gV6/QjfwX4EqAiz7JM/7CQhdba1wRdqNTfXl1YqpD+Ch3jqlWSa+dcrgspvVN9Fjb3jicVwWQr0nAEXvIY33LozquCyC/KQHkp3s0cj9JykVxXB/QgBxw8s4673issSkq+Z6Ev/nRTqveDZ3OTXZRjrclmbykSZK2OMHUC4d9q0u/YgLY6TP2OdA2QNyHADNDdJEeAsvM7GuvBJB0EDiS8qLzJVBpZm293gGSXgGTU0z+MbDazD4UmwrnU0z+HLAoDHk/AU6nkPg1YLaZNZhZ6Gv6tAbBPPAOeAU8Ba6bWXtfHDOJzwH646xNRRbY1yLUlUTwFyGfhEqwv0TIZ12EjQGfQyZ+Wqj22QkdmfilTdJ6HxEayAIkrXF+XStEJVmBpJWS2v8iv4+swbka252gq7ESSgiJn6WZoxRpaPB+AAAAAElFTkSuQmCC",
 	["repeat-2"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACMElEQVR42u2aPXLbMBCF33p8AN7AuoBndIOwS6sbWD6B3bpzlzK+geQ+M1aXSWXlBKJqN/YJRDduXwohGYcGQILgD5jsN8OCpAjiPSyXK4CAoiiKoiiKoijKf4iE/JjkGYCvAM4BfBORm8DrMwAXABaR/X4GUJhtLyJl706RzEi+8W92gW3s2D0HkoshxD85OrBq2EbOfnnoU3zdyK0SMIAk78YQH2JCMYAJeSdJ0CSsRwDzgPbWInJZ0+YSQA4gixyfGYAzy/GfIpIPOfKtckJHEbq2dWBM8YOaQHLmuP98TPFDmxCVB04q+75n/ofj+N5xfEnydjIlYc1rau05n3my+2FqEWDjXkSWztfIsQzNHZHwmvrAn7wTsrWI8IpvYMI6dQNOK/u5eU/PAGxFZNO4oBApTei1un6yOSKBfvWeA/5p1AA1QA1QA9QANUANUANSr0IXJFckr8y02qDXj1oKk7ytrkW8F1FXChvhrdcyUjDgYLntHxN8BljEfzBoCo+AbeZ6DuDRF85mSm7Z5Uik8ghUI8HGd881xeT+Drumv1tQxCTBuaPR2URMaC++JuOOvhASIz70+4AtgE+WU89mi2WD4zxk6TMBx28MmrIHkHfyDcFAK7y7DiMhPuwtN79LYYW3gQndizc3zkhuUlji9pjw1It4S31d9iC+COxHtRZ4CxEvsdFgqrLfW8wrsQSwxfEbgzKwH18AfAbwAuBaRF6gKIqiKIqiKIqiuPkFIPqPXy74t44AAAAASUVORK5CYII=",
 	["rocket"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAD30lEQVR42u1aO47bMBB9DFwGiLu0KlMlLtIGq5xglROsFkhv32C9J4hvYOUEqxus9gTRVimtIAhSBZKR9JNix4BhiBRJjWTJ6wHU2OKIb8h5nA+BszxvUacMjoguDn7aKqXykwRKRHMiWhPRNzLL8lRAXzLgktxlttMzGRnoAMANgAjAtIWq6agMsAc8ltY9GQHwL7zinchkwODnAJaOW/0BQAEg52fGBhyVn8+I6N6SzCoiSogo0ugK6wYNGXxkyeoFEcUW+hajMQCf402SEVHooHNVoyMfIvi1xVaPPPRmNbrSsYFPiGjqqbscdCTYAN5r1ZsIsI3OPsEX++Gqp/6VRvd0COBjA/hcYpJEtLHx/4kQoBmAdwCCvafgBwAyAI9KqYrf1QUnjwBCpVTVcj4hz+FQMumVvHIIWojf/d3lyvO8Us03AingU4u820UqqckRUaCLISRD1Q3JSiS4KxPNN0KplS+Fwa8EweuOvkIqG1w3ZGcPAComv90xdmF4/x9nfFKiI9elhHUjwyqmJh8mol+acZ8FV3+pI1epD+hIL/acWNrD1hfz/ZkPszZwRiBIymWn/GJg1sBz9ZdC8zIdx5VY2KuxcGoxbtPVxCxikbBr/4o84/1lD+Ctq8fKhl25JO0aV78H8PLgty2AoE2sz253t3fMHspXpVQMQYZNBYOepOOaYQJpEY78Fi3m8aVL45o+XAmHvrHj9z9YzKEb8A1HWadGYKJbd+1Wytb38NSecgleXgN4Y/j/WimV1AEHMAewaMg7tgAWdTqGVPSMbXcCr/jcMtX+07ZmOCQjzD36/D8wJrEwgo+I5BIv+jAA++m15/Cfmt/D0RjA0whbALcA3gKo2/LBsbbzFRHd7cXiJVd7b2y2pYU7FHz0TvfGZEdvcVn27Uu+2NCk63vN2L+6+ECTjqd9g3dh6bsGfZlLcUUTjGW9cACft/dwu6oStYn7LQmv6twA7Ieu4HdyIxisvKr5Le9jB5jC0VsAHwF8wlNP71CmELjdxcRaZ8iia783FTTjmndzWz914QA+cYy3PbsywMolp9f0Dco2BtBdchLr83kUQgrX2qGPAbjBeS9VUzDJxJD+1vn+0pGpH1yDLOYNE3c8dp4Ca7Z/5RHdpQ47wEbE7hA0GWBjW3nhENip7e1pgKKXGoDhgkFckxOYiheZYyRobKH3drnJ0AUOGLRN8aIyrZah1dbqZuhQiqBV01ZtaLXvLkAfp+TVgqCc/JQNXfGT8pl//Dqf5/2f6jCHH608W+AOBFUwK89OAa/SpMAJgEuuxRV46gTnAHKlVIGznOUsZzkR+Q/Kfg8piHsK+wAAAABJRU5ErkJggg==",
 	["rotate-ccw"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADQ0lEQVR42u1bO3LbMBBdaNIHR2BOYN4gukF0A+kGVk5gdUln3kD0CewynVS4F12nEHMCwZM+L0XWM4pCkADxIyO+RiNqCO4+LN8ugBXRhAkTJlwxhO4HADkRLfnrgxCicnkQj/eeiCQR5Xw548+aPysiUkT0QwhRJ2MFQI5/kfcY5xOAewBH2OPA9+YpCCgaDCoM750DeIRfnJgMGYuAfYMR+457MgA7hMUJwJ1PImYeyMoAbInoSETzwHMjiWhDREcASx8DvnN0fkFEWzbMBq8seOd4E0lTIkoAcyL6LIRQ0V8BDkUTKABPAFYmocsRteZ7TMVSRiMAgDQUuT1HiIsdkomrDbQhD04AG3QwcHzueUIkgA1HU3gSNAQ8dzivXGfckIh9BwkyFAE/Wx5cxSxYAJRBNaGD5Us8RStQ/rZx1WLTNhYBZcqFTAcJq96LIVb8jx33fiOiry2/R1nQ8CQ0FUWKiD70qhFY8HyUrXmkSNBF7KbvgN891e6HSARITYrszAqzwLZFiQAO86Jl7WDN6BdPEVBGFESpqRhPfQfcAfjl4nzs9NiSFeJvqiRKi1JDQEHXAs0q8pBKBFOgaecqB5BdCwFPmuvXQYBt9TlreZdy3om9H6GKvjZcm9sIST7mVKIpjTc2EbAyvDYmWGmATFXWxoaOgPo/9LV2zQI3I3L2xjUCKsPXYqiQhj5pCVAadc1GkAEyG59sNWAxgtlfOGsAV1MvTsVEOjTZ+GK9P6npEUCKLfCQy+FZj0XFYoThX/ZltGmj8TjEKODZb2rFUb0WQy3MZUS0HuDsrzXlbunKqgp2COl39k+aA1vpOvhGIyy7ARGw83owYhgF7oeQfpzfamyrvUWpj0PIQM7Hs6vjTH41MOfLUEJTBTuT9xP2AFCFVtu2Pp1dyOxg0KOkgmcn3i/salby2s3Jjt9pUt2583msEOwi4a1iXLoQwY4vDZqt6+ibtgaacI5HALcm+wncKHlr0XBduZAsXEmgP+fytn27ippbZW0deRBCJEvDlylJIR5Uyvqj7ZXYBCZC8TOGuz/JRBSeiVA85nAdb8kWhYVYXopbEVrdRUQyMl6vS+r+01Sd9E9TEyZMmHAt+A35/Sh4sQAztwAAAABJRU5ErkJggg==",
@@ -1800,6 +2987,8 @@ local ICON_DATA = {
 	["search"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAC7UlEQVR42u1b25HiMBAckcAqBGewDsEZwEWw3gycwZLBkQH83PeSwbIR4IsAXwQ4g76Pk6soSg8LSyP5cFfxgauwND2jmVFLEC1YsGDBE0PEHgBASUQvRFSpR5KICiJq1fdOff4IIbrZMwpAAlgD2AO4wg9nAD8VabM0fI9wuAB4m4vhHw9424eITa7GVxENv8cXAJlNEgRQE9He82ffd98lEb16/L4joh9CiDa158es9R7AAcDG5TkABYAGwHHEe69JlwSAT8cEOxUdU3LKbgQRdW6e7wFsQ61TFRWuiKg4ja8dxpeRxm0cy6HkML6yTKKNkZ3vxt8okk3Nk4w5uLSUuujG37bUFhIOMQfeWsJeMucg2zIsOL3fp+rXLQ75ijHYwTDYNnEf0kavCsr7pjovExNgSsrH0Jk3jwZEP7+TrizGDv8+o42YyUGbUANcWcvNY3PUlcVdqJobj91wBOha5YvPO1aG56Ykd8pMktAlvSIEAdpyIoToMyNgsoi6miBm5CzTlbGWQFYQQpymzt9EQEFPAhMB7UxCXXLmgJcMOSinJseVxwvKuYS1zxGbDwEUZc8dJwIoCgFEtMmMAN3R2e+Ye+5jLpZbtutNqCSoq7Hr1FrAiGg8hWLYtCHaZRIBF51YE3qQjk2A9JvXlsU5FhX2M/Hav7Kp1JYoaBIRcGYVai3SE7tAAuBXkjMKgwDJdzZHzlPphmPddRYS6kSe59MpHWdzAPARifhzNvcEHPlgOKmtAo3lc/GKlYR65IWm9YMefzM0OVFIEA+SUNE/RdalEfSqNT0OGywhxPeNmPF6s6urA+zu3oUQrDmhBS8OIyKQdTlIywlySPS3pS4rEgahxNIrTDVce/EqOxKG3KCOq/qJhnfqqpycmJD5SbgrmTtLA6W7b9T4dpZTSRDcEXIvvYX4j8CIa7t81SFhxLkioaT/HQ4Sdr6a4Oygwvydnh2GSCiTJ0FmEob2mojokPw/BgsWLFiQI/4CDhTIzQifTV4AAAAASUVORK5CYII=",
 	["settings"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAD40lEQVR42u1b4XWjMAyW790AbHB0AzYIG4SbIGyQbJB2g24QNmg6wSUTQCeAThA6ge6P8i6vJxvLVmig0Xv8AQVZwpY+fXYA7nKXLxNEXCDi4js5nCDiFhFr/F9qepbM1fkcEVsclhYR87k5X6Jcyrk4nyHiKSAAJ0TM5hCAGsOlnsO656RDxAIRU7oKusdJNuUAPDIO9VympwrRM/qPc5v+lUO/GnsZ/Lii8ykAcNP34PhZw9zL6F3TCgAAbAVODj1b3wqK2zFgpkbE9fkrXehx0nvY6S2/3Z1zByXONbPEWtJLtR3fBtZycUKzJM4QDKEDqyPr+OfSl3gGvFOyWcc6v1MaSC+p54QeeyXbuzHxOydNCJihIDRKYyg1p/6ekFuOiBvHIDuNhoY+ROcI7obGUtDYREvBOGp4yzx6NcYUFv0UAHIqZZ0xptFuqgAgIRsHstExensAWDKveOD0bcY2lkjePFlBJZKTDaf/0/IeztGjMabXKKv0hc6zBgCgo+s11oYxpkPEIwAsPHyyBuBa0HgLAOWAXgUAT97TdeQ2NotIZKMwQlQ9OMlF09RSh8UsTSSW2AU4f/JtwYdeVsVSVUpYoox03tmCh0wlryA4svGlHOgakjRirOGs0sAXrANnUI+IHJYoHPC3iuhXytiE6ApC4cghNufTwB4gCRhfqVUVbEb2Qv3Cw1YhccYBf0vt0shN6VbS0wtseXMJlt0m76QnocQ4bG+bztz9o8DWMdLW4RY4wUmIJABcKXm36HIwVrINvvB8p20MuWoAKKGsBCxuZ0twnrZAEABuDKsxKkBIGXQCqAE0N34ZHHh5EwGlbUDoFAiEGvUgDMDLXgkK/6FLAwr3qlB4AMreajPUqzRDtIZPsfT2QCB9pAqYtbY2PpG86NsTIhyUPUQm1NRzNlSxe3uWFltEiqoLcXwlDaSwkKJ7DeJVQPTeaXHpxsjeGPPbov8L/m2M9MaYo7JjC/qKGTU775aNkT8WKPwgYpod4OIFEZd0zHXtYGNaRFzFzBqqRivHAcvz2YQFjenFRr2Nlbltg8wCs7nW1nwwGqyUBiCi0yMOV+owwgKcLZFWcEBCy/lGox3OAeAJAD4i81gKABsPvY2oZPHyQWPONbNwQkuis+zRp5/02KXgYefkAEjJRanjziZ0l3pfXY+fpXDaAcGfb4ESk8qzgFobIj6nFwACHW9Cvo579nbNrfJrs8J75t7Sclg6Bf5oy36ylLNjTbeE3M7H5ZcOtJfBlCUSRzQwdYk49NjjHP4yMzYjdOv5wOcMcDe7v819QpOPlrzQ0LMEvotQfsjgLnf5MvkLm3qGwBAznyIAAAAASUVORK5CYII=",
 	["shuffle"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAC20lEQVR42u1bvXnbMBB95y6pWKazuqQzU6cwM0G0gZUNOII3iDOBtEG0gbgB6QliF6lFNU75UgT6ok8xAALmD2DiNfokk8C9B+DuAJyBhIRoQfKa5PUciWcka/5DTTKbkwAl/4eXCBeRapBrftvNYiaQXFKPei4ibJIISYQkQhIhifBCEeQ8wwJwA2Cp6aNSnw2ARxFphsz2AFwBKE7ifJdR/ADgneZvvwB8EpFHXac13VCTvOmZeEFyTXLPYfBk6tgXe5J5D/n9N46Dsu9UOANQk1x5ks8B7ACUUzuRpgd1Vx4jX3M8PNmc4Eo5Hp3DWQC4tPD62MVBqv52ms3NEQfldLvivbcTdBi1hS3kdGznztBGQ3LpaNfa0l6GATx2q+nw1rbuDcZuPGwZl3yH6FFZ3qujJ2+ZylvD87c6Y6Mjf+LJTyNIS7Iw+A9dklNER/5MhFKN7sLw3E5j8F205B2MXmkMfnAx2NBO0OQzw9R3DXebqMgro39ojN56tFXGRl4XKlsfo59xukGTz0j+tO3KXiBsgZBhiPnVHI6oTOnuYg4C1D77hNdCvtTF/DmQ7y3dtfQTZn1AX+muwylSOOf+hpvbti8j+6wPCDbd9UyFpxXBYNh2pFk2nQiWdHdheGet7gOynsSeRgTXdPeZUdxHK4LPERfJyvc0OSgRLOsxdxSAJNfRiKDI7z2PxU3ChS2C2uSYzuQ6HXF1MPrL0CK41gcAf6/GTDu5A4Cia+2A8hNXhkdauF2NOdUHnAtQw3xP1wWfRaRyGLVMEbzEOPgtIm+PXy5OY/ILyR8AfHUhDwAi0qoZdz+SAG+GqA+4B5CLyMbnZbVcCgDfp87lXesDKt+iCIuD3RguXSetDzhO7wZAIyIPAw5GppZkrmzJ0a1Iavj6gIAPYuK7LkvkE/lEPpFP5N3Jr2ZL3rLrcyYf63+NNZp0vFB7C7z2GRBPfcDAQoRfH5AQOP4A8FX/rvyNFS8AAAAASUVORK5CYII=",
+	["skip-back"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAClklEQVR42u2avWsUQRiHn7ms0UaiqKAQkFSKgYgJikIUA4IfoIWfjfoHiFiIiKClnRBBQSurCKKFhQkiWKTwIyLmFPGjlGChqBGDpDDG/CxuxFM28XLczuw685TD3b78Hnbe3ffmIBKJRCKRSNGR1C5pYYjBV0ga0m+2hhR+u6Qx/cnXTO8ESS2SuiQ1ew5/RtOzLauivZKmbJFRH7ebpHmS+jUz+7IovDal0GvH4dskvdC/2VvrNUuzqN+VstbmMHwPUAbaa/i4yULA55S1uY7CnwDuAgsafe0k512+GbgG7M6qRpLj8K3ALWBNPV/PYgu4DN8NPKszfGY9wFX4o8AgsMhFvSRHwecAV4BDLusmOQm/FBiY5lH7fwuQ1AncAZb4qF/yHP4gMOQrvDcBkhJJl4A+wOtQlXgIvxjoB9bnof8kjsN32P2+LC9Pn5LD8PuBx3kK70SApCZJvcB1V8NTbraApBa73zfmdeZIMgy/CrgNLM/zxFnKKHw38MhjeO/T4ClgPgUgKwFNFISsBJwFxoMVYIx5AKwDRjzl8v+DiDHmFbAauBfiFvglYQzoAc4HKcBK+GGMOQ4cAL4FJ6BKxA3bF94FKcBKeA502Jek8ARYCZ/sbHA5SAFWwqQx5giVX4AnghNQJeIqsAH4GKQAK6Fs+8JwkAKshPf2TugLUoCV8N0Ycxg4BkwGJ6BKxEX79jgapAAr4T6Vk+GndV6i2MfjVsJbKmcHNws5DTZIwoQxZg9wEpgKZgukiDgHbAG++BTwIWVtxKGEQaATeOmrBzwEnvy1dsHxnfDGTpQDjeoBs2utlVPdTZI223M+b0g6PcMfJXcQApJ2ShpPEdBKKEhaKWnYBi9L2kUkEolEIpFIDfwEzZWtBA4JSyQAAAAASUVORK5CYII=",
+	["skip-forward"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAChUlEQVR42u2azYtNYRjAf8/MGDYiZqOmhsiCGh+TmShCKcxskI8Fs7HDimzwB0hNFvIPoHwsbNgpFsKQzyGWKGWB8VEUMj+bOyXGfJi555zrPb/l7Z77vM/vvO/z3Od0oKSkpKSkpKRkFKhb1Pvqe/WsOi+l5Fv8k0/qhlQEdPl3Due8tka1TZ1WzSDbHJ5L6pQckt+o9lfWMKAer1agrY7ME3V2xgKeDbGOZaO9vm4MsWIU31kIPFDXZOhgzl/WMeECRst04Iq6PyMBk4f47HOeAgDqgR71nNpY5OI+FgH+w+9vB26qzf+DgH+lDXiodqQqAGAmcF3dU8sCYpyxJgEn1VPqpNR2wK/sAm6pTakKGKwLferSVAUAzKrshJ2pCgBoBE6rJ9T6FAUMsg+4ps5IVQDASuCR2pqqAIBm4I66KVUBg8PNRfWYWpeigEEOVqbKaakKAFhbqQvza3UanAhagLtqe6oCAKYCR2p9GBovAynvAICjeQvIq2C+BBZGRG+KXeAqsCginqbYBnuAdRHxsZpBGgqY+FegOyIuZBGsaAJeAZ0R0ZfiLNBbOe99WQYtioCTwMqI6M86cN5H4BuwOyLO5LWAPAW8Broi4n6edyAvAfeA9RHxNu+zl0cNOA0sL0LyWQv4DuyNiO6I+F6U1jOWIzCeYehdpb/fLtq/riymwXvA4iImn8U0eB5YERGvijpwVKsG/AAORMSOiPhW5HGzGm3wA7A5Iq5RA0x0DXgMLMk4+aHG5TfVEDDSM8HLQHtEvMj4Jv7+qOwGcHPCo6idw7wgeSjPbay2qqvVVWpDtYI0qV+GeFl6PamgdqjPK8nfUOeSIuoCSkpKSkpKSmqdn2outFVqghs9AAAAAElFTkSuQmCC",
 	["sparkles"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEQklEQVR42u1b0XHbMAwFc/6PNog6gbmBlQmqDeINmg2sThBvYHeCeAPTE1SeoMoEViZAPwr1VJoUQYmi5DS4013iI0ECIh4fQArgU/5vEVMNjIgpADzQv29CiCqQXgkA9yF1hjY8Q8QjXssREbOBuouWvgs5Y1bGS5qYTXpPmnTr8nNuDjigWw4DVtaVzMn4BPmSxHLAXUQfZCO1HSQxHWCK7TcAeGe21d/4po0nAHC0tPsHEyYDRkRUhhWqbL87dK2xv1xoC46+ApaG3xQ9nLahQiQBgLgOIFAzAVtJz9UkHUBYDpxSHXsFyA5DKs8+AAB7ADj3nMt3IcRfBy6m3AEaqmrZrTJLeIAQogYAqTFHCQAvhuaP7TffNn5qAqQcAHnwHGPWPODBEccls8/N8gDZwwEh9uv3yR3QkeFVlr85fU24oAzAuJ1DDvDMiU0LaXnukW88I+IWEfO5JEF7g2GloV1paLf9CBiQMonMWDgwuQNWTGMrZt/bcQAirj2orPLUMW9BxCdL+avu6FNbsrenseYpAhm7oniVFPNd29cPIcTaBpgA0GWsolApAaAUQpyiOoAytCUZ2BjrC1SPtGfb9v2jp76y5RQFAGfKFYansIj4lSovR0c1lysFY9wiwDgXmvOGbEh8DJeI+IrhpfCYQzHC+K/OchhlVJeAg9ZEhLIeKzCjvnXA+VydOwht0OPActO5VeUpbbHeM5+QrWc5QJ0SQjxeOYAKhb88FJ1axlahjPV0Stpyig9p+tIUYxYOytqklA3CNm+2mppnmBxOL7FxSLNq7i30vOIyQdSeBOYriWG+PB7QIwSUFgKnyCGw0kIg6xMCOgiqgQlI2SImKpRTyFg95vvKSQiRdXGA0NvObsA2uBthW3ZyAck8xvaVjYfxmxHGP3idCxIVzomVqUArIxYVrmnOBdmQhEyGpJYM+ZKS0MnQWUuGSp9kKFQ6nGnp8GqkdPikpcNRyZd3NchW4Ojoc7Es55utCtnO8TML6pvkNo1vGcaq99vA7yNUhU/McnfK7HtzDjAlTkvmb+XYk1swa4ANwjcIfPbICEsDskvmqqimjN3cQUNfOLW2DnDLfNrENDzxqAmyrp250N22W8Sw14QBBQDkzP4SAHaMlXB2LHnJ7DOuA2jJffPUIclpvkAoZxf/lrs6iIhVx6XGRlLfBMcRIsUUDjDJ3gCOJsl7AGFqueYeDQDv2nUAS5tCK0YePMiNaz+XHcXYMoYDFlpB0VR95cZi0lHBrRHx3VChtTntLcj5nicIVh2pri4PPUDL9EYzSzEzGgDeaW/adK3spXECxewO+Nde2qIs9HfJbBsFBPcDSlAJg1lyJZ/KAUnP2l/O1D3aJzOhcwCvaquH7tE+mhrDCZyVsPXU6zp3qHEu3/rRkrWdz6u+RIVIke3zmejGC+akU0L+YPftWzoB/pwtVvApnxJdfgPTtYHSTEZ5lgAAAABJRU5ErkJggg==",
 	["square-fill"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABKklEQVR42u3bzVHDMBCG4VepwB0QKsAlmA4oATpJB5lUQgvpAKUCoAN3sFx04JA4aMghkt/v6p+ZfSytL1owxpgVJ/31xojYAk/ACEx3Ws8RyMAppfR1kzdGxBAR+2gv+4gY/rUCImIE3oFtoys8A28ppVwNUPQ+Gi7+N8JzSmk+d3Gz8OCug+IpPWtXtQJKw/vsrOE/nmuMmwW13jLWbIHVA0xrB+gxw9oBEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAgL4z1wAcOwTINQBZgDUDlDO1h46KP1waoLh2XD4DD40XfwKm6uPy5YEX4Lvx4l8vFX/1N1gmLcZGt8OhfPnFflY7NDVyv0NTc9myGcg3G5oyxpie8wP2I/WfPpTeyQAAAABJRU5ErkJggg==",
 	["square-terminal"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACF0lEQVR42u2b0VHDMBBE9xgKcAeECnAHOBWQEkwHdECoIFBBQgWBCggV4FRAqIB0sHxEH54BGSlRwCfffspRxvsknU83EmAymUwDloT+kOQIwAWAEkDVUz8rAA2AtYhskvwjyYLkjPo0I1kcNANIlgCWAEZKZ3gD4FpEmmgAjt6bYvNtCGMR2f708KSj4zQD83Axaxo1A1zAe/f0ee254UtP+3lwYCQ58QSWSd+HO/bdTzqmzbeRF5Gn3n/Xd+/4GujJC6BCfooCkKOKoQPAUQC4THHpAs0byWpQAAAsAExa6+yFZD0kAFc/tM21QEgBYO1pVwEhBYCbjme9h3AwABFZAbjWCiHJZ1BEFgEQymwBBEKoswYw2ESolRDVAOa/5At5Aggw31mW0p4KVwHmFzkvgZlW86kAlFrNpwLwrNV8KgA1gMfWvmCsxXyqVHgrIrXsVLrU2BcwS1cziNEnyVv1iZArtb90xAyfCgDTY1Wk/zITHMFTlwtUpR3A9sD+G9UAXCZ4t2f39bFS6dO/jLgiMiX5FLsUugKrKgCtmWDbYQNgAAyAATAABsAAGAADYAAMwL9ux30AVhkCCN+EDemg5D5HZfs+OypP+3nUHQKS98xH9976RAeAwq2bM+Vrfw2gij4u7zpMAHwoN1/7zP/6GXTlqxLAg0LzD27kO6N/7KWpEv29NLV1S7YB0CS7NGUymUw56wvpysZ9NRJtDwAAAABJRU5ErkJggg==",
@@ -1811,8 +3000,12 @@ local ICON_DATA = {
 	["upload"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABvUlEQVR42u2ZwVHDQAxFJSYFpAOgA9OBS8gtR1wCFaSGpAPTASWkAmJOHIEO6OBz2cxkhqwtGRJb9v8zPlhje/SfV/IqEaEoiqKuLwBrAK/pWM/N/Aa/tZmL+Qp5VXM2P20IRvPThOA0Py0IPc1PA8IfzceG8E/mY0IwmH83xuJBMJivAOzPxPeWe8ObT9edBeB5RljzXQBCQvAm3AUgFAQApTdRCwAjhHIMAA7et2QFYIBwGAMA9xL1AOiCMAYAL9769AJogVCPAcASQJ0Saix12QfASb9pjuYBLKNuk3sBuIRu5v7bJAEQAAEQAAEQAAEQAAEQwEy1aBlYChF5TKfPqtoEG7j65w+gODOtFVGmQU/+uRKojLGxypx/DkBhjPVVY4z1lTn/oZpgbYwN1wQvKVVtADycLMt6qCa7GKpIk+En7gMIgAAIgAAIgACuoW8PgP0EAbimwVXm3+hVgDHYlbtmHnInIh9BV0eZid+r6qeH5BbT0Ta7JW8BsEx1cxu89t9EpFRVVxOUdMNKRL6Cm69y5js/g2liK0RkF9D8Lr351u6vjp5wl2AULY1m6O98czxcDY+iKGqu+gFrm38z7iAleAAAAABJRU5ErkJggg==",
 	["user"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACcElEQVR42u1a23XiMBC9QwUuwR2sOwglUAIlZCsIHZAOvCW4g5gOvBXAVgBbwc0H+uDkSLGFBj2I7jn+Ab1mNCNdzQxQUVFR8YMhsSck2QF4AdAAaM3PJwAXAAcRmZ5OyyQbkm8kj5zH0bRtnkX4Dckz/XEkuSld+D3DsS9V+J566EsTfrdQsNF8S/BaivDrGUF2JFtLv5bk+0zfdQkK+HAs/rREAKPAk2OMj9yF3zoWfvG51sy1eXGMtdVc80pZB64d3orIZTE7u7bdes6RhQXY7vshYLzBMt45SwswFNdm5mPAsLa+je0QzcEFXD4ewu1dfdtczwCbP48p+majAOMa0ftmo4BAcy1HAd+Y61pbATFc416TtfH68z2ntqHGqtdqDBcYHLfDPa+5/gHXapTIj4vC9kvosBmj16DUqZTwOhPl6WYeQseYT2J51FmAa+DzO4Iz3RCd7uZz4SAi+T+Hb8x4UowITcUFSc0pPikJ36JEGEsYAoQfniI8bg63yXPXo/i7RFZEB2Bj2GED4Jf56y+umaERwPCU2aGKioqKHKF+C1jy/6Ek5oTc6wc88/+hyKt+ICD/r6GITWrh90yPfSrhe+aDPuohSHIH4G1B04OSvl8WtPktIu+xHjbe+X+l53X6+oHQ/L/SBqSpH9DK/ytduyr1A75hcdcOe+X/g9lbqvqBGIkKz/UE1w+sPCbrkF+iwja3V/2Ajwu4fDwlN3fN3T7qDLD5YzIL0Jh7hR+OqoCqgKqAqoAQ/MtAhv8xmdfX9NYug4jU19J8L14inpM1hoO3AEYRGXIwYxMaW+MaPP0T811SUVFRUTQ+AfUcrDLven9kAAAAAElFTkSuQmCC",
 	["users"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADF0lEQVR42u1abZHbMBB9GwSGYAY1g5jBmUEDIUVwKYI7Bg6DmkEcBHURJEEQF8H2R3UzmYxkfa1st6c3c39uslrtk+T9BDIyMjI+MUh6QWauAGwBFABK9e8rgBHAmYiGgDULAF8A3IjoujoWmblg5ldmvrAdF/XbwpVQZr4/yJ+Y+WVNxjdPG3TFhZkbh/UvMfKpjX/jeLxZdNiwW8r4luXQTujpVkcCMx8cDevVnwv2E9+XLlQ+hfG1ZSMHZi41ciUzv1tk6wm9H/KjQfau05uCgJNhA9cpA54IvBrWODl6nMEgf0xt/M6geHR1aw9GjDHveeJZlCkJOBqUNgFrNTGnqJ6EDl1KAu6SCg2neI88kN5nDxvPEFd3zfsITnWyhcc11t2WbRICDMYDwBBBgEnWlYDR9DxSEKDPpoj6JWSVfCyB8QSopzG7rOWkx9kI8GFbgyqFbp+UeyNwXWtpAjyehk7+ltIN9lIhqPLjUW7VkCqncYMKncE7tAF8tjFuVSU/paNrFK38mELY1iUcVmu0MSH1REjeIzWYeW+p8lSWROgSmtKq8tiPkGxStCiqmN5aApzhIdCpHv5MOBNRbdD3FcA+VD7VUxgEK0KD6eo7Fl8Gn2xUioRSiIRhyos4FFyPsxsfUK4yobNtfuKjm74A4lkmGzxPvXZc+2A4dZHCBwkTUQFoVHRY4G83BwB+qfi8B9D5dodUlahR8kciGpGRkZGRsYAX0PT/Y93RFWufH/Ds/8dCYn6gljQ+tP8vQUQTWBSRmR8Q6v//m/MDwv3/1c4PkCn+BvDqwNNZ6KW5dHO+EdG74QN4BGCbG/pORAfXxMa7/y+UXi8/PxDb/xfKLGPnB/qg9Fmq/5+4+LpzXMN/fkCy/y/kfuedH5Du/wuQEDs/oPum/Hz8zeYpxNVd837BUF2n22d+QHd4lZYApOn/x8Kk25WA0fQ8dAToA4XIHn5UpjbD/MAGnxyZgExAJiATMIXbCvb4ezZ5TXvrsLT1mtbYIClPmtx6p/xkT0TdGq6pykVqVTz1bo3FymdkZGT8t/gD8rWEDBNBk6EAAAAASUVORK5CYII=",
+	["volume-1"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACr0lEQVR42u2aO2sVQRiG38/EcGKiggoB8RKTKGh+gZI/oRBL/QFaCEmhHjEQFBHv2IgglhYBtVAQG7UStbBUEG9gQrSw8EIsTB6LTCSEObt7LpucMztPc9id3dn53nn3OzsXKRKJRCKRSCQngG7gBvAZmAHeAuWiBL8D+ISfO0Ap5OC3AV9I5miRgwd4EGLw/cAk2fgVWvB9GXv+P6H1fFLwr4IVwGX7pODHgOEgBXDBTycEP+KuOxicAFmDb2YB2lMCHJC0pUJxj6Sr7tdH2cwuLTqea5VeLbl3doraOeGpd7jpHQB0SXotaWcddR43s/Ot8hqvWnJ8rc7gRxOCtxod2QYcBiaAK0B3ntavlZ/AcEr9viQ4l6Fdd5fc8yQvAYZqCPwFcB3ozVB/1f8CwMYKzz2QRw7Y7PWtmeWZc1PKf0uakdS55Pw54L6ZzTU6BzQVZvZH0hlP0S5Jh/JIgs3IZUnTnvPjQEfwAjgXjHuKtkraVwQHSNJNSR885wcLIYCZzUp66CnaUxQHqEIeGCy6AC3vgGoGQ6VGfV63qgN8vf2mSALsLqwAwCZJQ0V2wKikjkIK4Mb/RzxF3yQ9K4IDjknyTYKU3WdyuAIAnZJOeoreSbrd6NHgVIVGJPEy64RIjR3Q5ZkLkObnHWcbrvYKTInNZmjXvWWZEnMPu0V9jFQpwN8MbVoNnAae5jop6h62FnhfpwjlCnW3xtogsM5ju7qdUKsD8qbdM/b+IWk/sEHSdknrK9zbo/l1BN/S2EWgZGZnUwY+bWplMiyOjjW7A5ZDhAtBC+CC60sTIdgNEotEGEhZUX4etABOhP5ql9UVGs4JXwu5Ta6KxLjAo5Vuay6jQTP7KGmvpMmUSx8rZIDehM3SE8AahY77tF7YLg/wHTilSCQSiUQikRXmH+KIvjLLRygbAAAAAElFTkSuQmCC",
+	["volume-2"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADyUlEQVR42u2ayYsWRxjGn3KMmVHHiOMe4zaD4EIY8OTyF4wgqIwKEcVjiAdBIcYvKEg8RU1EBFc8SQ5CxF08uJzcGBNPbiQazAxqgmAWR8SZXy5tGIaqru6er7vtz34uH19Vv/XW+9TT1W8tUokSJUqUKFGiREoAhgP7gN+AbuAuUHlfgp8GPMKOH4D6Wg5+MvA74Vj3PgcPcLoWg28GOomGf6rodxlwAtgM1OUV/PSII/8/quT38/7KAgblMfJhwd9MgwBgGPDK0vSurGf7sOC3Au0pEfBxiN+1WQX/JKQTG4Lnlqf4Chxy+H4NLMg9+AwIaAB+cvShE/jQZTvY03CLpEmO6nGSvg9+bagYY3b2+d+b1kAYY7qBNkkdkib0q54oaaOk7VHZrA/e2S6S4ytLu+1pKaCPj1bHhPgvMCbqjHqfgeFLR9upExD42eTo18GBTCZRsSGk7URzAFAHrAGOAd8BwyMo2PZF6gVm+QyT4m+g3dMxGwG9EQj4sZ/NpQg2Kx393B9mtDBB4NeBPcDUCJ2KrQCgyeF3aQR/HRa7x6q2RGO8m7EVEKjypcXuni/VBT5zkPdp3+eyzZfjf95eSfrGUjVD0mqP+WlJtgFsKwwBAXZJemIp3wYMCSHvhaRrhScgUME2S9UnkuZ7zM9aylqLpgBJOiDpV0v5bI/dbUtZY1/lFIIAY0yPpDOWqlke0z8c5eOLpgA55oHZCQkYUysEJFXA2HeFgDh5hm0L3Xhsenx+i6QA22jf8diM96mpSATMTEDAuJogABgtaWGVFICkp0VTwEZJQxIQ0Gope2aMKc4cEKz/v7AFIumKx7zNUvZz0TLB9ZJsmyCVIE0Oe23mWqrOFYYAoEHSZkvVA0lHPOaLHOXnXQR0OToRhhtRN0Qc8A3AMEkNlvJNQXocBtvJc5cx5p6T7Ry2xHoiqOB4gi2xxY5+7vUZHs54U/RNhGA+ALYAlyNuig4KbqHYMMfnrBH4ZYAkVBxtZ7UtvsrRr6NRGxhhkd2AlZBUATGDbwb+tPlxzVODLWvvvyQtAUZJmiLpo5A0c7cj3dwB1BtjtnsWPnVVDL5J0kVJTZbq/caYR2l8pnyHo1uzUECwe3zL0YduYGya32ofCd9mQEDYidaKLBKW6T4SUrwg0RTnkDZNElo8J8pXUyJgpONE+EAeqWtz3GP1Kvntf0nqVJ43xVqApzldkzsJVHILPsbE+Bbn815wpbIaNMY8lDRPUqfn0QuqZQBTQy5LHwOGqtYRpNZvr8sDPAe+VokSJUqUKFGiRM74Dx08Kg8MKaOPAAAAAElFTkSuQmCC",
+	["volume-x"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADGElEQVR42u2aO2gUQRzGv0mCxkcUFEkQHzE5C0tLwaQ1jYhgbAVLsYuFEiEQsJAoKiLYWFsoGIlgYiWmELVI5QM0qGBiRLCIig80Pwvn5Dz3MXuX824n82vCsTOb/b759r+zMysFAoFAIBAI1AhgNXAZeA18AZ4Bg0tF/DbgFdFcBVp9Fr8FeEMyR5eyeIBbPorvBmZw45Nv4rscR/4Pvo18kvhH3hpgq32S+CGg30sDrPi5BPEDtt1B7wxwFd/IBrSkCCxI2hRzuF3Sefs3ikFjzNmS3wt5GdVWe8/OUjknIs7b3/AJAFZJmpK0vYpzHjfGnM7LbdxU9vtCleKPJYg3FSayGTgMjALDwPqa9LfRr5SPQH/KhUQVwQUHAZfK+ry1tclF/DLgdln/aZv0fxrvrkD4A+Ai0OlwMZmfAkBbzP9NNSFGfJFDUTVgY2RujTG1rLkpxxckfZVU/trcIWkS6DXGPI8SL+m6pL6Y887H1YCGwhjzWdJIzOEOSffKk2DF35S0N6bfE0mjixLRjMWo0hqQFOW/bocsbXORAJuC75L2SRpPSMIksMOOfFzs5yT1GGNe5MqADCZMZRWfGwMcTVieVXyuDHA0IZP43BlQZsJEStP3aeIbwYC6vwzlLgElz/k9KU032KdDwRsDSsT3OXbpSDOhySPx3yoxockT8XOSdjpMlgq5M8BRfI8x5qnjjLGQtwScc53hOc4YJ0rXA5oafPTbJB3JMslxMKFL0oEoA2ZjLiKJh64LIhUW4eJ6QJT43rhJTokJY2nrAaVCV9RhSeynQwqGF3lJ7DFg4jpcoToGMhrww0FEC3AGuAuMAZsz3kbu/e0a3HSVJgzGnDsfe4PAGuDGYieh0gTUmpaIAjIvaT+wTtJWSWtj+rbr9z5C1NbYGaDVGHMq5cWnWXnGYXN0qNET8D9MGPHaACuuK80Ebz+QKDGhkLKjfN9rA6wJ3Vm31eUbNgnvluRnchkKY5Hxel9rTd4GjTEvJe2SNJPS9I58BuhM+Fj6GrBSvmOn1sXP5QE+ACcVCAQCgUAgUGd+AU0+AMNslUEXAAAAAElFTkSuQmCC",
 	["wifi"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACz0lEQVR42u1a7bWaQBC9kwrsIKQDOpAOpIOYCiQVaAfPVMDrQF4FagXSgbwKIBVMfmTI4ZhVFnaXD917jn/wsPO1c7mzAHh4eHh4eHh4eLwmaAyjzBwA+Hpz+ZOIiqdJADOHAFYAIrkUyE8HhfwA4ATgg4jySSdAqroEEEvQC8u+VpKMDMB5jN2iCnrBzFtmvvDwuIjtxZiBlzw+ysESMbHArSSCdAMHsAGQ9Ojts/Ru3cc1mRV1Hwt/1AQZNmxEwitduWIP4BcRVVbYnJmvHSpRMPOemWMb21J2XSxrFh38uMqTyMj4RtNYxcw7qaRzDSG2Kk3fNn2zftCs9noMJhYfd5q74qDto+aWL5h5PRU5K0UojFtCFmpDMlVdz8yJhv/rR73VVvUQE4fs4LbdEKhujB7ckI2iuMz4IXsQT/SfDpCsXBXr/SSivaFDq8bzPVQMR83hJ691PxGdTVsCwJvir2/KWeKGA3pveWmn78K+paG6O8haC0stsda6ycDY0aHcPfbVGk75SyqeDqj70yFEly7ZpCMOQG+m5EwmjxsAaYPU2vC7QXB5g/ygGIS6DEA5gB+uTozuBR9rktu/wainDd0BqOxjw+WAdGo+ay3YjGRN+4NPR0dSjYrHDu3raP69K+Nhi+HdgC24a/EldGE0enAWEGNgCEdUbVLX9iOvmtKAdGfwqZzNLWLwJEbepzAgSWHexadT14LQCA6vbgaiph7IiegDzwbhj0MHhXdw0scjBX40HH6iuQa/taj5t3MK3NWAlM7iVEr0uy5OmhLXrcqznICyJeBYNcvLmULckpByDgko7qjFpOPxtkrlFXNIQKyoetBjnUCxG6xLbnKUhAB/vxQpiCgzTagIpmwSX4V4eHjY5IolMy9fMfDFzZdllzm9e7SRgGQqr92/jJQD1aFF9EoJyDSvPXUb1B86VUOeKHt4eHh4eHh41PgDVju0yDEbHiwAAAAASUVORK5CYII=",
 	["x"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABB0lEQVR42u2aywGDIAxASSdyo+JGbqDdqBulF3uqtRXlk/DezYMkLwgqEAIAAAAAAECHSOqNqjqEEO7r5UNEniUTrxpfVQf9JBaMHzfiDyULMOk2sZK8quqU0t7t4vzmnEVY256rTxxfhkDWJ2Gn58sPgT8TihZjNZdYs/IlEmxePmeiZuRzJGxO/srEzcpfIWBe/oyIG/kUIXfyR8Tcyh8ogl/5k0XwIZ9YBF/yB4tQVP4WgCHAJMhrkA8hPoX5GeJ3mAURlsRYFG1F3kwRut4Y6XprrPvN0Z3zAVl740cRphbWA0YRWXIVYG17bGHmd3NE5uwhqbf0UumQVLX4AAAAAAAApnkBMxRL91K/ghQAAAAASUVORK5CYII=",
+	["zap"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADxklEQVR42u2aXYhVVRTH/3tGxLFURoQmGERhIBkQBZHBbJ4mKgNJnQk/SlBJE4rsSRFJMfoWEoQMLMOvQDD8IGJ6MFFfBHFMEXwQHMwHBUFMqxGbyV8vJ7hdzl73nHvPHO8+M//Hs9daZ/3Wvnfvsz+kUY1suXpJBHhBUoek35xzP4yoXgC28X/dAt4cKfDr8Ov1osOvxlZfkeFXlMHeAwbKK1BU+G6S6XoR4RcAgwkL8FXR4LuARyTXi0WC7wQepoC/DzQUBX4+8BfpdKAo8HOAPwzQjzzPF+eRX8Mww8+U9Iukp2OahyS9Iqk5pu1vSb2h9/wM4K6ndweBhZHd7Zj2E6HDtwF3PPBDJfDzPDarQoafFi1m4vQP0F1iu8NToAmhwrcCNw34FWX2N2LsToUK3wL0e+Afx8DP8ti+FyL8FOCaMdWtjvHZ7rFtCQ2+GbhqwK/3+F2Jsb0QGvxE4LIBv8HjN9VjvyUk+EnABQN+k+H7msenPRT4JuCcAb+1gv+HMT43QoEfD5w14D9OEOMQw69fgU+AZ7KEHwecNF66I2GcjeSnm8D0LOAbgZ+MF+1OEeupaA8wL50HXC3wDcAx4wV7q4j5PPAgxyIsrqUAh43A39QQdzbQl1MBYvMckyDJg5KWepq/c86trbYAzrlLkuZE7+mQ1JTBUDVW0i5Jz5U9n1xND+0xKnqkpv/V8MxQjUCvJ98vsoQ/XKdT9HEj5/Y0gbqMQEfrFP6IkfPOtMF2ewL1Ao11Bu4qwO+x/H2DYGvMs35JOyV1ZnBkN+CcO59RDfZJ6jEG6XXVVHV/TlNTHzC7ht7/1oj9fS0/q54cP1AeAHOryHGvEfNYTadK0XRyKcci3EozpRpjFNHnemMWg0ubZ89+uLQoYV5fGjF+znqEfRb4LKdfw5YE+Xxq+J8BmhSCPNvh71Tw2W7AnwsJvt0Dsczw2VxhqRvOQQrwgQdkqsd+gwF/GZgY2k7yxTgQj+16A/4q0BwafIsHZltK+GvAFIUm4H0P0MwyO+v+YH9wp0clYKcrbYdH9wcfGxucraHCT/aAfV5i0x2dIvu+FqcpVAFrPGAdJfBDHps7QJtCFvBjDNjtqG2hAX8XmBE6fJMHbhfwsnFz9PfyATJrjcmpBq/6NkYk+RYwf0rqcs5dUegCDqZcGA0A81QERadK91PAPwQ6VRQBL6WAfwR0qUgCvk4IPwgsUNEEXE9YgCUqohLCL1dRZdwa/U8rVWQB7xrwb2skCHgjZof5rXrIzeVciB5JkyQddc7d06hG9cT1L9sT59TNgWyPAAAAAElFTkSuQmCC",
 	["zoom-out"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADKElEQVR42u1by3HbMBBdZHw3SlAHZglMBVIqMN0BO5A6iDoQc8gpB6sDyxWIrkBMBWIqeDkEmuFw8CXxU8yd0UGcoRZ4+7C7eICIFltsscU+sbHQDgAURPRIRKV4xIloRUSt+N6Jz2/GWHf3iALgANYADgCucLMzgO8CtLuc+AH+7ALg+V4mvp0QbRcgNrlOvgw48bG9AeDZJEEAFREdHF97H33nRPTk8H5HRN8YY23qyNus9R5AA2BjihyAFYAawNHid69JlwSAV8MAO8GOOTllbwFElVvkewA7X+tUsMLEiDLm5CvD5ItAfmvDcihiTL7UDKINkZ1H/jcCZFXzxEM655pSF3zyw5ZaA0IT0vFOQ3seOQfpluEqZvT7VP26JiBvIZw1Cme7xH1IG7wqiOir6jxPDIAqKR99Z948GhD5+E6yshia/n1GGzFVgDa+HFyjlptpY5SVxb2vmhsOXX8AyFrli8tvfFE8VyW5U2aShCzpOfUDD4rn0nLCGOtt2CNE0LlmI5LOFlEfZogZ0iaFiLaeotsD+DpF/ABQ2L7nugRMkd96pDc3KU6MsdPc8asAWE0csG8L3m6rAJiiuXVE9Mfz+H6YutVQAMjs0UDHTiTPD4+TrycyZF5yVG07MyuByj2BDwZ0CoerzDAoQi0BFYU2mQEgOzr78EWvNuh2M9x2vfbBAFXbu06tBViw8eQLYdWGaJ8JAy4ysca3ky6aAOk2rl2U4GhU2NfEa/8aTaXWsKBOBMA5qlCrkZ6iCyQAfiY5o1AIkPHO5sh4Kl3HWHedBoQqsP9fmsk3seinO5sDgG0g4M/Z3BMw5IPbSW3pyZfLxauoIFSWF5rWEyP+rGhygoDAJoJQ0j9F1iR+9qI1Pd42WIyx94GY8TTY1VUedncvjLGoOaFFXGssGBh1OXDNCbJP64elLisQbkKJpleYO3HpxavsQBhIVEdDubSxTlyV4zMTcnwQRiVzr2mgZPeNatfOci4ILDZDxtKbj/8IWFzbjVcdEjLOxISC/nczgLB31QTvzgTNX+izm4IJRfIkGBmEW3tNRNQk/4/BYosttliO9hd0aw5FrCaMJQAAAABJRU5ErkJggg==",
 }
 local ICONS = {}
@@ -1832,6 +3025,22 @@ local GLYPHS = {
 	activity = "~",
 	["square-terminal"] = ">_",
 	settings = "*",
+	music = "M",
+	["skip-back"] = "|<",
+	["skip-forward"] = ">|",
+	pause = "||",
+	["repeat"] = "R",
+	["repeat-1"] = "R1",
+	shuffle = "S",
+	["volume-1"] = "V",
+	["volume-2"] = "V",
+	["volume-x"] = "V",
+	["picture-in-picture-2"] = "[]",
+	headphones = "H",
+	ellipsis = "...",
+	plus = "+",
+	["list-plus"] = "+",
+	["list-start"] = "^",
 }
 
 local function setupIcons()
@@ -1900,6 +3109,7 @@ function UI.pressable(btn, to)
 		local kind = input.UserInputType
 		if kind ~= MOUSE1 and kind ~= TOUCH then return end
 		UI.tween(sc, 0.12, { Scale = to or 0.95 }, Enum.EasingStyle.Quad)
+		Sfx.play("click")
 		local c
 		local function release()
 			if not c then return end
@@ -1949,11 +3159,21 @@ hubConn(UserInputService.InputEnded:Connect(function(input)
 	end
 end))
 
+local widthCache, widthCount = {}, 0
 local function textWidth(text, size, font)
-	local ok, v = pcall(function()
+	local key = font.Name .. "|" .. size .. "|" .. text
+	local v = widthCache[key]
+	if v then return v end
+	local ok, w = pcall(function()
 		return TextService:GetTextSize(text, size, font, Vector2.new(1000, 100)).X
 	end)
-	return ok and v or (#text * size * 0.6)
+	v = ok and w or (#text * size * 0.6)
+	widthCount += 1
+	if widthCount > 800 then
+		widthCache, widthCount = {}, 0
+	end
+	widthCache[key] = v
+	return v
 end
 
 local Gui = UI.new("ScreenGui", {
@@ -1975,10 +3195,11 @@ local NAV = {
 	{ id = "scripts", title = "Scripts", icon = "layout-list" },
 	{ id = "running", title = "Running", icon = "activity" },
 	{ id = "commands", title = "Commands", icon = "command" },
+	{ id = "player", title = "Music Player", icon = "headphones" },
+	{ id = "music", title = "Spotify", icon = "music" },
 	{ id = "players", title = "Players", icon = "users" },
 	{ id = "console", title = "Console", icon = "square-terminal" },
 	{ id = "settings", title = "Settings", icon = "settings" },
-	{ id = "dev", title = "Dev", icon = "flask-conical", owner = true },
 }
 local function navIndex(id)
 	for i, n in ipairs(NAV) do
@@ -2013,16 +3234,7 @@ end
 
 function Logo.load()
 	task.spawn(function()
-		local src = Util.trim(S.logo or "")
-		if src == "" then src = Repo.raw(HUB_DIR .. "/logo.png") end
-		if tonumber(src) then
-			Logo.apply("rbxassetid://" .. src)
-			return
-		end
-		if string.find(src, "^rbxasset") or string.find(src, "^rbxthumb") then
-			Logo.apply(src)
-			return
-		end
+		local src = Repo.raw(HUB_DIR .. "/logo.png")
 		if not (HAS_FS and X.getcustomasset) then return end
 		local index = LOCAL_DIR .. "/assets/logo_" .. Util.hash(src) .. ".txt"
 		local function use(path)
@@ -2070,7 +3282,7 @@ function Toast.dismiss(t)
 			break
 		end
 	end
-	UI.tween(t.card, 0.3, { Position = UDim2.fromOffset(0, -72) }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+	UI.tween(t.card, 0.3, { Position = UDim2.fromOffset(0, t.from) }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
 	local tw = UI.tween(t.holder, 0.35, { Size = UDim2.fromOffset(260, 0) }, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut)
 	UI.done(tw, function() t.holder:Destroy() end)
 end
@@ -2078,8 +3290,10 @@ end
 function Toast.show(title, text, kind, dur)
 	if not S.notifications or not HUB.alive then return end
 	Toast.place(true)
+	Sfx.play("ping")
 	dur = dur or S.toastTime
 	Toast.n += 1
+	local from = toastList.VerticalAlignment == Enum.VerticalAlignment.Bottom and 72 or -72
 	local holder = UI.new("Frame", {
 		Name = "Toast",
 		BackgroundTransparency = 1,
@@ -2091,7 +3305,7 @@ function Toast.show(title, text, kind, dur)
 		BackgroundColor3 = T.side,
 		BackgroundTransparency = 0.02,
 		Size = UDim2.fromOffset(260, 52),
-		Position = UDim2.fromOffset(0, -72),
+		Position = UDim2.fromOffset(0, from),
 	})
 	UI.corner(card, 14)
 	UI.stroke(card, T.stroke, 1, 0.35)
@@ -2104,7 +3318,7 @@ function Toast.show(title, text, kind, dur)
 	UI.label(card, { Text = tostring(text or ""), Font = FONT_M, TextSize = 11, TextColor3 = T.sub, Position = UDim2.fromOffset(50, 26), Size = UDim2.new(1, -60, 0, 15), TextTruncate = Enum.TextTruncate.AtEnd })
 	local bar = UI.new("Frame", { BackgroundColor3 = col, BackgroundTransparency = 0.25, BorderSizePixel = 0, Size = UDim2.new(1, -28, 0, 2), Position = UDim2.fromOffset(14, 48) }, card)
 	UI.corner(bar, 1)
-	local t = { holder = holder, card = card }
+	local t = { holder = holder, card = card, from = from }
 	Toast.list[#Toast.list + 1] = t
 	while #Toast.list > 3 do
 		Toast.dismiss(Toast.list[1])
@@ -2208,7 +3422,6 @@ do
 				BackgroundTransparency = 1,
 				Size = UDim2.fromOffset(ITEM, ITEM),
 				Position = UDim2.fromOffset((SIDE_W - ITEM) / 2, 63),
-				Visible = not def.owner,
 			})
 			UI.corner(b, 12)
 			local st = UI.stroke(b, T.stroke, 1, 1)
@@ -2276,7 +3489,7 @@ end
 function SideRefs.relayout()
 	local order = {}
 	for _, def in ipairs(NAV) do
-		if not def.logo and (not def.owner or Owner.is) then order[#order + 1] = def.id end
+		if not def.logo then order[#order + 1] = def.id end
 	end
 	SideRefs.order = order
 	local n = #order
@@ -2350,10 +3563,17 @@ do
 	UI.corner(Pill.dot1, 2)
 	Pill.dot2 = UI.new("Frame", { BackgroundColor3 = T.dim, Size = UDim2.fromOffset(3, 3), AnchorPoint = Vector2.new(0.5, 0.5) }, f)
 	UI.corner(Pill.dot2, 2)
+	Pill.dot3 = UI.new("Frame", { BackgroundColor3 = T.dim, Size = UDim2.fromOffset(3, 3), AnchorPoint = Vector2.new(0.5, 0.5), Visible = false }, f)
+	UI.corner(Pill.dot3, 2)
+	Pill.note = UI.icon("music", 11, T.sub, f, { AnchorPoint = Vector2.new(0, 0.5), Visible = false })
+	Pill.song = UI.label(f, { Name = "Song", Font = FONT_M, TextSize = 11, TextColor3 = T.text, Size = UDim2.fromOffset(40, 26), TextTruncate = Enum.TextTruncate.AtEnd, Visible = false })
+	Pill.dot4 = UI.new("Frame", { BackgroundColor3 = T.dim, Size = UDim2.fromOffset(3, 3), AnchorPoint = Vector2.new(0.5, 0.5), Visible = false }, f)
+	UI.corner(Pill.dot4, 2)
+	Pill.clock = UI.label(f, { Name = "Clock", Font = FONT_B, TextSize = 11, TextColor3 = T.sub, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromOffset(40, 26), Visible = false })
 	UI.pressable(f, 0.94)
 end
 
-function Pill.update(fps, ping, running)
+function Pill.update(fps, ping, running, song, playing, clock)
 	local function col(v, good, ok)
 		if v == nil then return T.sub end
 		if v <= good then return T.green end
@@ -2386,6 +3606,35 @@ function Pill.update(fps, ping, running)
 		x += w3
 	else
 		Pill.dot2.Visible, Pill.run.Visible = false, false
+	end
+	if song and song ~= "" then
+		local w4 = math.min(150, math.ceil(textWidth(song, 11, FONT_M)) + 2)
+		Pill.dot3.Visible, Pill.note.Visible, Pill.song.Visible = true, true, true
+		Pill.dot3.Position = UDim2.fromOffset(x + 6, 13)
+		x += 12
+		Pill.note.Position = UDim2.fromOffset(x, 13)
+		local c = playing and accentColor() or T.sub
+		Pill.note.ImageColor3 = c
+		local g = Pill.note:FindFirstChild("Glyph")
+		if g then g.TextColor3 = c end
+		x += 15
+		Pill.song.Text = song
+		Pill.song.TextColor3 = playing and T.text or T.sub
+		Pill.song.Position, Pill.song.Size = UDim2.fromOffset(x, 0), UDim2.fromOffset(w4, 26)
+		x += w4
+	else
+		Pill.dot3.Visible, Pill.note.Visible, Pill.song.Visible = false, false, false
+	end
+	if clock then
+		local w5 = math.ceil(textWidth(clock, 11, FONT_B)) + 4
+		Pill.dot4.Visible, Pill.clock.Visible = true, true
+		Pill.dot4.Position = UDim2.fromOffset(x + 6, 13)
+		x += 12
+		Pill.clock.Text = clock
+		Pill.clock.Position, Pill.clock.Size = UDim2.fromOffset(x, 0), UDim2.fromOffset(w5, 26)
+		x += w5
+	else
+		Pill.dot4.Visible, Pill.clock.Visible = false, false
 	end
 	Pill.frame.Size = UDim2.fromOffset(x + 10, 26)
 end
@@ -2806,7 +4055,9 @@ do
 end
 
 local CHANGELOG = {
-	{ version = "1.0.1", notes = { "new look like ak admin: little windows you can drag, resize, minimize and close", "fps and ping bar at the top, tap it to open or hide the hub", "the logo on the bar is home now, and the bar squeezes itself on small screens", "commands tab: fly, noclip, speed, jump power, infinite jump, click tp, spin, go to player, sit, refresh, reset", "visual commands: fullbright, no fog, time of day, fov, max zoom out, see through walls, spectate, boost fps", "utility commands: anti afk, allow shift lock, rejoin, server hop, copy join script", "command bar (press ; on pc) and chat commands with your own prefix", "players tab: go to, spectate, copy name and id", "home got quick switches, more stats and a server card", "more settings: rainbow accent, blur, animation speed, notification time and spot, lock panel, fps cap, copy and load your settings", "checks for updates by itself and shows this window when something changed", "owner stuff (dev tab, repo settings, Testing folder) only shows for the id in Hub/owner.txt" } },
+	{ version = "1.0.3", notes = { "music player tab: play roblox audio ids, direct mp3/ogg links or your own files from the AtsukoHub/music folder, only you can hear it", "library with search and favorites, a queue (play next or add to queue), shuffle, repeat one or all, seeking and volume", "sound presets (normal, nightcore, slowed, bass) plus speed, bass boost, reverb and echo", "visualizer, sleep timer, pick up where you left off, quiet the game's own music, play/pause and next song keys", "music player mini window and home card, and the song shows on the top bar", "the old music tab is called spotify now", "new commands: float, gravity, follow, save spot, load spot, esp, x-ray, instant prompts, play and skip", "follow button in player windows", "new settings: font, open the panel when the hub loads, open on home or last page, clock on the top bar, click and notification sounds, panic key, and pick your own quick switches on home", "tapping the top bar while only the side bar is out opens the panel now instead of closing everything" } },
+	{ version = "1.0.2", notes = { "music tab: connect your own spotify app and see what's playing, with play/pause, skip, seek, shuffle, repeat and volume", "now playing card on home, a mini player you can pop out, and the song can show on the top bar", "simpler: no more extra setup pages, the hub just loads your scripts", "cleaner home: one row of stats, one row of buttons, server hop sits in the server card", "fixed long descriptions getting cut off, the go button in player windows forgetting the name, notifications sliding in from the wrong side at the bottom, the top/bottom picker sitting crooked and switches snapping when rainbow is on", "lighter: noclip doesn't rescan your character every frame, rainbow accent does less work and the scripts list only rebuilds when something changed" } },
+	{ version = "1.0.1", notes = { "new look like ak admin: little windows you can drag, resize, minimize and close", "fps and ping bar at the top, tap it to open or hide the hub", "the logo on the bar is home now, and the bar squeezes itself on small screens", "commands tab: fly, noclip, speed, jump power, infinite jump, click tp, spin, go to player, sit, refresh, reset", "visual commands: fullbright, no fog, time of day, fov, max zoom out, see through walls, spectate, boost fps", "utility commands: anti afk, allow shift lock, rejoin, server hop, copy join script", "command bar (press ; on pc) and chat commands with your own prefix", "players tab: go to, spectate, copy name and id", "home got quick switches, more stats and a server card", "more settings: rainbow accent, blur, animation speed, notification time and spot, lock panel, fps cap, copy and load your settings", "checks for updates by itself and shows this window when something changed" } },
 	{ version = "1.0.0", notes = { "first version: scripts from github, run and stop, running list, console and settings" } },
 }
 local Ver = { latest = nil, checking = false, told = nil }
@@ -3256,7 +4507,7 @@ function Blur.set(on)
 end
 
 function Panel.show(id)
-	id = Pages[id] and (not Pages[id].owner or Owner.is) and id or "home"
+	id = Pages[id] and id or "home"
 	Panel.token += 1
 	local wasVisible = P.holder.Visible
 	Panel.open = true
@@ -3284,7 +4535,14 @@ function Panel.hide()
 	Blur.set(false)
 end
 
+function Panel.unhide()
+	if not HUB.hidden then return end
+	HUB.hidden = false
+	Pill.frame.Visible = S.statsBar
+end
+
 function Panel.openBar()
+	Panel.unhide()
 	Panel.mode = "bar"
 	showEdge(false)
 	showSide(true)
@@ -3294,7 +4552,7 @@ function Panel.closeAll()
 	Panel.mode = "closed"
 	Panel.hide()
 	showSide(false)
-	showEdge(true)
+	showEdge(not HUB.hidden)
 end
 
 function Panel.nav(id)
@@ -3315,10 +4573,14 @@ function Panel.nav(id)
 	end
 end
 
+function Panel.startId()
+	return S.startPage == "home" and "home" or S.lastPage
+end
+
 function Panel.toggleAll()
-	if Panel.mode == "closed" then
-		Panel.openBar()
-		Panel.show(S.lastPage)
+	if HUB.hidden or Panel.mode == "closed" or not Panel.open then
+		if Panel.mode ~= "bar" then Panel.openBar() end
+		Panel.show(Panel.startId())
 	else
 		Panel.closeAll()
 	end
@@ -3355,7 +4617,6 @@ local function newPage(def)
 		id = def.id,
 		title = def.title,
 		icon = def.icon,
-		owner = def.owner,
 		tabs = def.tabs,
 		tab = 1,
 		views = {},
@@ -3556,16 +4817,28 @@ end
 
 local Ctl = {}
 do
+	local watch, watchCap = {}, 300
 	local function onAccentWhile(inst, fn)
-		local function h()
-			if not inst.Parent then
-				Bus.off("accent", h)
-				return
+		watch[#watch + 1] = { inst, fn }
+		if #watch > watchCap then
+			local keep = {}
+			for _, w in ipairs(watch) do
+				if w[1].Parent then keep[#keep + 1] = w end
 			end
-			fn()
+			watch = keep
+			watchCap = math.max(300, #keep * 2)
 		end
-		Bus.on("accent", h)
 	end
+	Bus.on("accent", function()
+		local keep = {}
+		for _, w in ipairs(watch) do
+			if w[1].Parent then
+				keep[#keep + 1] = w
+				pcall(w[2])
+			end
+		end
+		watch = keep
+	end)
 	Ctl.onAccentWhile = onAccentWhile
 
 	local function hoverable(row)
@@ -3588,7 +4861,9 @@ do
 			UI.tween(track, t, { BackgroundColor3 = state and accentColor() or T.card2 })
 			UI.tween(knob, t, { Position = UDim2.fromOffset(state and 18 or 2, 2), BackgroundColor3 = state and T.ink or T.sub })
 		end
-		onAccentWhile(track, function() render(state, false) end)
+		onAccentWhile(track, function()
+			if state then UI.tween(track, 0, { BackgroundColor3 = accentColor() }) end
+		end)
 		return render, track
 	end
 
@@ -3610,10 +4885,17 @@ do
 				TextSize = 10,
 				TextColor3 = T.sub,
 				Position = UDim2.fromOffset(12, 26),
-				Size = UDim2.new(1, -70, 0, 24),
+				Size = UDim2.new(1, -70, 0, 13),
+				AutomaticSize = Enum.AutomaticSize.Y,
 				TextWrapped = true,
 				TextYAlignment = Enum.TextYAlignment.Top,
 			})
+			local function fit()
+				local want = math.max(54, math.ceil(descLabel.AbsoluteSize.Y / math.max(0.01, L.scale)) + 36)
+				if math.abs(row.Size.Y.Offset - want) > 1 then row.Size = UDim2.new(1, 0, 0, want) end
+			end
+			descLabel:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit)
+			task.defer(fit)
 		end
 		local draw = Ctl.switch(row, UDim2.new(1, -48, 0.5, -10))
 		local function render(anim)
@@ -3757,14 +5039,14 @@ do
 		local bar = UI.new("Frame", { BackgroundColor3 = T.card2, Size = UDim2.new(1, -24, 0, 30), Position = UDim2.fromOffset(12, 34) }, row)
 		UI.corner(bar, 9)
 		local n = #options
-		local pill = UI.new("Frame", { BackgroundColor3 = T.tabSel, Size = UDim2.new(1 / n, -4, 1, -6), Position = UDim2.new(0, 3, 0, 3) }, bar)
+		local pill = UI.new("Frame", { BackgroundColor3 = T.tabSel, Size = UDim2.new(1 / n, -6 / n, 1, -6), Position = UDim2.new(0, 3, 0, 3) }, bar)
 		UI.corner(pill, 7)
 		local btns = {}
 		local function render(anim)
 			local v = get()
 			for i, o in ipairs(options) do
 				local on = o[1] == v
-				if on then UI.tween(pill, anim and 0.3 or 0, { Position = UDim2.new((i - 1) / n, 3, 0, 3) }) end
+				if on then UI.tween(pill, anim and 0.3 or 0, { Position = UDim2.new((i - 1) / n, 3 - (i - 1) * 6 / n, 0, 3) }) end
 				UI.tween(btns[i], anim and 0.2 or 0, { TextColor3 = on and T.text or T.sub })
 			end
 		end
@@ -3834,7 +5116,7 @@ do
 	end
 
 	function Ctl.note(parent, order, text)
-		return UI.label(parent, {
+		local l = UI.label(parent, {
 			Name = "Note",
 			Text = text,
 			TextSize = 10,
@@ -3845,6 +5127,8 @@ do
 			AutomaticSize = Enum.AutomaticSize.Y,
 			LayoutOrder = order,
 		})
+		UI.pad(l, 4, 4, 0, 2)
+		return l
 	end
 end
 local D = {}
@@ -4034,6 +5318,14 @@ function Detail.refresh()
 	D.heartIcon.ImageColor3 = fav and acc or T.text
 	local g = D.heartIcon:FindFirstChild("Glyph")
 	if g then g.TextColor3 = D.heartIcon.ImageColor3 end
+end
+
+function Detail.recolor()
+	local e = Detail.entry
+	if not e then return end
+	local acc = accentColor()
+	if Runner.pending[e.path] or not Runner.isActive(SHARED.running[e.path]) then UI.tween(D.run, 0, { BackgroundColor3 = acc }) end
+	if S.favorites[e.path] then UI.tint(D.heartIcon, acc, 0) end
 end
 
 function Detail.tick()
@@ -4304,11 +5596,7 @@ do
 	local ver = UI.label(chip, { Text = "v" .. HUB_VERSION, Font = FONT_B, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromScale(1, 1) })
 	UI.accent(ver, "TextColor3")
 	chip.Size = UDim2.fromOffset(math.ceil(textWidth(ver.Text, 10, FONT_B)) + 18, 20)
-	local crown = UI.new("Frame", { Name = "Owner", BackgroundColor3 = T.yellow, BackgroundTransparency = 0.85, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 36), Size = UDim2.fromOffset(62, 20), Visible = Owner.is }, prof)
-	UI.corner(crown, 10)
-	local crownSet = iconText(crown, "crown", "OWNER", T.yellow, 9)
-	crownSet("crown", "OWNER", T.yellow)
-	Home.crown = crown
+	chip.Position = UDim2.new(1, -12, 0.5, -10)
 
 	Home.banner = UI.button(hv, { Name = "Update", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 50), LayoutOrder = 2, Visible = false })
 	UI.corner(Home.banner, 12)
@@ -4322,22 +5610,22 @@ do
 	UI.label(Home.banner, { Text = "Tap to update, your scripts keep running", TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(50, 25), Size = UDim2.new(1, -60, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
 	Ctl.hoverable(Home.banner)
 
-	local grid = UI.new("Frame", { Name = "Stats", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 110), LayoutOrder = 3 }, hv)
+	Home.music = UI.new("Frame", { Name = "Music", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 64), LayoutOrder = 3, Visible = false }, hv)
+	Home.player = UI.new("Frame", { Name = "PlayerCard", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 64), LayoutOrder = 3, Visible = false }, hv)
+
+	local grid = UI.new("Frame", { Name = "Stats", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 51), LayoutOrder = 4 }, hv)
 	local tiles = {
-		{ key = "scripts", label = "Scripts", icon = "layout-list" },
 		{ key = "running", label = "Running", icon = "activity", accent = true },
-		{ key = "cmds", label = "Cmds on", icon = "command", accent = true },
 		{ key = "fps", label = "FPS", icon = "gauge" },
 		{ key = "ping", label = "Ping", icon = "wifi" },
-		{ key = "players", label = "Players", icon = "users" },
 	}
 	for i, t in ipairs(tiles) do
-		local col, row = (i - 1) % 3, (i - 1) // 3
+		local col = i - 1
 		local tile = UI.new("Frame", {
 			Name = "Tile_" .. t.key,
 			BackgroundColor3 = T.card,
 			Size = UDim2.new(1 / 3, -4, 0, 51),
-			Position = UDim2.new(col / 3, col * 2, 0, row * 57),
+			Position = UDim2.new(col / 3, col * 2, 0, 0),
 		}, grid)
 		UI.corner(tile, 12)
 		UI.label(tile, { Text = string.upper(t.label), Font = FONT_B, TextSize = 8, TextColor3 = T.dim, Position = UDim2.fromOffset(10, 8), Size = UDim2.new(1, -30, 0, 11), TextTruncate = Enum.TextTruncate.AtEnd })
@@ -4346,11 +5634,10 @@ do
 		if t.accent then UI.accent(ic, "ImageColor3") end
 	end
 
-	section(hv, "Quick", 4)
-	Home.quick = UI.new("Frame", { Name = "Quick", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 76), LayoutOrder = 5 }, hv)
+	section(hv, "Quick", 5)
+	Home.quick = UI.new("Frame", { Name = "Quick", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 76), LayoutOrder = 6 }, hv)
 
-	local acts = Ctl.buttons(hv, 6, {
-		{ "refresh-cw", "Refresh", function() Repo.refresh(true) end },
+	Home.acts = Ctl.buttons(hv, 7, {
 		{ "square-fill", "Stop all", function()
 			if Runner.count() == 0 then
 				notify("Nothing to stop", "No scripts are running", "info", 2)
@@ -4358,8 +5645,10 @@ do
 				Runner.stopAll()
 			end
 		end, T.red },
+		{ "refresh-cw", "Respawn", nil },
 		{ "rotate-ccw", "Rejoin", nil },
 	})
+	local acts = Home.acts
 	acts[3].btn.Activated:Connect(confirmTap(function(text, armed)
 		acts[3].set(armed and "check" or "rotate-ccw", armed and "Sure?" or text, armed and T.yellow or T.text)
 	end, "Rejoin", function()
@@ -4371,16 +5660,16 @@ do
 			pcall(function() game:GetService("TeleportService"):Teleport(game.PlaceId, LP) end)
 		end
 	end))
-	Home.actions2 = UI.new("Frame", { Name = "More", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 38), LayoutOrder = 7 }, hv)
 
 	section(hv, "Server", 8)
-	local srv = card(hv, 0, 9)
+	local srv = card(hv, 50, 9)
 	srv.Name = "Server"
-	srv.AutomaticSize = Enum.AutomaticSize.Y
-	UI.pad(srv, 12, 12, 10, 10)
-	UI.list(srv, 4)
-	Home.game = UI.label(srv, { Name = "Game", Text = "Loading game name...", Font = FONT_B, TextSize = 12, Size = UDim2.new(1, 0, 0, 16), LayoutOrder = 1, TextTruncate = Enum.TextTruncate.AtEnd })
-	Home.server = UI.label(srv, { Name = "Info", Text = "", TextSize = 10, TextColor3 = T.sub, Size = UDim2.new(1, 0, 0, 14), LayoutOrder = 2, TextTruncate = Enum.TextTruncate.AtEnd })
+	Home.game = UI.label(srv, { Name = "Game", Text = "Loading game name...", Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(12, 9), Size = UDim2.new(1, -86, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+	Home.server = UI.label(srv, { Name = "Info", Text = "", TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(12, 27), Size = UDim2.new(1, -86, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+	Home.hop = UI.button(srv, { Name = "Hop", BackgroundColor3 = T.card2, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0), Size = UDim2.fromOffset(64, 28) })
+	UI.corner(Home.hop, 14)
+	iconText(Home.hop, "shuffle", "Hop", T.text, 11)
+	UI.pressable(Home.hop, 0.92)
 	task.spawn(function()
 		local ok, info = pcall(function()
 			return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
@@ -4473,17 +5762,15 @@ local function getPing()
 end
 
 function Home.tick(fps, ping)
-	Home.stats.scripts.Text = tostring(#Repo.shown())
 	Home.stats.running.Text = tostring(Runner.count())
-	Home.stats.cmds.Text = tostring(Home.activeCount())
 	Home.stats.fps.Text = tostring(fps)
 	Home.stats.ping.Text = ping and (ping .. " ms") or "-"
 	local players = #Players:GetPlayers()
 	local okMax, maxP = pcall(function() return Players.MaxPlayers end)
-	Home.stats.players.Text = players .. ((okMax and type(maxP) == "number" and maxP > 0) and ("/" .. maxP) or "")
+	local cap = (okMax and type(maxP) == "number" and maxP > 0) and ("/" .. maxP) or ""
 	local age = 0
 	pcall(function() age = workspace.DistributedGameTime end)
-	Home.server.Text = "Server up " .. Util.fmtTime(age) .. "  ·  " .. players .. (players == 1 and " player" or " players")
+	Home.server.Text = players .. cap .. (players == 1 and " player" or " players") .. "  ·  up " .. Util.fmtTime(age)
 	local smart
 	if not S.smartStop then
 		smart = "off"
@@ -4603,8 +5890,22 @@ function Scripts.updateStatus()
 	end
 end
 
+function Scripts.updateInfo()
+	local l = Scripts.info
+	if not (l and l.Parent) then return end
+	local n = #Repo.entries
+	if Repo.state == "loading" then
+		l.Text = "Looking for new scripts..."
+	elseif Repo.state == "cached" then
+		l.Text = "Saved list  ·  offline"
+	else
+		l.Text = n .. (n == 1 and " script" or " scripts")
+	end
+end
+
 function Scripts.render(i)
 	Scripts.dirty[i] = false
+	if i == 1 then Scripts.sig = Repo.sig end
 	local sf = Scripts.views[i]
 	clearList(sf)
 	for path, list in pairs(Scripts.refs) do
@@ -4648,22 +5949,16 @@ function Scripts.render(i)
 		if shown == 0 then
 			emptyState(sf, "search", "Nothing matches", "Try another name", nextOrder())
 		else
-			local info
-			if Repo.state == "loading" then
-				info = "Checking GitHub..."
-			elseif Repo.state == "cached" then
-				info = "Saved list  ·  couldn't reach GitHub"
-			else
-				info = #list .. (#list == 1 and " script" or " scripts") .. (Owner.is and ("  ·  " .. S.owner .. "/" .. S.repo) or "")
-			end
-			UI.label(sf, {
-				Text = info,
+			Scripts.info = UI.label(sf, {
+				Name = "Info",
+				Text = "",
 				TextSize = 10,
 				TextColor3 = T.dim,
 				TextXAlignment = Enum.TextXAlignment.Center,
 				Size = UDim2.new(1, 0, 0, 24),
 				LayoutOrder = nextOrder(),
 			})
+			Scripts.updateInfo()
 		end
 	elseif i == 2 then
 		local shown = 0
@@ -4793,11 +6088,13 @@ function Running.tick()
 			s.label.TextColor3 = T.sub
 		elseif s.idle then
 			s.label.Text = "Stopped  ·  its chat commands work"
+			s.label.TextColor3 = T.sub
 		elseif rec.status == "error" then
 			s.label.Text = "Error  ·  see Console"
 			s.label.TextColor3 = T.red
 		else
 			s.label.Text = "Running  ·  " .. Util.fmtTime(os.clock() - rec.startedAt)
+			s.label.TextColor3 = T.sub
 		end
 	end
 end
@@ -5261,13 +6558,27 @@ do
 		usage = "noclip", offNames = { "clip", "unnoclip" },
 		desc = "Walk through walls. Turn it off to bump into things again.",
 		start = function()
-			local saved = {}
+			local saved, parts, char = {}, {}, nil
 			Noclip.saved = saved
 			bind("noclip", RunService.Stepped:Connect(function()
 				local c = LP.Character
 				if not c then return end
-				for _, p in ipairs(c:GetDescendants()) do
-					if p:IsA("BasePart") and p.CanCollide then
+				if c ~= char then
+					char = c
+					local set = {}
+					parts = set
+					for _, p in ipairs(c:GetDescendants()) do
+						if p:IsA("BasePart") then set[p] = true end
+					end
+					bind("noclip", c.DescendantAdded:Connect(function(p)
+						if p:IsA("BasePart") then set[p] = true end
+					end))
+					bind("noclip", c.DescendantRemoving:Connect(function(p)
+						set[p] = nil
+					end))
+				end
+				for p in pairs(parts) do
+					if p.CanCollide then
 						saved[p] = true
 						p.CanCollide = false
 					end
@@ -5825,6 +7136,383 @@ do
 			return true
 		end,
 	})
+
+	;(function()
+		local function sweep(rootInst, f, alive)
+			task.spawn(function()
+				for i, o in ipairs(rootInst:GetDescendants()) do
+					if not alive() then return end
+					pcall(f, o)
+					if i % 800 == 0 then task.wait() end
+				end
+			end)
+		end
+
+		local function holdButton(w, row, i, n, icon, text, onHold)
+			local b = UI.button(row, { Name = text, BackgroundColor3 = T.card, Size = UDim2.new(1 / n, -(n - 1) * 6 / n, 1, 0), Position = UDim2.new((i - 1) / n, (i - 1) * 6 / n, 0, 0) })
+			UI.corner(b, 12)
+			iconText(b, icon, text, T.text, 11)
+			UI.pressable(b, 0.95)
+			local held = nil
+			b.InputBegan:Connect(function(input)
+				if input.UserInputType == MOUSE1 or input.UserInputType == TOUCH then
+					held = input
+					onHold(true)
+					UI.tween(b, 0.1, { BackgroundColor3 = T.card2 })
+				end
+			end)
+			w:conn(UserInputService.InputEnded:Connect(function(input)
+				if held and (input == held or (held.UserInputType == MOUSE1 and input.UserInputType == MOUSE1)) then
+					held = nil
+					onHold(false)
+					UI.tween(b, 0.15, { BackgroundColor3 = T.card })
+				end
+			end))
+			return b
+		end
+
+		local Float = { down = 0 }
+		Cmd.add({
+			id = "float", name = "Float", icon = "layers", cat = "Movement", kind = "toggle", char = true,
+			usage = "float", aliases = { "platform" }, offNames = { "unfloat", "nofloat" },
+			desc = "Stand on thin air. An invisible floor stays under your feet. Jump to go up, hold Q (or the button here) to go down.",
+			start = function()
+				if not root() then return false, "No character right now" end
+				local p = Instance.new("Part")
+				p.Name = "AtsukoFloat"
+				p.Size = Vector3.new(4, 0.2, 4)
+				p.Transparency = 1
+				p.Anchored = true
+				p.CanCollide = true
+				p.Parent = workspace
+				Float.part = p
+				bind("float", RunService.Heartbeat:Connect(function()
+					local r = root()
+					if not r or not p.Parent then return end
+					local down = Float.down > 0 or (not UserInputService:GetFocusedTextBox() and UserInputService:IsKeyDown(KC.Q))
+					p.CFrame = CFrame.new(r.Position - Vector3.new(0, down and 3.7 or 3.1, 0))
+				end))
+				return true
+			end,
+			stop = function()
+				if Float.part then pcall(function() Float.part:Destroy() end) end
+				Float.part, Float.down = nil, 0
+			end,
+			opts = function(w, body, order)
+				local row = UI.new("Frame", { Name = "Down", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 40), LayoutOrder = order }, body)
+				holdButton(w, row, 1, 1, "arrow-down", "Hold to go down", function(on) Float.down = on and 1 or 0 end)
+				return 1
+			end,
+			onWinClose = function() Float.down = 0 end,
+		})
+
+		local Grav = {}
+		Cmd.add({
+			id = "gravity", name = "Gravity", icon = "orbit", cat = "Movement", kind = "toggle",
+			usage = "gravity [number]", aliases = { "grav" }, offNames = { "ungravity", "ungrav" },
+			desc = "Change gravity just for you. 196 is normal, lower numbers let you jump way higher.",
+			label = function() return "On  ·  " .. Cmd.val("gravity", "value", 60) end,
+			start = function(arg)
+				local v = tonumber(arg)
+				if v then Cmd.setVal("gravity", "value", math.clamp(math.floor(v), 0, 1000)) end
+				Grav.orig = workspace.Gravity
+				workspace.Gravity = Cmd.val("gravity", "value", 60)
+				bind("gravity", workspace:GetPropertyChangedSignal("Gravity"):Connect(function()
+					local want = Cmd.val("gravity", "value", 60)
+					if Cmd.isOn("gravity") and workspace.Gravity ~= want then workspace.Gravity = want end
+				end))
+				return true
+			end,
+			update = function(arg)
+				local v = tonumber(arg)
+				if not v then return end
+				Cmd.setVal("gravity", "value", math.clamp(math.floor(v), 0, 1000))
+				workspace.Gravity = Cmd.val("gravity", "value", 60)
+			end,
+			stop = function()
+				if Grav.orig then pcall(function() workspace.Gravity = Grav.orig end) end
+				Grav.orig = nil
+			end,
+			opts = function(w, body, order)
+				slider(w, body, order, "gravity", "value", "Gravity", 0, 300, 5, 60, nil, function(v) workspace.Gravity = v end)
+				return 1
+			end,
+		})
+
+		local Follow = {}
+		Cmd.add({
+			id = "follow", name = "Follow", icon = "footprints", cat = "Movement", kind = "toggle", char = true, needsPlayer = true,
+			usage = "follow <player>", aliases = { "walkto" }, offNames = { "unfollow", "unwalkto" },
+			desc = "Walk after someone wherever they go. Pick them on the Players page, or type part of their name.",
+			label = function() return Follow.target and ("Following " .. Follow.target.DisplayName) or "On" end,
+			start = function(arg)
+				local p = Cmd.findPlayer(arg or Cmd.val("follow", "target", nil))
+				if not p then return false, arg and ("No player called " .. arg) or "Pick someone on the Players page" end
+				if p == LP then return false, "That's you" end
+				if not hum() then return false, "No character right now" end
+				Cmd.setVal("follow", "target", p.Name)
+				Follow.target = p
+				local acc = 0
+				bind("follow", RunService.Heartbeat:Connect(function(dt)
+					acc += dt
+					if acc < 0.15 then return end
+					acc = 0
+					local h, r, tc = hum(), root(), p.Character
+					local tr = tc and (tc:FindFirstChild("HumanoidRootPart") or tc.PrimaryPart)
+					if h and r and tr and (tr.Position - r.Position).Magnitude > 4 then h:MoveTo(tr.Position) end
+				end))
+				bind("follow", Players.PlayerRemoving:Connect(function(pl)
+					if pl ~= p then return end
+					task.defer(function()
+						if Follow.target == p then
+							Cmd.set("follow", false, nil, true)
+							notify("Follow", p.DisplayName .. " left the game", "info")
+						end
+					end)
+				end))
+				return true
+			end,
+			stop = function()
+				Follow.target = nil
+				local h, r = hum(), root()
+				if h and r then pcall(function() h:MoveTo(r.Position) end) end
+			end,
+		})
+		Cmd.follow = Follow
+
+		local function spotKey()
+			return tostring(game.PlaceId)
+		end
+		Cmd.add({
+			id = "savepos", name = "Save spot", icon = "bookmark-plus", cat = "Movement", kind = "action",
+			usage = "savepos", aliases = { "spos", "setwp" },
+			desc = "Remembers where you're standing in this game. Use Load spot to come back, even after you respawn or rejoin.",
+			run = function()
+				local r = root()
+				if not r then return false, "No character right now" end
+				local p = r.Position
+				local spots = Cmd.val("savepos", "spots", nil)
+				if type(spots) ~= "table" then spots = {} end
+				spots[spotKey()] = { math.floor(p.X * 10) / 10, math.floor(p.Y * 10) / 10, math.floor(p.Z * 10) / 10 }
+				Cmd.setVal("savepos", "spots", spots)
+				return true, "Saved this spot"
+			end,
+		})
+		Cmd.add({
+			id = "loadpos", name = "Load spot", icon = "bookmark-check", cat = "Movement", kind = "action",
+			usage = "loadpos", aliases = { "lpos", "wp" },
+			desc = "Takes you back to the spot you saved in this game.",
+			run = function()
+				local spots = Cmd.val("savepos", "spots", nil)
+				local s = type(spots) == "table" and spots[spotKey()] or nil
+				if type(s) ~= "table" or not (tonumber(s[1]) and tonumber(s[2]) and tonumber(s[3])) then return false, "Save a spot first" end
+				local r = root()
+				if not r then return false, "No character right now" end
+				local h = hum()
+				if h and h.Sit then h.Sit = false end
+				r.CFrame = CFrame.new(s[1], s[2], s[3]) * r.CFrame.Rotation
+				pcall(function() r.AssemblyLinearVelocity = Vector3.zero end)
+				return true, "Back at your spot"
+			end,
+		})
+
+		local Esp = { items = {} }
+		local function espColor(p)
+			if Cmd.val("esp", "team", false) then
+				local ok, c = pcall(function() return p.Team and p.TeamColor.Color end)
+				if ok and c then return c end
+			end
+			return accentColor()
+		end
+		function Esp.clear(p)
+			local it = Esp.items[p]
+			Esp.items[p] = nil
+			if it then
+				for _, o in ipairs(it.objs) do
+					pcall(function() o:Destroy() end)
+				end
+			end
+		end
+		function Esp.attach(p)
+			Esp.clear(p)
+			local c = p.Character
+			local holder = Gui.Parent
+			if p == LP or not c or not holder then return end
+			local col = espColor(p)
+			local hl = Instance.new("Highlight")
+			hl.Name = "AtsukoESP"
+			hl.Adornee = c
+			hl.FillColor = col
+			hl.OutlineColor = col
+			hl.FillTransparency = 0.75
+			hl.OutlineTransparency = 0.1
+			hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+			hl.Parent = holder
+			local it = { objs = { hl }, p = p }
+			local head = c:FindFirstChild("Head") or c:FindFirstChild("HumanoidRootPart")
+			if Cmd.val("esp", "names", true) and head then
+				local bb = Instance.new("BillboardGui")
+				bb.Name = "AtsukoESP"
+				bb.Adornee = head
+				bb.AlwaysOnTop = true
+				bb.Size = UDim2.fromOffset(220, 30)
+				bb.StudsOffset = Vector3.new(0, 2.4, 0)
+				local l = Instance.new("TextLabel")
+				l.BackgroundTransparency = 1
+				l.Size = UDim2.fromScale(1, 1)
+				l.Font = FONT_B
+				l.TextSize = 13
+				l.TextColor3 = Color3.new(1, 1, 1)
+				l.TextStrokeTransparency = 0.35
+				l.Text = p.DisplayName
+				l.Parent = bb
+				bb.Parent = holder
+				it.objs[#it.objs + 1] = bb
+				it.label, it.head = l, head
+			end
+			Esp.items[p] = it
+		end
+		Cmd.add({
+			id = "esp", name = "ESP", icon = "radar", cat = "Visual", kind = "toggle",
+			usage = "esp", aliases = { "wallhack" }, offNames = { "unesp", "noesp" },
+			desc = "See everyone through walls with a glow, their name and how far away they are.",
+			start = function()
+				local function watch(p)
+					if p == LP then return end
+					bind("esp", p.CharacterAdded:Connect(function()
+						task.wait(0.4)
+						if Cmd.isOn("esp") then Esp.attach(p) end
+					end))
+					Esp.attach(p)
+				end
+				for _, p in ipairs(Players:GetPlayers()) do
+					watch(p)
+				end
+				bind("esp", Players.PlayerAdded:Connect(watch))
+				bind("esp", Players.PlayerRemoving:Connect(Esp.clear))
+				local acc = 0
+				bind("esp", RunService.Heartbeat:Connect(function(dt)
+					acc += dt
+					if acc < 0.3 then return end
+					acc = 0
+					local r = root()
+					for p, it in pairs(Esp.items) do
+						if it.label then
+							local d = (r and it.head.Parent) and math.floor((it.head.Position - r.Position).Magnitude + 0.5) or nil
+							it.label.Text = p.DisplayName .. (d and ("  ·  " .. d .. "m") or "")
+						end
+					end
+				end))
+				return true
+			end,
+			stop = function()
+				for p in pairs(Esp.items) do
+					Esp.clear(p)
+				end
+			end,
+			opts = function(w, body, order)
+				local function restart()
+					if Cmd.isOn("esp") then
+						Cmd.set("esp", false, nil, true)
+						Cmd.set("esp", true, nil, true)
+					end
+				end
+				Ctl.toggle(body, order, "Show names and distance", nil, function() return Cmd.val("esp", "names", true) end, function(v)
+					Cmd.setVal("esp", "names", v)
+					restart()
+				end)
+				Ctl.toggle(body, order + 1, "Use team colors", nil, function() return Cmd.val("esp", "team", false) end, function(v)
+					Cmd.setVal("esp", "team", v)
+					restart()
+				end)
+				return 2
+			end,
+		})
+
+		local Xray = {}
+		Cmd.add({
+			id = "xray", name = "X-ray", icon = "glasses", cat = "Visual", kind = "toggle",
+			usage = "xray", offNames = { "unxray", "noxray" },
+			desc = "Makes the map see-through so you can spot things behind walls. Players stay solid.",
+			start = function()
+				local token = {}
+				Xray.token, Xray.parts = token, {}
+				local function apply(o)
+					if not o:IsA("BasePart") or o.Name == "AtsukoFloat" then return end
+					local m = o:FindFirstAncestorOfClass("Model")
+					if m and m:FindFirstChildOfClass("Humanoid") then return end
+					Xray.parts[o] = true
+					o.LocalTransparencyModifier = Cmd.val("xray", "amount", 0.6)
+				end
+				sweep(workspace, apply, function() return Xray.token == token end)
+				bind("xray", workspace.DescendantAdded:Connect(function(o)
+					if Xray.token == token then pcall(apply, o) end
+				end))
+				return true
+			end,
+			stop = function()
+				Xray.token = nil
+				for o in pairs(Xray.parts or {}) do
+					pcall(function() o.LocalTransparencyModifier = 0 end)
+				end
+				Xray.parts = nil
+			end,
+			opts = function(w, body, order)
+				slider(w, body, order, "xray", "amount", "How see-through", 0.2, 0.9, 0.05, 0.6, function(v) return math.floor(v * 100 + 0.5) .. "%" end, function(v)
+					for o in pairs(Xray.parts or {}) do
+						pcall(function() o.LocalTransparencyModifier = v end)
+					end
+				end)
+				return 1
+			end,
+		})
+
+		local Prompts = {}
+		Cmd.add({
+			id = "instantprompts", name = "Instant prompts", icon = "zap", cat = "Utility", kind = "toggle",
+			usage = "instantprompts", aliases = { "instantpp", "nohold" }, offNames = { "uninstantprompts", "uninstantpp" },
+			desc = "Hold-to-use buttons (open door, pick up, buy) work with one tap.",
+			start = function()
+				local token = {}
+				Prompts.token, Prompts.saved = token, {}
+				local function fix(o)
+					if o:IsA("ProximityPrompt") then
+						if Prompts.saved[o] == nil then Prompts.saved[o] = o.HoldDuration end
+						o.HoldDuration = 0
+					end
+				end
+				sweep(workspace, fix, function() return Prompts.token == token end)
+				bind("instantprompts", workspace.DescendantAdded:Connect(function(o)
+					if Prompts.token == token then pcall(fix, o) end
+				end))
+				return true
+			end,
+			stop = function()
+				Prompts.token = nil
+				for o, v in pairs(Prompts.saved or {}) do
+					pcall(function() o.HoldDuration = v end)
+				end
+				Prompts.saved = nil
+			end,
+		})
+
+		Cmd.add({
+			id = "play", name = "Play music", icon = "headphones", cat = "Utility", kind = "action",
+			usage = "play [song or audio id]", aliases = { "music", "song" },
+			desc = "Plays a song from your Music Player library, or a Roblox audio ID. With nothing after it, it plays or pauses.",
+			run = function(arg) return Player.command(arg) end,
+		})
+		Cmd.add({
+			id = "skip", name = "Skip song", icon = "skip-forward", cat = "Utility", kind = "action",
+			usage = "skip", aliases = { "nextsong" },
+			desc = "Skips to the next song in the Music Player.",
+			run = function()
+				if not Player.cur then return false, "Nothing is playing" end
+				Player.next(false)
+				return true
+			end,
+		})
+	end)()
 end
 
 function Cmd.openWin(id)
@@ -5852,11 +7540,12 @@ function Cmd.openWin(id)
 			elseif not def.needsPlayer then
 				Ctl.buttons(body, 2, { { "play", "Run", function() Cmd.run(def.id) end } })
 			else
-				local inp
-				inp = Ctl.input(body, 2, "Player", "part of their name", function() return "" end, function(v, enter)
+				local typed = ""
+				Ctl.input(body, 2, "Player", "part of their name", function() return typed end, function(v, enter)
+					typed = v
 					if enter and v ~= "" then Cmd.run(def.id, v) end
 				end)
-				Ctl.buttons(body, 3, { { "play", "Go", function() Cmd.run(def.id, inp.box.Text) end } })
+				Ctl.buttons(body, 3, { { "play", "Go", function() Cmd.run(def.id, typed ~= "" and typed or nil) end } })
 			end
 			local order = 10
 			if def.opts then
@@ -6098,53 +7787,110 @@ Bus.on("cmd", function()
 end)
 Bus.on("accent", function()
 	for _, r in ipairs(Commands.rows) do
-		if r.row.Parent then r.render(false) end
+		if r.row.Parent and Cmd.isOn(r.id) then r.render(false) end
 	end
 end)
 
 Home.activeCount = Cmd.activeCount
 do
-	local quick = { "fly", "noclip", "infjump", "fullbright" }
 	local chips = {}
-	for i, id in ipairs(quick) do
-		local def = Cmd.by[id]
-		local col, row = (i - 1) % 2, (i - 1) // 2
-		local b = UI.button(Home.quick, {
-			Name = "Quick_" .. id,
-			BackgroundColor3 = T.card,
-			Size = UDim2.new(0.5, -3, 0, 35),
-			Position = UDim2.new(col * 0.5, col * 3, 0, row * 41),
-		})
-		UI.corner(b, 12)
-		local st = UI.stroke(b, T.text, 1, 1)
-		local ic = UI.icon(def.icon, 15, T.sub, b, { Position = UDim2.fromOffset(11, 10) })
-		UI.label(b, { Text = def.name, Font = FONT_B, TextSize = 11, Position = UDim2.fromOffset(33, 0), Size = UDim2.new(1, -56, 1, 0), TextTruncate = Enum.TextTruncate.AtEnd })
-		local dot = UI.new("Frame", { BackgroundColor3 = T.dim, Size = UDim2.fromOffset(7, 7), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -11, 0.5, 0) }, b)
-		UI.corner(dot, 4)
-		Ctl.hoverable(b)
-		b.Activated:Connect(function() Cmd.toggle(id) end)
-		chips[id] = function(anim)
-			local on = Cmd.isOn(id)
-			local a = accentColor()
-			UI.tween(st, anim and 0.2 or 0, { Transparency = on and 0.4 or 1, Color = a })
-			UI.tween(dot, anim and 0.2 or 0, { BackgroundColor3 = on and a or T.dim })
-			UI.tint(ic, on and a or T.sub, anim and 0.2 or 0)
+	function Home.quickIds()
+		local out = {}
+		for _, id in ipairs(S.quickCmds) do
+			local def = Cmd.by[id]
+			if def and def.kind == "toggle" and def.icon and not table.find(out, def.id) and #out < 4 then out[#out + 1] = def.id end
 		end
-		chips[id](false)
+		if #out == 0 then out = table.clone(QUICK_DEFAULT) end
+		return out
 	end
+	function Home.buildQuick()
+		clearList(Home.quick)
+		chips = {}
+		local ids = Home.quickIds()
+		for i, id in ipairs(ids) do
+			local def = Cmd.by[id]
+			local col, row = (i - 1) % 2, (i - 1) // 2
+			local b = UI.button(Home.quick, {
+				Name = "Quick_" .. id,
+				BackgroundColor3 = T.card,
+				Size = UDim2.new(0.5, -3, 0, 35),
+				Position = UDim2.new(col * 0.5, col * 3, 0, row * 41),
+			})
+			UI.corner(b, 12)
+			local st = UI.stroke(b, T.text, 1, 1)
+			local ic = UI.icon(def.icon, 15, T.sub, b, { Position = UDim2.fromOffset(11, 10) })
+			UI.label(b, { Text = def.name, Font = FONT_B, TextSize = 11, Position = UDim2.fromOffset(33, 0), Size = UDim2.new(1, -56, 1, 0), TextTruncate = Enum.TextTruncate.AtEnd })
+			local dot = UI.new("Frame", { BackgroundColor3 = T.dim, Size = UDim2.fromOffset(7, 7), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -11, 0.5, 0) }, b)
+			UI.corner(dot, 4)
+			Ctl.hoverable(b)
+			b.Activated:Connect(function() Cmd.toggle(id) end)
+			chips[id] = function(anim)
+				local on = Cmd.isOn(id)
+				local a = accentColor()
+				UI.tween(st, anim and 0.2 or 0, { Transparency = on and 0.4 or 1, Color = a })
+				UI.tween(dot, anim and 0.2 or 0, { BackgroundColor3 = on and a or T.dim })
+				UI.tint(ic, on and a or T.sub, anim and 0.2 or 0)
+			end
+			chips[id](false)
+		end
+		Home.quick.Size = UDim2.new(1, 0, 0, math.max(1, math.ceil(#ids / 2)) * 41 - 6)
+	end
+	function Home.pickQuick()
+		return Win.show("quickpick", {
+			title = "Quick switches",
+			icon = "layout-grid",
+			sub = "Home",
+			w = 260,
+			h = 360,
+			minH = 200,
+			build = function(w, body)
+				Ctl.note(body, 1, "Pick up to 4 switches to show on Home.")
+				local rows = {}
+				local order = 1
+				for _, def in ipairs(Cmd.list) do
+					if def.kind == "toggle" and def.icon then
+						order += 1
+						rows[#rows + 1] = Ctl.toggle(body, order, def.name, nil, function()
+							return table.find(Home.quickIds(), def.id) ~= nil
+						end, function(v)
+							local list = {}
+							for _, id in ipairs(Home.quickIds()) do
+								if id ~= def.id then list[#list + 1] = id end
+							end
+							if v then
+								if #list >= 4 then
+									notify("Quick switches", "You can have 4, turn one off first", "info", 2)
+									return
+								end
+								list[#list + 1] = def.id
+							end
+							if #list == 0 then
+								notify("Quick switches", "Keep at least one", "info", 2)
+								return
+							end
+							S.quickCmds = list
+							saveSettings()
+							Home.buildQuick()
+							for _, r in ipairs(rows) do
+								r.render(true)
+							end
+						end)
+					end
+				end
+			end,
+		})
+	end
+	Home.buildQuick()
 	Bus.on("cmd", function(id)
 		if chips[id] then chips[id](true) end
 	end)
 	Bus.on("accent", function()
-		for _, f in pairs(chips) do
-			f(false)
+		for id, f in pairs(chips) do
+			if Cmd.isOn(id) then f(false) end
 		end
 	end)
-	Ctl.buttons(Home.actions2, 1, {
-		{ "shuffle", "Hop", function() Cmd.run("serverhop") end },
-		{ "refresh-cw", "Respawn", function() Cmd.run("refresh") end },
-		{ "command", "Cmd bar", function() Cmd.openBar(true) end },
-	})
+	Home.acts[2].btn.Activated:Connect(function() Cmd.run("refresh") end)
+	Home.hop.Activated:Connect(function() Cmd.run("serverhop") end)
 end
 
 local PlayersPage = newPage({ id = "players", title = "Players", icon = "users", viewY = 40 })
@@ -6230,16 +7976,31 @@ function PlayersPage.openWin(p)
 						Cmd.set("view", true, p.Name)
 					end
 				end)
+				local fb = Ctl.buttons(body, 3, { { "footprints", "Follow", nil } })
+				local function drawFollow()
+					local on = Cmd.isOn("follow") and Cmd.follow.target == p
+					fb[1].set(on and "x" or "footprints", on and "Stop following" or "Follow", on and accentColor() or T.text)
+				end
+				fb[1].btn.Activated:Connect(function()
+					if Cmd.isOn("follow") and Cmd.follow.target == p then
+						Cmd.set("follow", false)
+					else
+						Cmd.set("follow", true, p.Name)
+					end
+				end)
 				w:on("cmd", function(id)
-					if id == "view" and w.alive then drawView() end
+					if not w.alive then return end
+					if id == "view" then drawView() end
+					if id == "follow" then drawFollow() end
 				end)
 				drawView()
+				drawFollow()
 			end
-			Ctl.buttons(body, 3, {
+			Ctl.buttons(body, 4, {
 				{ "copy", "Copy name", function() copyText(p.Name, "Username") end },
 				{ "hash", "Copy ID", function() copyText(tostring(p.UserId), "User ID") end },
 			})
-			Ctl.info(body, 4, "User ID", p.UserId, function(v) copyText(v, "User ID") end)
+			Ctl.info(body, 5, "User ID", p.UserId, function(v) copyText(v, "User ID") end)
 			w:conn(Players.PlayerRemoving:Connect(function(pl)
 				if pl == p then
 					task.defer(function() w:close() end)
@@ -6330,182 +8091,518 @@ Bus.on("cmd", function(id)
 	end
 end)
 
-local Dev = newPage({ id = "dev", title = "Dev", icon = "flask-conical", owner = true, tabs = { "Tools", "Repo", "Info" } })
-Dev.views = { newScroll(Dev.frame, 0, true), newScroll(Dev.frame, 0, false), newScroll(Dev.frame, 0, false) }
-Dev.code = ""
-Dev.controls = {}
+local MusicUI = { views = {} }
+local PlayerUI = { views = {} }
 
-function Dev.runCode(code, name)
-	if not Owner.is then return end
-	code = tostring(code or "")
-	if Util.trim(code) == "" then
-		notify("Nothing to run", "Type some code first", "info", 2)
-		return
-	end
-	if not X.loadstring then
-		notify("Can't run code", "Your executor has no loadstring", "error")
-		return
-	end
-	local f, err = X.loadstring(code, "=Atsuko/" .. (name or "Dev"))
-	if type(f) ~= "function" then
-		notify("Syntax error", Util.firstLine(err or "?"), "error", 5)
-		Log.add("error", name or "Dev", tostring(err))
-		return
-	end
-	task.spawn(function()
-		local ok, e = xpcall(f, function(x) return tostring(x) end)
-		if not ok then
-			notify("Error", Util.firstLine(e), "error", 5)
-			Log.add("error", name or "Dev", e)
-		end
-	end)
-	Log.add("ok", name or "Dev", "ran " .. #code .. " characters")
+function Home.syncMusic()
+	local pv = Player.cur ~= nil and (Player.state ~= "stopped" or not Spot.connected())
+	Home.player.Visible = pv
+	Home.music.Visible = Spot.connected() and not pv
 end
 
-function Dev.runUrl(url)
-	url = Util.trim(tostring(url or ""))
-	if url == "" then return end
-	task.spawn(function()
-		local ok, body = Net.get(url)
-		if not HUB.alive then return end
-		if not ok then
-			notify("Couldn't download it", Util.firstLine(body), "error")
-			return
-		end
-		Dev.runCode(body, "URL")
-	end)
+function MusicUI.text()
+	local s = Spot.state
+	if s and s.title and s.title ~= "" then return s.title, s.artist or "", true end
+	if not Spot.connected() then return "Spotify isn't connected", "Connect it on the Music page", false end
+	if Spot.err then return "Spotify needs a look", Spot.err, false end
+	return "Nothing playing", "Play something on Spotify", false
 end
 
-function Dev.openExec()
-	return Win.show("dev_exec", {
-		title = "Executor",
-		icon = "code",
-		sub = "Dev",
-		w = 300,
-		h = 300,
-		minW = 240,
-		minH = 200,
-		maxW = 560,
-		build = function(w, body)
-			local inp = Ctl.input(body, 1, "Code", "print(\"hi\")", function() return Dev.code end, function(v) Dev.code = v end, { lines = 8, code = true, raw = true })
-			w:conn(inp.box:GetPropertyChangedSignal("Text"):Connect(function() Dev.code = inp.box.Text end))
-			Ctl.buttons(body, 2, {
-				{ "play", "Run", function() Dev.runCode(inp.box.Text, "Executor") end },
-				{ "trash-2", "Clear", function()
-					inp.box.Text = ""
-					Dev.code = ""
-				end },
-			})
+function MusicUI.barText()
+	if not S.musicBar then return nil, false end
+	local pt = Player.cur
+	if pt and Player.state ~= "stopped" then return pt.name .. ((pt.by and pt.by ~= "") and ("  ·  " .. pt.by) or ""), Player.state == "playing" end
+	if not Spot.connected() then return nil, false end
+	local s = Spot.state
+	if not (s and s.title and s.title ~= "") then return nil, false end
+	local artist = string.match(s.artist or "", "^([^,]+)") or ""
+	return s.title .. (artist ~= "" and ("  ·  " .. artist) or ""), s.playing
+end
+
+function MusicUI.tick(v, instant)
+	if v.dragging or not v.fill then return end
+	local s = Spot.state
+	local p, d = Spot.progressNow()
+	local live = s ~= nil and s.playing and not instant
+	local target = live and math.min(d, p + 500) or p
+	local frac = d > 0 and math.clamp(target / d, 0, 1) or 0
+	local t = live and 0.5 * S.animSpeed or 0
+	UI.tween(v.fill, t, { Size = UDim2.fromScale(frac, 1) }, Enum.EasingStyle.Linear)
+	if v.knob then UI.tween(v.knob, t, { Position = UDim2.fromScale(frac, 0.5) }, Enum.EasingStyle.Linear) end
+	if v.tcur then
+		v.tcur.Text = Util.mmss(p)
+		v.ttotal.Text = d > 0 and Util.mmss(d) or "-:--"
+	end
+end
+
+function MusicUI.render(v)
+	local s = Spot.state
+	local title, artist, has = MusicUI.text()
+	v.title.Text = title
+	v.artist.Text = artist
+	if v.place then v.place(title) end
+	if v.album then v.album.Text = (has and s and s.album) or "" end
+	if v.device then
+		local d = "SPOTIFY"
+		if has and s and s.device then d = string.upper((s.playing and "Playing on " or "Paused on ") .. s.device) end
+		v.device.Text = d
+	end
+	if v.live then v.live.BackgroundColor3 = (has and s and s.playing) and T.green or T.dim end
+	local art = has and Spot.artId or nil
+	v.art.Image = art or ""
+	v.artIcon.Visible = art == nil
+	if v.bg then v.bg.Image = art or "" end
+	UI.setIcon(v.playIcon, (has and s and s.playing) and "pause" or "play-fill")
+	local acc = accentColor()
+	if v.shuffle then UI.tint(v.shuffle, (s and s.shuffle) and acc or T.sub, 0.15) end
+	if v.rep then
+		UI.setIcon(v.rep, (s and s.rep == "track") and "repeat-1" or "repeat")
+		UI.tint(v.rep, (s and s.rep ~= "off") and acc or T.sub, 0.15)
+	end
+	if v.vol and not v.volDragging then v.vol(s and s.volume, s ~= nil and s.canVolume == true) end
+	if v.note then
+		v.note.Text = Spot.err or ""
+		v.note.Visible = Spot.err ~= nil
+	end
+	MusicUI.tick(v, true)
+end
+
+function MusicUI.add(v)
+	MusicUI.views[#MusicUI.views + 1] = v
+	MusicUI.render(v)
+	return v
+end
+
+function MusicUI.each(f, onlyShown)
+	local keep = {}
+	for _, v in ipairs(MusicUI.views) do
+		if v.root.Parent then
+			keep[#keep + 1] = v
+			if not onlyShown or not v.shown or v.shown() then
+				local ok, e = pcall(f, v)
+				if not ok then warn("[Atsuko Hub] " .. tostring(e)) end
+			end
+		end
+	end
+	MusicUI.views = keep
+end
+
+local SPOT_SEEK = {
+	dur = function()
+		local s = Spot.state
+		return s and s.duration or 0
+	end,
+	text = function(frac, d) return Util.mmss(frac * d) end,
+	seek = function(frac, d) Spot.control("seek", frac * d) end,
+}
+
+function MusicUI.bar(parent, v, props, seekable, api)
+	api = api or SPOT_SEEK
+	local track = UI.new("Frame", { Name = "Track", BackgroundColor3 = T.card2, BorderSizePixel = 0 }, parent)
+	for k, val in pairs(props) do
+		track[k] = val
+	end
+	UI.corner(track, 2)
+	local fill = UI.new("Frame", { Name = "Fill", BorderSizePixel = 0, Size = UDim2.fromScale(0, 1) }, track)
+	UI.corner(fill, 2)
+	UI.accent(fill, "BackgroundColor3")
+	v.fill = fill
+	if not seekable then return track end
+	local knob = UI.new("Frame", { Name = "Knob", BackgroundColor3 = T.text, AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(12, 12), Position = UDim2.fromScale(0, 0.5) }, track)
+	UI.corner(knob, 6)
+	v.knob = knob
+	local hit = UI.button(track, { Name = "Seek", BackgroundTransparency = 1, Position = UDim2.new(0, -8, 0.5, -12), Size = UDim2.new(1, 16, 0, 24) })
+	hit.InputBegan:Connect(function(input)
+		if input.UserInputType ~= MOUSE1 and input.UserInputType ~= TOUCH then return end
+		local dur = api.dur()
+		if Drag.cur or dur <= 0 then return end
+		local scroller = hit:FindFirstAncestorOfClass("ScrollingFrame")
+		if scroller then scroller.ScrollingEnabled = false end
+		v.dragging = true
+		local frac = 0
+		local function update(pos)
+			local ap, as = track.AbsolutePosition.X, track.AbsoluteSize.X
+			if as <= 0 then return end
+			frac = math.clamp((pos.X - ap) / as, 0, 1)
+			UI.tween(fill, 0, { Size = UDim2.fromScale(frac, 1) })
+			UI.tween(knob, 0, { Position = UDim2.fromScale(frac, 0.5) })
+			if v.tcur then v.tcur.Text = api.text(frac, dur) end
+		end
+		update(input.Position)
+		UI.tween(knob, 0.15, { Size = UDim2.fromOffset(16, 16) })
+		Drag.start(input, update, function()
+			if scroller and scroller.Parent then scroller.ScrollingEnabled = true end
+			UI.tween(knob, 0.2, { Size = UDim2.fromOffset(12, 12) })
+			v.dragging = false
+			local d2 = api.dur()
+			if d2 > 0 then api.seek(frac, d2) end
+		end)
+	end)
+	return track
+end
+
+function MusicUI.button(parent, icon, size, iconSize, pos, filled)
+	local b = UI.button(parent, {
+		Name = icon,
+		BackgroundColor3 = filled and accentColor() or T.card2,
+		BackgroundTransparency = filled and 0 or 1,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = pos,
+		Size = UDim2.fromOffset(size, size),
+	})
+	UI.corner(b, size // 2)
+	if filled then UI.accent(b, "BackgroundColor3") end
+	local ic = UI.icon(icon, iconSize, filled and T.ink or T.text, b, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+	UI.pressable(b, 0.86)
+	if not filled then
+		UI.onHover(b, function(on)
+			UI.tween(b, 0.15, { BackgroundTransparency = on and 0.4 or 1 })
+		end)
+	end
+	return b, ic
+end
+
+function MusicUI.art(parent, size, radius, pos, iconSize)
+	local art = UI.new("ImageLabel", { Name = "Art", BackgroundColor3 = T.card2, Size = UDim2.fromOffset(size, size), Position = pos, ScaleType = Enum.ScaleType.Crop, Image = "" }, parent)
+	UI.corner(art, radius)
+	UI.stroke(art, T.text, 1, 0.88)
+	local ic = UI.icon("music", iconSize, T.dim, art, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+	return art, ic
+end
+
+local Music = newPage({ id = "music", title = "Spotify", icon = "music" })
+Music.setup = newScroll(Music.frame, 0, false)
+Music.player = newScroll(Music.frame, 0, false)
+Music.views = { Music.setup }
+Music.right = { icon = "picture-in-picture-2", fn = function() MusicUI.openMini() end }
+Music.pending = ""
+
+function MusicUI.openMini()
+	if not Spot.connected() then
+		notify("Spotify", "Connect it on the Music page first", "info")
+		if not (Panel.open and Panel.page == "music") then Panel.nav("music") end
+		return nil
+	end
+	return Win.show("music_mini", {
+		title = "Now playing",
+		icon = "music",
+		sub = "Spotify",
+		w = 270,
+		h = 150,
+		minW = 230,
+		maxW = 380,
+		minH = 150,
+		maxH = 150,
+		noScroll = true,
+		build = function(_, body)
+			local v = { root = body }
+			v.art, v.artIcon = MusicUI.art(body, 64, 10, UDim2.fromOffset(0, 2), 22)
+			v.title = UI.label(body, { Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(74, 4), Size = UDim2.new(1, -74, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+			v.artist = UI.label(body, { TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(74, 21), Size = UDim2.new(1, -74, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+			local row = UI.new("Frame", { Name = "Controls", BackgroundTransparency = 1, Position = UDim2.fromOffset(74, 38), Size = UDim2.new(1, -74, 0, 32) }, body)
+			local prev = MusicUI.button(row, "skip-back", 28, 14, UDim2.new(0, 14, 0.5, 0))
+			local play
+			play, v.playIcon = MusicUI.button(row, "play-fill", 32, 15, UDim2.new(0, 50, 0.5, 0), true)
+			local nxt = MusicUI.button(row, "skip-forward", 28, 14, UDim2.new(0, 86, 0.5, 0))
+			prev.Activated:Connect(function() Spot.control("prev") end)
+			play.Activated:Connect(function() Spot.control("toggle") end)
+			nxt.Activated:Connect(function() Spot.control("next") end)
+			MusicUI.bar(body, v, { Position = UDim2.fromOffset(0, 80), Size = UDim2.new(1, 0, 0, 3) }, false)
+			MusicUI.add(v)
 		end,
 	})
 end
 
 do
-	local v = Dev.views[1]
-	section(v, "Run code", 1)
-	local code = Ctl.input(v, 2, "Lua", "print(\"hi\")", function() return Dev.code end, function(x) Dev.code = x end, { lines = 6, code = true, raw = true })
-	code.box:GetPropertyChangedSignal("Text"):Connect(function() Dev.code = code.box.Text end)
-	Ctl.buttons(v, 3, {
-		{ "play", "Run", function() Dev.runCode(code.box.Text, "Dev") end },
-		{ "maximize-2", "Pop out", function() Dev.openExec() end },
-		{ "trash-2", "Clear", function()
-			code.box.Text = ""
-			Dev.code = ""
-		end },
-	})
-	local url = Ctl.input(v, 4, "Run a script from a link", "https://...", function() return "" end, function(x, enter)
-		if enter and x ~= "" then Dev.runUrl(x) end
+	local pv = Music.player
+	local v = { root = pv, shown = function() return Panel.open and Panel.page == "music" end }
+	local hero = card(pv, 128, 1)
+	hero.Name = "NowPlaying"
+	v.bg = UI.new("ImageLabel", { Name = "Backdrop", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ScaleType = Enum.ScaleType.Crop, ImageTransparency = 0.72, Image = "" }, hero)
+	UI.corner(v.bg, 12)
+	local shade = UI.new("Frame", { Name = "Shade", BackgroundColor3 = T.card, BorderSizePixel = 0, Size = UDim2.fromScale(1, 1) }, hero)
+	UI.corner(shade, 12)
+	UI.new("UIGradient", {
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.6),
+			NumberSequenceKeypoint.new(0.45, 0.15),
+			NumberSequenceKeypoint.new(1, 0.05),
+		}),
+	}, shade)
+	v.art, v.artIcon = MusicUI.art(hero, 104, 10, UDim2.fromOffset(12, 12), 34)
+	v.live = UI.new("Frame", { Name = "Live", BackgroundColor3 = T.dim, Size = UDim2.fromOffset(6, 6), Position = UDim2.fromOffset(128, 19) }, hero)
+	UI.corner(v.live, 3)
+	v.device = UI.label(hero, { Font = FONT_B, TextSize = 9, TextColor3 = T.sub, Text = "SPOTIFY", Position = UDim2.fromOffset(140, 14), Size = UDim2.new(1, -152, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+	v.title = UI.label(hero, { Font = FONT_B, TextSize = 14, Position = UDim2.fromOffset(128, 34), Size = UDim2.new(1, -140, 0, 36), TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, TextTruncate = Enum.TextTruncate.AtEnd })
+	v.artist = UI.label(hero, { TextSize = 11, TextColor3 = T.sub, Position = UDim2.fromOffset(128, 74), Size = UDim2.new(1, -140, 0, 15), TextTruncate = Enum.TextTruncate.AtEnd })
+	v.album = UI.label(hero, { TextSize = 10, TextColor3 = T.dim, Position = UDim2.fromOffset(128, 92), Size = UDim2.new(1, -140, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+	v.place = function(title)
+		local width = v.title.AbsoluteSize.X / math.max(0.01, L.scale)
+		local two = width > 0 and textWidth(title, 14, FONT_B) > width - 2
+		local top = two and 14 or 24
+		v.live.Position = UDim2.fromOffset(128, top + 5)
+		v.device.Position = UDim2.fromOffset(140, top)
+		v.title.Position = UDim2.fromOffset(128, top + 20)
+		v.title.Size = UDim2.new(1, -140, 0, two and 36 or 18)
+		v.artist.Position = UDim2.fromOffset(128, top + (two and 60 or 42))
+		v.album.Position = UDim2.fromOffset(128, top + (two and 78 or 60))
+	end
+	local lastW = -1
+	v.title:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		local wNow = v.title.AbsoluteSize.X
+		if math.abs(wNow - lastW) < 0.5 then return end
+		lastW = wNow
+		v.place(v.title.Text)
 	end)
-	Ctl.buttons(v, 5, { { "download", "Get and run", function() Dev.runUrl(url.box.Text) end } })
-	section(v, "Hub", 6)
-	Ctl.action(v, 7, "Reload the hub", "refresh-cw", false, function() Ver.update() end)
-	Ctl.action(v, 8, "Check for updates", "download", false, function() Ver.check(true) end)
-	Ctl.action(v, 9, "Show what's new", "sparkles", false, function() Ver.showNews() end)
-	Ctl.action(v, 10, "Copy the hub loadstring", "copy", false, function()
-		copyText(string.format("loadstring(game:HttpGet(%q))()", HOME_REPO .. HUB_DIR .. "/AtsukoHub.lua"), "Hub loadstring")
+
+	local prog = UI.new("Frame", { Name = "Progress", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 34), LayoutOrder = 2 }, pv)
+	MusicUI.bar(prog, v, { Position = UDim2.fromOffset(8, 10), Size = UDim2.new(1, -16, 0, 4) }, true)
+	v.tcur = UI.label(prog, { TextSize = 10, TextColor3 = T.sub, Text = "0:00", Position = UDim2.fromOffset(8, 19), Size = UDim2.new(0.5, -8, 0, 14) })
+	v.ttotal = UI.label(prog, { TextSize = 10, TextColor3 = T.sub, Text = "-:--", TextXAlignment = Enum.TextXAlignment.Right, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 19), Size = UDim2.new(0.5, -8, 0, 14) })
+
+	local ctl = UI.new("Frame", { Name = "Controls", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 60), LayoutOrder = 3 }, pv)
+	local sh, prev, play, nxt, rp
+	sh, v.shuffle = MusicUI.button(ctl, "shuffle", 34, 16, UDim2.new(0.5, -112, 0.5, 0))
+	prev = MusicUI.button(ctl, "skip-back", 42, 19, UDim2.new(0.5, -60, 0.5, 0))
+	play, v.playIcon = MusicUI.button(ctl, "play-fill", 52, 22, UDim2.new(0.5, 0, 0.5, 0), true)
+	nxt = MusicUI.button(ctl, "skip-forward", 42, 19, UDim2.new(0.5, 60, 0.5, 0))
+	rp, v.rep = MusicUI.button(ctl, "repeat", 34, 16, UDim2.new(0.5, 112, 0.5, 0))
+	sh.Activated:Connect(function() Spot.control("shuffle") end)
+	prev.Activated:Connect(function() Spot.control("prev") end)
+	play.Activated:Connect(function() Spot.control("toggle") end)
+	nxt.Activated:Connect(function() Spot.control("next") end)
+	rp.Activated:Connect(function() Spot.control("repeat") end)
+
+	local vc = card(pv, 44, 4)
+	vc.Name = "Volume"
+	local mute = UI.button(vc, { Name = "Mute", BackgroundTransparency = 1, Size = UDim2.fromOffset(40, 44) })
+	local vIcon = UI.icon("volume-2", 16, T.sub, mute, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 22, 0.5, 0) })
+	local vtrack = UI.new("Frame", { Name = "Track", BackgroundColor3 = T.card2, BorderSizePixel = 0, Position = UDim2.new(0, 44, 0.5, -2), Size = UDim2.new(1, -100, 0, 4) }, vc)
+	UI.corner(vtrack, 2)
+	local vfill = UI.new("Frame", { Name = "Fill", BorderSizePixel = 0, Size = UDim2.fromScale(0, 1) }, vtrack)
+	UI.corner(vfill, 2)
+	UI.accent(vfill, "BackgroundColor3")
+	local vknob = UI.new("Frame", { Name = "Knob", BackgroundColor3 = T.text, AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(12, 12), Position = UDim2.fromScale(0, 0.5) }, vtrack)
+	UI.corner(vknob, 6)
+	local vval = UI.label(vc, { Font = FONT_B, TextSize = 11, TextColor3 = T.sub, Text = "-", TextXAlignment = Enum.TextXAlignment.Right, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 0), Size = UDim2.fromOffset(42, 44) })
+	local vhit = UI.button(vtrack, { Name = "Hit", BackgroundTransparency = 1, Position = UDim2.new(0, -8, 0.5, -14), Size = UDim2.new(1, 16, 0, 28) })
+	local lastVol, volOk = 50, false
+	v.vol = function(value, ok)
+		volOk = ok
+		local val = tonumber(value)
+		local frac = val and math.clamp(val / 100, 0, 1) or 0
+		vfill.Size = UDim2.fromScale(frac, 1)
+		vfill.BackgroundTransparency = volOk and 0 or 0.65
+		vknob.Position = UDim2.fromScale(frac, 0.5)
+		vknob.Visible = volOk
+		vval.Text = val and (math.floor(val + 0.5) .. "%") or "-"
+		UI.setIcon(vIcon, (val and val <= 0) and "volume-x" or ((val and val < 50) and "volume-1" or "volume-2"))
+		if val and val > 0 then lastVol = val end
+	end
+	vhit.InputBegan:Connect(function(input)
+		if input.UserInputType ~= MOUSE1 and input.UserInputType ~= TOUCH then return end
+		if Drag.cur or not volOk then return end
+		local scroller = vhit:FindFirstAncestorOfClass("ScrollingFrame")
+		if scroller then scroller.ScrollingEnabled = false end
+		v.volDragging = true
+		local cur = 0
+		local function update(pos)
+			local ap, as = vtrack.AbsolutePosition.X, vtrack.AbsoluteSize.X
+			if as <= 0 then return end
+			cur = math.floor(math.clamp((pos.X - ap) / as, 0, 1) * 100 + 0.5)
+			vfill.Size = UDim2.fromScale(cur / 100, 1)
+			vknob.Position = UDim2.fromScale(cur / 100, 0.5)
+			vval.Text = cur .. "%"
+		end
+		update(input.Position)
+		UI.tween(vknob, 0.15, { Size = UDim2.fromOffset(16, 16) })
+		Drag.start(input, update, function()
+			if scroller and scroller.Parent then scroller.ScrollingEnabled = true end
+			UI.tween(vknob, 0.2, { Size = UDim2.fromOffset(12, 12) })
+			v.volDragging = false
+			Spot.control("volume", cur)
+		end)
 	end)
-	Ctl.action(v, 11, "Close every window", "x", false, function() Win.closeAll() end)
+	mute.Activated:Connect(function()
+		local s = Spot.state
+		if not (s and volOk) then return end
+		Spot.control("volume", (s.volume or 0) > 0 and 0 or lastVol)
+	end)
+
+	v.note = UI.label(pv, { Name = "Status", TextSize = 10, TextColor3 = T.yellow, TextXAlignment = Enum.TextXAlignment.Center, TextWrapped = true, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 5, Visible = false })
+	section(pv, "Options", 6)
+	Music.barToggle = Ctl.toggle(pv, 7, "Show the song on the top bar", nil, function() return S.musicBar end, function(x)
+		S.musicBar = x
+		saveSettings()
+		Bus.fire("spotify")
+	end)
+	Ctl.action(pv, 8, "Pop out the mini player", "picture-in-picture-2", false, function() MusicUI.openMini() end)
+	Ctl.action(pv, 9, "Disconnect Spotify", "log-out", true, function() Spot.logout("Disconnected") end, true)
+	Ctl.note(pv, 10, "Song info updates every few seconds. Play, skip, seek and volume need Spotify Premium.")
+	MusicUI.add(v)
 end
 
 do
-	local v = Dev.views[2]
-	section(v, "Where scripts come from", 1)
-	local function repoField(order, title, key, placeholder)
-		Dev.controls[#Dev.controls + 1] = Ctl.input(v, order, title, placeholder, function() return S[key] end, function(x)
-			if x == "" then x = DEFAULTS[key] end
-			if x == S[key] then return end
-			S[key] = x
-			saveSettings()
-			Repo.set({})
-			Repo.src, Repo.meta = {}, {}
-			Repo.state = "idle"
-			Repo.loadCache()
-			Scripts.invalidate()
-			Repo.refresh(true)
-			if Util.trim(S.logo) == "" then Logo.load() end
+	local sv = Music.setup
+	local top = UI.new("Frame", { Name = "Intro", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 1 }, sv)
+	UI.list(top, 6, nil, Enum.HorizontalAlignment.Center)
+	UI.pad(top, 12, 12, 8, 4)
+	local circ = UI.new("Frame", { BackgroundTransparency = 0.82, Size = UDim2.fromOffset(46, 46), LayoutOrder = 1 }, top)
+	UI.corner(circ, 23)
+	UI.accent(circ, "BackgroundColor3")
+	UI.accent(UI.icon("music", 20, T.text, circ, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) }), "ImageColor3")
+	UI.label(top, { Text = "Connect Spotify", Font = FONT_B, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.new(1, 0, 0, 18), LayoutOrder = 2 })
+	UI.label(top, {
+		Text = X.request and "See what's playing and control it from the hub. It uses your own Spotify app, and the app's owner needs Premium." or "Your executor can't send web requests, so Spotify can't work here.",
+		TextSize = 11,
+		TextColor3 = X.request and T.sub or T.yellow,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextWrapped = true,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		LayoutOrder = 3,
+	})
+
+	section(sv, "1   Make a Spotify app", 2)
+	Ctl.note(sv, 3, "Open the dashboard, tap Create app, tick Web API and add the redirect URI below. Save it.")
+	Ctl.action(sv, 4, "Copy the dashboard link", "link", false, function()
+		copyText("https://developer.spotify.com/dashboard", "Dashboard link, open it in your browser")
+	end)
+	local rr = UI.button(sv, { Name = "Redirect", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 50), LayoutOrder = 5 })
+	UI.corner(rr, 12)
+	UI.label(rr, { Text = "Redirect URI", TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(12, 8), Size = UDim2.new(1, -46, 0, 13) })
+	UI.label(rr, { Text = SPOT_REDIRECT, Font = Enum.Font.Code, TextSize = 11, Position = UDim2.fromOffset(12, 24), Size = UDim2.new(1, -46, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+	UI.icon("copy", 13, T.dim, rr, { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -14, 0.5, 0) })
+	Ctl.hoverable(rr)
+	rr.Activated:Connect(function() copyText(SPOT_REDIRECT, "Redirect URI") end)
+
+	section(sv, "2   Paste your keys", 6)
+	Music.idBox = Ctl.input(sv, 7, "Client ID", "from your app's settings", function() return Spot.cfg.id end, function(x)
+		x = string.gsub(x, "%s", "")
+		if x == Spot.cfg.id then return end
+		Spot.cfg.id = x
+		Spot.save()
+	end)
+	local function masked()
+		local s = Spot.cfg.secret
+		if s == "" then return "" end
+		return "saved  ·  ends in " .. string.sub(s, -4)
+	end
+	Music.secretBox = Ctl.input(sv, 8, "Client secret", "tap View client secret, then copy it", masked, function(x)
+		x = string.gsub(x, "%s", "")
+		if x == "" or x == string.gsub(masked(), "%s", "") then return end
+		Spot.cfg.secret = x
+		Spot.save()
+	end)
+	Music.secretBox.box.ClearTextOnFocus = true
+
+	section(sv, "3   Log in", 9)
+	Ctl.action(sv, 10, "Copy the login link", "key-round", false, function()
+		if not X.request then
+			notify("Spotify", "Your executor can't send web requests", "error")
+		elseif not Spot.hasApp() then
+			notify("Spotify", "Paste your Client ID and secret first", "error")
+		else
+			copyText(Spot.loginUrl(), "Login link, open it in your browser")
+		end
+	end)
+	Ctl.note(sv, 11, "Open it in your browser and tap Agree. The next page won't load, that's normal. Copy the whole link from the address bar and paste it here.")
+	local btns
+	local busy = false
+	local function doConnect(text)
+		if busy then return end
+		busy = true
+		btns[1].set("loader-circle", "Connecting...", T.sub)
+		Music.status.Text = ""
+		task.spawn(function()
+			local ok, err = Spot.connect(text)
+			busy = false
+			if not HUB.alive then return end
+			btns[1].set("check", "Connect", T.text)
+			if ok then
+				Music.pending = ""
+				Music.codeBox.box.Text = ""
+				notify("Spotify", "Connected", "ok")
+			else
+				Music.status.Text = err
+				notify("Couldn't connect", err, "error", 4)
+			end
 		end)
 	end
-	repoField(2, "Owner", "owner", "atsukohakari")
-	repoField(3, "Repository", "repo", "Atsuko")
-	repoField(4, "Branch", "branch", "main")
-	Dev.controls[#Dev.controls + 1] = Ctl.input(v, 5, "Logo (empty = Hub/logo.png)", "image link or rbxassetid://", function() return S.logo end, function(x)
-		if x == S.logo then return end
-		S.logo = x
-		saveSettings()
-		Logo.load()
+	Music.codeBox = Ctl.input(sv, 12, "Paste the link here", "http://127.0.0.1:8888/callback?code=...", function() return Music.pending end, function(x, enter)
+		Music.pending = x
+		if enter and x ~= "" then doConnect(x) end
 	end)
-	Dev.controls[#Dev.controls + 1] = Ctl.toggle(v, 6, "Show Testing scripts", "Scripts in the Testing folder, only you can see them", function() return S.showTesting end, function(x)
-		S.showTesting = x
-		saveSettings()
-		Scripts.invalidate()
+	btns = Ctl.buttons(sv, 13, { { "check", "Connect", function()
+		local text = Music.codeBox.box.Text
+		if Util.trim(text) == "" then text = Music.pending end
+		doConnect(text)
+	end } })
+	Music.status = UI.label(sv, { Name = "Status", Text = "", TextSize = 10, TextColor3 = T.yellow, TextXAlignment = Enum.TextXAlignment.Center, TextWrapped = true, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 14, Visible = false })
+	Music.status:GetPropertyChangedSignal("Text"):Connect(function()
+		Music.status.Visible = Music.status.Text ~= ""
 	end)
-	Ctl.action(v, 7, "Look for new scripts now", "refresh-cw", false, function() Repo.refresh(true) end)
-	Ctl.action(v, 8, "Forget downloaded copies", "trash-2", false, function()
-		FS.delete(LIST_CACHE)
-		for path in pairs(Repo.src) do
-			FS.delete(sourceCachePath(path))
-		end
-		Repo.src, Repo.meta = {}, {}
-		notify("Cache cleared", "Scripts download fresh next time", "ok", 2)
-	end)
-	Ctl.note(v, 9, "Owner stuff only shows for the Roblox ids in Hub/owner.txt. Anyone else never sees this page, the Repo settings or the Testing folder.")
+	Ctl.action(sv, 15, "Forget my app keys", "trash-2", true, function()
+		Spot.cfg.id, Spot.cfg.secret = "", ""
+		Spot.logout(nil)
+		Music.idBox.render()
+		Music.secretBox.render()
+		notify("Spotify", "Keys removed", "ok", 2)
+	end, true)
+	Ctl.note(sv, 16, "Your keys stay on this device in the AtsukoHub folder. They're never in Copy my settings.")
 end
 
-function Dev.renderInfo()
-	local v = Dev.views[3]
-	clearList(v)
-	local function has(name) return X[name] ~= nil end
-	section(v, "Hub", 1)
-	Ctl.info(v, 2, "Version", "v" .. HUB_VERSION)
-	Ctl.info(v, 3, "Newest", Ver.latest and ("v" .. Ver.latest) or "this one")
-	Ctl.info(v, 4, "Executor", Home.executor)
-	Ctl.info(v, 5, "Your user id", LP.UserId, function(x) copyText(x, "User ID") end)
-	local smart = "threads only"
-	if not S.smartStop then
-		smart = "off"
-	elseif SHARED.hooked or (SHARED.hooked == nil and X.hookmetamethod and X.getrawmetatable and X.getnamecallmethod and X.checkcaller and X.newcclosure) then
-		smart = "hook"
-	elseif X.getconnections and X.isexecutorclosure then
-		smart = "sweep"
-	end
-	Ctl.info(v, 6, "Smart Stop", smart)
-	Ctl.info(v, 7, "Scripts", #Repo.entries .. " (" .. #Repo.shown() .. " shown)")
-	section(v, "Executor functions", 8)
-	local fns = { "loadstring", "setfenv", "getfenv", "request", "writefile", "readfile", "getcustomasset", "setclipboard", "hookmetamethod", "getconnections", "isexecutorclosure", "gethui", "setfpscap", "identifyexecutor" }
-	for i, n in ipairs(fns) do
-		local val = Ctl.info(v, 8 + i, n, has(n) and "yes" or "no")
-		val.TextColor3 = has(n) and T.green or T.red
-	end
+do
+	local hc = UI.button(Home.music, { Name = "Card", BackgroundColor3 = T.card, Size = UDim2.fromScale(1, 1) })
+	UI.corner(hc, 12)
+	local v = { root = hc, shown = function() return Panel.open and Panel.page == "home" and Home.music.Visible end }
+	v.art, v.artIcon = MusicUI.art(hc, 44, 10, UDim2.fromOffset(10, 9), 18)
+	v.title = UI.label(hc, { Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(64, 12), Size = UDim2.new(1, -144, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+	v.artist = UI.label(hc, { TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(64, 30), Size = UDim2.new(1, -144, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+	local play
+	play, v.playIcon = MusicUI.button(hc, "play-fill", 32, 14, UDim2.new(1, -62, 0.5, -2), true)
+	local nxt = MusicUI.button(hc, "skip-forward", 28, 13, UDim2.new(1, -26, 0.5, -2))
+	play.Activated:Connect(function() Spot.control("toggle") end)
+	nxt.Activated:Connect(function() Spot.control("next") end)
+	MusicUI.bar(hc, v, { Position = UDim2.new(0, 12, 1, -6), Size = UDim2.new(1, -24, 0, 2) }, false)
+	Ctl.hoverable(hc)
+	hc.Activated:Connect(function() Panel.nav("music") end)
+	MusicUI.add(v)
 end
-Dev.onTab = function(i)
-	if i == 3 then Dev.renderInfo() end
+
+function Music.sync()
+	local c = Spot.connected()
+	Music.setup.Visible = not c
+	Music.player.Visible = c
+	Music.views = { c and Music.player or Music.setup }
+	Home.syncMusic()
 end
-Dev.onShow = function()
-	for _, c in ipairs(Dev.controls) do
-		c.render(false)
-	end
-	if Dev.tab == 3 then Dev.renderInfo() end
+
+Music.onShow = function()
+	Music.sync()
+	Music.barToggle.render(false)
+	Music.idBox.render()
+	Music.secretBox.render()
+	if Spot.connected() and not Spot.polling and os.clock() - Spot.lastPoll > 1.5 then task.spawn(Spot.poll) end
 end
+
+function MusicUI.interval()
+	if (Panel.open and Panel.page == "music") or Win.isOpen("music_mini") then return 2.5 end
+	if (Panel.open and Panel.page == "home") or (S.musicBar and S.statsBar) then return 6 end
+	return nil
+end
+
+Bus.on("spotify", function()
+	MusicUI.each(MusicUI.render)
+end)
+
+Bus.on("spotifyConn", function()
+	Music.sync()
+	if not Spot.connected() then Win.close("music_mini") end
+	MusicUI.each(MusicUI.render)
+end)
+
+Music.sync()
 
 local Settings = newPage({ id = "settings", title = "Settings", icon = "settings", tabs = { "General", "Scripts", "Commands", "About" } })
 Settings.views = { newScroll(Settings.frame, 0, true), newScroll(Settings.frame, 0, false), newScroll(Settings.frame, 0, false), newScroll(Settings.frame, 0, false) }
@@ -6535,12 +8632,46 @@ function Settings.applyAll()
 	UI.applyAccent()
 	applyLayout()
 	updateSpin()
-	Pill.frame.Visible = S.statsBar
+	Pill.frame.Visible = S.statsBar and not HUB.hidden
 	Toast.place(true)
 	Blur.set(Panel.open)
 	if S.fpsCap > 0 then applyFpsCap() end
+	UI.setFont(S.font)
+	Home.buildQuick()
 	for _, c in ipairs(Settings.controls) do
 		c.render(false)
+	end
+end
+
+function UI.setFont(name)
+	local set = FONT_SETS[name]
+	if not set then return end
+	local oldM, oldB = FONT_M, FONT_B
+	FONT_M, FONT_B = set[1], set[2]
+	if oldM == FONT_M and oldB == FONT_B then return end
+	for _, o in ipairs(Gui:GetDescendants()) do
+		if o:IsA("TextLabel") or o:IsA("TextButton") or o:IsA("TextBox") then
+			if o.Font == oldM then
+				o.Font = FONT_M
+			elseif o.Font == oldB then
+				o.Font = FONT_B
+			end
+		end
+	end
+	local pg = Panel.page and Pages[Panel.page]
+	if pg then Panel.header(pg) end
+end
+
+function Panel.panic()
+	pcall(Runner.stopAll, nil, true)
+	pcall(Cmd.stopAll, true)
+	pcall(Player.stop)
+	pcall(Win.closeAll)
+	HUB.hidden = true
+	Panel.closeAll()
+	Pill.frame.Visible = false
+	for _, t in ipairs(table.clone(Toast.list)) do
+		Toast.dismiss(t)
 	end
 end
 
@@ -6626,82 +8757,130 @@ do
 		drawRings()
 		UI.applyAccent()
 	end))
-	reg(Ctl.slider(v, 4, "Background opacity", 0.4, 1, 0.05, function() return 1 - S.opacity end, function(x, final)
+	reg(Ctl.choice(v, 4, "Font", { { "Gotham", "Gotham" }, { "Builder", "Builder" }, { "Arimo", "Arimo" }, { "Fredoka", "Fredoka" } }, function() return S.font end, function(x)
+		S.font = x
+		saveSettings()
+		UI.setFont(x)
+	end))
+	reg(Ctl.slider(v, 5, "Background opacity", 0.4, 1, 0.05, function() return 1 - S.opacity end, function(x, final)
 		S.opacity = math.clamp(1 - x, 0, 0.6)
 		applyLook()
 		if final then saveSettings() end
 	end, function(x) return math.floor(x * 100 + 0.5) .. "%" end, true))
-	reg(Ctl.slider(v, 5, "Size", 0.7, 1.4, 0.05, function() return S.uiScale end, function(x, final)
+	reg(Ctl.slider(v, 6, "Size", 0.7, 1.4, 0.05, function() return S.uiScale end, function(x, final)
 		if final then
 			S.uiScale = x
 			saveSettings()
 			applyLayout()
 		end
 	end, function(x) return math.floor(x * 100 + 0.5) .. "%" end, false))
-	reg(Ctl.toggle(v, 6, "Blur the game behind the hub", nil, function() return S.blur end, function(x)
+	reg(Ctl.toggle(v, 7, "Blur the game behind the hub", nil, function() return S.blur end, function(x)
 		S.blur = x
 		saveSettings()
 		Blur.set(Panel.open)
 	end))
-	reg(Ctl.toggle(v, 7, "Smooth animations", nil, function() return S.animations end, function(x)
+	reg(Ctl.toggle(v, 8, "Smooth animations", nil, function() return S.animations end, function(x)
 		S.animations = x
 		saveSettings()
 		updateSpin()
 	end))
-	reg(Ctl.slider(v, 8, "Animation speed", 0.5, 2, 0.25, function() return S.animSpeed end, function(x, final)
+	reg(Ctl.slider(v, 9, "Animation speed", 0.5, 2, 0.25, function() return S.animSpeed end, function(x, final)
 		S.animSpeed = x
 		if final then saveSettings() end
 	end, function(x) return string.format("%.2gx", x) end, true))
 
-	section(v, "Top bar", 9)
-	reg(Ctl.toggle(v, 10, "Show the FPS and ping bar", "Tap it to open or hide the hub", function() return S.statsBar end, function(x)
-		S.statsBar = x
+	section(v, "When the hub loads", 10)
+	reg(Ctl.toggle(v, 11, "Open the panel right away", "Otherwise only the side bar shows", function() return S.openOnLoad end, function(x)
+		S.openOnLoad = x
 		saveSettings()
-		Pill.frame.Visible = x
-		Toast.place(true)
+	end))
+	reg(Ctl.choice(v, 12, "Open on", { { "home", "Home" }, { "last", "Last page" } }, function() return S.startPage end, function(x)
+		S.startPage = x
+		saveSettings()
 	end))
 
-	section(v, "Notifications", 11)
-	reg(Ctl.toggle(v, 12, "Notifications", nil, function() return S.notifications end, function(x)
+	section(v, "Top bar", 13)
+	reg(Ctl.toggle(v, 14, "Show the FPS and ping bar", "Tap it to open or hide the hub", function() return S.statsBar end, function(x)
+		S.statsBar = x
+		saveSettings()
+		Pill.frame.Visible = x and not HUB.hidden
+		Toast.place(true)
+	end))
+	reg(Ctl.toggle(v, 15, "Show the song that's playing", "From the Music Player or Spotify", function() return S.musicBar end, function(x)
+		S.musicBar = x
+		saveSettings()
+		Bus.fire("spotify")
+	end))
+	reg(Ctl.toggle(v, 16, "Show the time", nil, function() return S.barClock end, function(x)
+		S.barClock = x
+		saveSettings()
+	end))
+	reg(Ctl.toggle(v, 17, "24-hour time", nil, function() return S.clock24 end, function(x)
+		S.clock24 = x
+		saveSettings()
+	end))
+
+	section(v, "Notifications", 18)
+	reg(Ctl.toggle(v, 19, "Notifications", nil, function() return S.notifications end, function(x)
 		S.notifications = x
 		saveSettings()
 	end))
-	reg(Ctl.slider(v, 13, "How long they stay", 1.5, 8, 0.5, function() return S.toastTime end, function(x, final)
+	reg(Ctl.slider(v, 20, "How long they stay", 1.5, 8, 0.5, function() return S.toastTime end, function(x, final)
 		S.toastTime = x
 		if final then
 			saveSettings()
 			notify("Like this", "Stays for " .. x .. " seconds", "info")
 		end
 	end, function(x) return x .. "s" end, true))
-	reg(Ctl.choice(v, 14, "Where they show up", { { "top", "Top" }, { "bottom", "Bottom" } }, function() return S.toastPos end, function(x)
+	reg(Ctl.choice(v, 21, "Where they show up", { { "top", "Top" }, { "bottom", "Bottom" } }, function() return S.toastPos end, function(x)
 		S.toastPos = x
 		saveSettings()
 		Toast.place(true)
 		notify("Notifications", "They show up here now", "info")
 	end))
 
-	section(v, "Controls", 15)
-	keyRow(v, 16, "Show / hide key", "toggleKey")
-	keyRow(v, 17, "Command bar key", "cmdKey")
-	Ctl.note(v, 18, "Keys only matter on a keyboard. On mobile, use the arrow on the right edge or tap the FPS bar. Backspace clears a key.")
-	reg(Ctl.toggle(v, 19, "Lock the panel in place", nil, function() return S.lockPanel end, function(x)
+	section(v, "Sounds", 22)
+	reg(Ctl.toggle(v, 23, "Click sounds", "A soft click when you tap buttons", function() return S.uiSounds end, function(x)
+		S.uiSounds = x
+		saveSettings()
+		Sfx.play("click")
+	end))
+	reg(Ctl.toggle(v, 24, "Notification sound", nil, function() return S.toastSound end, function(x)
+		S.toastSound = x
+		saveSettings()
+		Sfx.play("ping")
+	end))
+	reg(Ctl.slider(v, 25, "Sound volume", 0, 1, 0.05, function() return S.sfxVolume end, function(x, final)
+		S.sfxVolume = x
+		if final then
+			saveSettings()
+			if S.toastSound then Sfx.play("ping") elseif S.uiSounds then Sfx.play("click") end
+		end
+	end, function(x) return math.floor(x * 100 + 0.5) .. "%" end, true))
+
+	section(v, "Controls", 26)
+	keyRow(v, 27, "Show / hide key", "toggleKey")
+	keyRow(v, 28, "Command bar key", "cmdKey")
+	keyRow(v, 29, "Panic key", "panicKey")
+	Ctl.note(v, 30, "Panic stops every script, turns off every command, stops the music and hides the whole hub. Press your show / hide key to bring it back. Keys only matter on a keyboard, Backspace clears one.")
+	reg(Ctl.toggle(v, 31, "Lock the panel in place", nil, function() return S.lockPanel end, function(x)
 		S.lockPanel = x
 		saveSettings()
 	end))
-	Ctl.action(v, 20, "Put the panel back next to the bar", "rotate-ccw", false, function()
+	Ctl.action(v, 32, "Put the panel back next to the bar", "rotate-ccw", false, function()
 		S.panelPos = false
 		saveSettings()
 		Panel.place()
 		notify("Panel moved back", "", "ok", 1.5)
 	end)
-	Ctl.action(v, 21, "Put the windows back in the middle", "maximize-2", false, function()
+	Ctl.action(v, 33, "Put the windows back in the middle", "maximize-2", false, function()
 		Win.resetPositions()
 		notify("Windows moved back", "", "ok", 1.5)
 	end)
 
 	if X.setfpscap then
-		section(v, "Performance", 22)
-		reg(Ctl.slider(v, 23, "FPS cap", 0, 360, 30, function() return S.fpsCap end, function(x, final)
+		section(v, "Performance", 34)
+		reg(Ctl.slider(v, 35, "FPS cap", 0, 360, 30, function() return S.fpsCap end, function(x, final)
 			if final then
 				S.fpsCap = x
 				saveSettings()
@@ -6782,6 +8961,15 @@ do
 	section(v, "Right now", 7)
 	Ctl.action(v, 8, "Open the command bar", "command", false, function() Cmd.openBar(true) end)
 	Ctl.action(v, 9, "Turn every command off", "power", true, function() Cmd.stopAll() end)
+	section(v, "Home", 10)
+	Ctl.action(v, 11, "Pick the quick switches on Home", "layout-grid", false, function() Home.pickQuick() end)
+	Ctl.action(v, 12, "Put the quick switches back", "rotate-ccw", false, function()
+		S.quickCmds = table.clone(QUICK_DEFAULT)
+		saveSettings()
+		Home.buildQuick()
+		Win.close("quickpick")
+		notify("Quick switches", "Back to fly, noclip, infinite jump and fullbright", "ok", 2)
+	end)
 end
 
 do
@@ -6801,7 +8989,7 @@ do
 	Ctl.action(v, 10, "Copy my settings", "upload", false, function()
 		local copy = {}
 		for k, val in pairs(S) do
-			if k ~= "ownerCache" and k ~= "lastVersion" then copy[k] = val end
+			if k ~= "lastVersion" then copy[k] = val end
 		end
 		local s = jsonEncode(copy)
 		if s then copyText(s, "Settings") end
@@ -6817,8 +9005,7 @@ do
 		local n = 0
 		for k, val in pairs(data) do
 			local d = DEFAULTS[k]
-			local ownerOnly = k == "owner" or k == "repo" or k == "branch" or k == "logo" or k == "showTesting"
-			if d ~= nil and k ~= "ownerCache" and k ~= "lastVersion" and (not ownerOnly or Owner.is) and (type(val) == type(d) or (k == "panelPos" and type(val) == "table")) then
+			if d ~= nil and k ~= "lastVersion" and (type(val) == type(d) or (k == "panelPos" and type(val) == "table")) then
 				S[k] = val
 				n += 1
 			end
@@ -6832,8 +9019,7 @@ do
 
 	section(v, "Reset", 13)
 	Ctl.action(v, 14, "Reset all settings", "rotate-ccw", true, function()
-		local keep = { favorites = S.favorites, recent = S.recent, perScript = S.perScript, cmd = S.cmd, lastVersion = S.lastVersion, ownerCache = S.ownerCache }
-		local oldKey, oldLogo = Repo.key(), S.logo
+		local keep = { favorites = S.favorites, recent = S.recent, perScript = S.perScript, cmd = S.cmd, lastVersion = S.lastVersion }
 		for k, d in pairs(DEFAULTS) do
 			S[k] = (type(d) == "table") and {} or d
 		end
@@ -6844,15 +9030,6 @@ do
 		rainbowColor = nil
 		saveSettings()
 		Settings.applyAll()
-		if Repo.key() ~= oldKey then
-			Repo.set({})
-			Repo.src, Repo.meta = {}, {}
-			Repo.state = "idle"
-			Repo.loadCache()
-			Scripts.invalidate()
-			Repo.refresh(false)
-		end
-		if Repo.key() ~= oldKey or S.logo ~= oldLogo then Logo.load() end
 		notify("Settings reset", "Favorites and command settings were kept", "ok", 2)
 	end, true)
 	Ctl.action(v, 15, "Close the hub", "power", true, function()
@@ -6869,8 +9046,804 @@ do
 	})
 end
 
+PlayerUI.seekApi = {
+	dur = function()
+		local _, d = Player.times()
+		return Player.state ~= "stopped" and d or 0
+	end,
+	text = function(frac, d) return Util.mmss(frac * d * 1000) end,
+	seek = function(frac, d) Player.seek(frac * d) end,
+}
+
+function PlayerUI.art(parent, size, radius, pos, iconSize, nbars)
+	local a = UI.new("Frame", { Name = "Art", BackgroundColor3 = T.card2, Size = UDim2.fromOffset(size, size), Position = pos, ClipsDescendants = true }, parent)
+	UI.corner(a, radius)
+	local glow = UI.new("Frame", { Name = "Glow", BorderSizePixel = 0, Size = UDim2.fromScale(1, 1) }, a)
+	UI.corner(glow, radius)
+	UI.accent(glow, "BackgroundColor3")
+	UI.new("UIGradient", {
+		Rotation = 90,
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.9), NumberSequenceKeypoint.new(1, 0.6) }),
+	}, glow)
+	local ic = UI.icon("headphones", iconSize, T.text, a, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+	local gap = math.max(2, math.floor(size / 24))
+	local bw = math.max(2, math.floor((size * 0.7 - (nbars - 1) * gap) / nbars))
+	local total = nbars * bw + (nbars - 1) * gap
+	local x0 = math.floor((size - total) / 2)
+	local bars = {}
+	for i = 1, nbars do
+		local b = UI.new("Frame", {
+			Name = "Bar",
+			BorderSizePixel = 0,
+			AnchorPoint = Vector2.new(0, 1),
+			Position = UDim2.new(0, x0 + (i - 1) * (bw + gap), 1, -math.floor(size * 0.16)),
+			Size = UDim2.new(0, bw, 0.06, 0),
+			Visible = false,
+		}, a)
+		UI.corner(b, math.max(1, bw // 2))
+		UI.accent(b, "BackgroundColor3")
+		bars[i] = { f = b, w = bw, h = 0.06, ph = math.random() * 6, sp = 3 + math.random() * 5 }
+	end
+	return a, ic, bars
+end
+
+function PlayerUI.add(v)
+	PlayerUI.views[#PlayerUI.views + 1] = v
+	PlayerUI.render(v)
+	return v
+end
+
+function PlayerUI.each(f, onlyShown)
+	local keep = {}
+	for _, v in ipairs(PlayerUI.views) do
+		if v.root.Parent then
+			keep[#keep + 1] = v
+			if not onlyShown or not v.shown or v.shown() then
+				local ok, e = pcall(f, v)
+				if not ok then warn("[Atsuko Hub] " .. tostring(e)) end
+			end
+		end
+	end
+	PlayerUI.views = keep
+end
+
+function PlayerUI.tick(v, instant)
+	if v.dragging or not v.fill then return end
+	local p, d = Player.times()
+	local live = Player.state == "playing" and not instant
+	local target = live and math.min(d, p + 0.5 * Player.cfg.speed) or p
+	local frac = d > 0 and math.clamp(target / d, 0, 1) or 0
+	local t = live and 0.5 * S.animSpeed or 0
+	UI.tween(v.fill, t, { Size = UDim2.fromScale(frac, 1) }, Enum.EasingStyle.Linear)
+	if v.knob then UI.tween(v.knob, t, { Position = UDim2.fromScale(frac, 0.5) }, Enum.EasingStyle.Linear) end
+	if v.tcur then
+		v.tcur.Text = Util.mmss(p * 1000)
+		v.ttotal.Text = d > 0 and Util.mmss(d * 1000) or "-:--"
+	end
+end
+
+function PlayerUI.render(v)
+	local t = Player.cur
+	local st = Player.state
+	v.title.Text = t and t.name or "Nothing playing"
+	v.sub.Text = t and Player.subText(t) or (#Player.lib > 0 and "Pick a song from your library" or "Add songs in the Add tab")
+	if v.status then
+		local txt = ({ playing = "NOW PLAYING", paused = "PAUSED", loading = "LOADING..." })[st] or "MUSIC PLAYER"
+		v.status.Text = txt
+		v.live.BackgroundColor3 = (st == "playing" and T.green) or (st == "loading" and T.yellow) or T.dim
+	end
+	if v.nextLabel then
+		local up = Player.upNext(1)[1]
+		v.nextLabel.Text = up and ("Up next: " .. up.t.name) or ""
+	end
+	UI.setIcon(v.playIcon, (st == "playing" or st == "loading") and "pause" or "play-fill")
+	local acc = accentColor()
+	if v.shuffle then UI.tint(v.shuffle, Player.cfg.shuffle and acc or T.sub, 0.15) end
+	if v.rep then
+		UI.setIcon(v.rep, Player.cfg.rep == "one" and "repeat-1" or "repeat")
+		UI.tint(v.rep, Player.cfg.rep ~= "off" and acc or T.sub, 0.15)
+	end
+	if v.vol then v.vol() end
+	if v.place then v.place(v.title.Text) end
+	local showBars = Player.cfg.viz and t ~= nil and st ~= "stopped"
+	v.icon.Visible = not showBars
+	for _, b in ipairs(v.bars) do
+		b.f.Visible = showBars
+	end
+	PlayerUI.tick(v, true)
+end
+
+function PlayerUI.viz(dt)
+	local s = Player.sound
+	local loud = 0
+	if Player.state == "playing" and s then loud = math.clamp((s.PlaybackLoudness or 0) / 320, 0, 1) end
+	local now = os.clock()
+	local k = math.clamp(dt * 12, 0, 1)
+	for _, v in ipairs(PlayerUI.views) do
+		if v.root.Parent and v.bars[1] and v.bars[1].f.Visible and (not v.shown or v.shown()) then
+			for _, b in ipairs(v.bars) do
+				local wob = 0.5 + 0.5 * math.abs(math.sin(now * b.sp + b.ph))
+				local target = 0.07 + loud * 0.6 * wob
+				b.h += (target - b.h) * k
+				b.f.Size = UDim2.new(0, b.w, b.h, 0)
+			end
+		end
+	end
+end
+
+function PlayerUI.volumeCard(parent, order, v)
+	local vc = card(parent, 44, order)
+	vc.Name = "Volume"
+	local mute = UI.button(vc, { Name = "Mute", BackgroundTransparency = 1, Size = UDim2.fromOffset(40, 44) })
+	local vIcon = UI.icon("volume-2", 16, T.sub, mute, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 22, 0.5, 0) })
+	local track = UI.new("Frame", { Name = "Track", BackgroundColor3 = T.card2, BorderSizePixel = 0, Position = UDim2.new(0, 44, 0.5, -2), Size = UDim2.new(1, -100, 0, 4) }, vc)
+	UI.corner(track, 2)
+	local fill = UI.new("Frame", { Name = "Fill", BorderSizePixel = 0, Size = UDim2.fromScale(0, 1) }, track)
+	UI.corner(fill, 2)
+	UI.accent(fill, "BackgroundColor3")
+	local knob = UI.new("Frame", { Name = "Knob", BackgroundColor3 = T.text, AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(12, 12), Position = UDim2.fromScale(0, 0.5) }, track)
+	UI.corner(knob, 6)
+	local val = UI.label(vc, { Font = FONT_B, TextSize = 11, TextColor3 = T.sub, Text = "-", TextXAlignment = Enum.TextXAlignment.Right, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 0), Size = UDim2.fromOffset(42, 44) })
+	local hit = UI.button(track, { Name = "Hit", BackgroundTransparency = 1, Position = UDim2.new(0, -8, 0.5, -14), Size = UDim2.new(1, 16, 0, 28) })
+	local dragging, lastVol = false, 50
+	local function draw(x)
+		local frac = math.clamp(x / 100, 0, 1)
+		fill.Size = UDim2.fromScale(frac, 1)
+		knob.Position = UDim2.fromScale(frac, 0.5)
+		val.Text = math.floor(x + 0.5) .. "%"
+		UI.setIcon(vIcon, x <= 0 and "volume-x" or (x < 50 and "volume-1" or "volume-2"))
+	end
+	v.vol = function()
+		if dragging then return end
+		local x = Player.cfg.volume
+		if x > 0 then lastVol = x end
+		draw(x)
+	end
+	hit.InputBegan:Connect(function(input)
+		if input.UserInputType ~= MOUSE1 and input.UserInputType ~= TOUCH then return end
+		if Drag.cur then return end
+		local scroller = hit:FindFirstAncestorOfClass("ScrollingFrame")
+		if scroller then scroller.ScrollingEnabled = false end
+		dragging = true
+		local cur = Player.cfg.volume
+		local function update(pos)
+			local ap, as = track.AbsolutePosition.X, track.AbsoluteSize.X
+			if as <= 0 then return end
+			cur = math.floor(math.clamp((pos.X - ap) / as, 0, 1) * 100 + 0.5)
+			draw(cur)
+			if Player.sound and Player.state ~= "paused" then Player.sound.Volume = cur / 50 end
+		end
+		update(input.Position)
+		UI.tween(knob, 0.15, { Size = UDim2.fromOffset(16, 16) })
+		Drag.start(input, update, function()
+			if scroller and scroller.Parent then scroller.ScrollingEnabled = true end
+			UI.tween(knob, 0.2, { Size = UDim2.fromOffset(12, 12) })
+			dragging = false
+			Player.setVolume(cur)
+		end)
+	end)
+	mute.Activated:Connect(function()
+		if Player.cfg.volume > 0 then
+			lastVol = Player.cfg.volume
+			Player.setVolume(0)
+		else
+			Player.setVolume(lastVol > 0 and lastVol or 50)
+		end
+	end)
+	return vc
+end
+
+function PlayerUI.controls(parent, v, big)
+	local sh, prev, play, nxt, rp
+	if big then
+		sh, v.shuffle = MusicUI.button(parent, "shuffle", 34, 16, UDim2.new(0.5, -112, 0.5, 0))
+		prev = MusicUI.button(parent, "skip-back", 42, 19, UDim2.new(0.5, -60, 0.5, 0))
+		play, v.playIcon = MusicUI.button(parent, "play-fill", 52, 22, UDim2.new(0.5, 0, 0.5, 0), true)
+		nxt = MusicUI.button(parent, "skip-forward", 42, 19, UDim2.new(0.5, 60, 0.5, 0))
+		rp, v.rep = MusicUI.button(parent, "repeat", 34, 16, UDim2.new(0.5, 112, 0.5, 0))
+		sh.Activated:Connect(function() Player.setShuffle(not Player.cfg.shuffle) end)
+		rp.Activated:Connect(function() Player.cycleRepeat() end)
+	else
+		prev = MusicUI.button(parent, "skip-back", 28, 14, UDim2.new(0, 14, 0.5, 0))
+		play, v.playIcon = MusicUI.button(parent, "play-fill", 32, 15, UDim2.new(0, 50, 0.5, 0), true)
+		nxt = MusicUI.button(parent, "skip-forward", 28, 14, UDim2.new(0, 86, 0.5, 0))
+	end
+	prev.Activated:Connect(function() Player.prev() end)
+	play.Activated:Connect(function() Player.toggle() end)
+	nxt.Activated:Connect(function() Player.next(false) end)
+end
+
+function PlayerUI.openMini()
+	return Win.show("player_mini", {
+		title = "Music Player",
+		icon = "headphones",
+		sub = "Now playing",
+		w = 270,
+		h = 150,
+		minW = 230,
+		maxW = 380,
+		minH = 150,
+		maxH = 150,
+		noScroll = true,
+		build = function(_, body)
+			local v = { root = body }
+			v.art, v.icon, v.bars = PlayerUI.art(body, 64, 10, UDim2.fromOffset(0, 2), 22, 5)
+			v.title = UI.label(body, { Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(74, 4), Size = UDim2.new(1, -74, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+			v.sub = UI.label(body, { TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(74, 21), Size = UDim2.new(1, -74, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+			local row = UI.new("Frame", { Name = "Controls", BackgroundTransparency = 1, Position = UDim2.fromOffset(74, 38), Size = UDim2.new(1, -74, 0, 32) }, body)
+			PlayerUI.controls(row, v, false)
+			MusicUI.bar(body, v, { Position = UDim2.fromOffset(6, 82), Size = UDim2.new(1, -12, 0, 3) }, true, PlayerUI.seekApi)
+			PlayerUI.add(v)
+		end,
+	})
+end
+
+function PlayerUI.trackWin(t)
+	return Win.show("track_" .. t.id, {
+		title = t.name,
+		icon = "music",
+		sub = Player.kindText(t),
+		w = 260,
+		h = 330,
+		minH = 180,
+		build = function(w, body)
+			Ctl.buttons(body, 1, {
+				{ "play-fill", "Play", function() Player.play(t) end },
+				{ "list-start", "Next", function()
+					Player.playNext(t)
+					notify(t.name, "Plays next", "ok", 2)
+				end },
+				{ "list-plus", "Queue", function()
+					Player.addQueue(t)
+					notify(t.name, "Added to the queue", "ok", 2)
+				end },
+			})
+			local fav = Ctl.toggle(body, 2, "Favorite", nil, function() return t.fav end, function(x)
+				t.fav = x
+				Player.save()
+				Bus.fire("playerLib")
+			end)
+			local name = Ctl.input(body, 3, "Name", "song name", function() return t.name end, function(x)
+				if x == "" or x == t.name then return end
+				t.name = x
+				w:setTitle(x)
+				Player.save()
+				Bus.fire("playerLib")
+				if Player.cur == t then Bus.fire("player") end
+			end)
+			local src = t.kind == "id" and t.asset or (t.url or t.path)
+			Ctl.info(body, 4, t.kind == "id" and "Audio ID" or (t.url and "Link" or "File"), src, function() copyText(src, "Song source") end)
+			Ctl.action(body, 5, "Remove from library", "trash-2", true, function()
+				Player.remove(t)
+				w:close()
+			end, true)
+			w:on("playerLib", function()
+				if not w.alive then return end
+				if not Player.byId[t.id] then
+					w:close()
+					return
+				end
+				fav.render(false)
+				name.render()
+			end)
+		end,
+	})
+end
+
+PlayerUI.build = function()
+	local MP = newPage({ id = "player", title = "Music Player", icon = "headphones", tabs = { "Now", "Library", "Add", "Options" } })
+	PlayerUI.page = MP
+	MP.right = { icon = "picture-in-picture-2", fn = function() PlayerUI.openMini() end }
+	MP.views[1] = newScroll(MP.frame, 0, true)
+	MP.views[2] = UI.new("Frame", { Name = "LibraryView", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false }, MP.frame)
+	MP.views[3] = newScroll(MP.frame, 0, false)
+	MP.views[4] = newScroll(MP.frame, 0, false)
+
+	local nv = MP.views[1]
+	local v = { root = nv, shown = function() return Panel.open and Panel.page == "player" and MP.tab == 1 end }
+	local hero = card(nv, 128, 1)
+	hero.Name = "NowPlaying"
+	v.art, v.icon, v.bars = PlayerUI.art(hero, 104, 10, UDim2.fromOffset(12, 12), 34, 7)
+	v.live = UI.new("Frame", { Name = "Live", BackgroundColor3 = T.dim, Size = UDim2.fromOffset(6, 6), Position = UDim2.fromOffset(128, 19) }, hero)
+	UI.corner(v.live, 3)
+	v.status = UI.label(hero, { Font = FONT_B, TextSize = 9, TextColor3 = T.sub, Text = "MUSIC PLAYER", Position = UDim2.fromOffset(140, 14), Size = UDim2.new(1, -152, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+	v.title = UI.label(hero, { Font = FONT_B, TextSize = 14, Position = UDim2.fromOffset(128, 34), Size = UDim2.new(1, -140, 0, 36), TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, TextTruncate = Enum.TextTruncate.AtEnd })
+	v.sub = UI.label(hero, { TextSize = 11, TextColor3 = T.sub, Position = UDim2.fromOffset(128, 74), Size = UDim2.new(1, -140, 0, 15), TextTruncate = Enum.TextTruncate.AtEnd })
+	v.nextLabel = UI.label(hero, { TextSize = 10, TextColor3 = T.dim, Position = UDim2.fromOffset(128, 92), Size = UDim2.new(1, -140, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+	v.place = function(title)
+		local width = v.title.AbsoluteSize.X / math.max(0.01, L.scale)
+		local two = width > 0 and textWidth(title, 14, FONT_B) > width - 2
+		local top = two and 14 or 24
+		v.live.Position = UDim2.fromOffset(128, top + 5)
+		v.status.Position = UDim2.fromOffset(140, top)
+		v.title.Position = UDim2.fromOffset(128, top + 20)
+		v.title.Size = UDim2.new(1, -140, 0, two and 36 or 18)
+		v.sub.Position = UDim2.fromOffset(128, top + (two and 60 or 42))
+		v.nextLabel.Position = UDim2.fromOffset(128, top + (two and 78 or 60))
+	end
+	local lastW = -1
+	v.title:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		local wNow = v.title.AbsoluteSize.X
+		if math.abs(wNow - lastW) < 0.5 then return end
+		lastW = wNow
+		v.place(v.title.Text)
+	end)
+
+	local prog = UI.new("Frame", { Name = "Progress", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 34), LayoutOrder = 2 }, nv)
+	MusicUI.bar(prog, v, { Position = UDim2.fromOffset(8, 10), Size = UDim2.new(1, -16, 0, 4) }, true, PlayerUI.seekApi)
+	v.tcur = UI.label(prog, { TextSize = 10, TextColor3 = T.sub, Text = "0:00", Position = UDim2.fromOffset(8, 19), Size = UDim2.new(0.5, -8, 0, 14) })
+	v.ttotal = UI.label(prog, { TextSize = 10, TextColor3 = T.sub, Text = "-:--", TextXAlignment = Enum.TextXAlignment.Right, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 19), Size = UDim2.new(0.5, -8, 0, 14) })
+	local ctl = UI.new("Frame", { Name = "Controls", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 60), LayoutOrder = 3 }, nv)
+	PlayerUI.controls(ctl, v, true)
+	PlayerUI.volumeCard(nv, 4, v)
+
+	section(nv, "Sound", 5)
+	local presets = Ctl.buttons(nv, 6, {
+		{ nil, "Normal", function() Player.preset("normal") end },
+		{ nil, "Nightcore", function() Player.preset("nightcore") end },
+		{ nil, "Slowed", function() Player.preset("slowed") end },
+		{ nil, "Bass", function() Player.preset("bass") end },
+	}, 34)
+	local speed = Ctl.slider(nv, 7, "Speed", 0.5, 2, 0.05, function() return Player.cfg.speed end, function(x, final)
+		if final then
+			Player.setSpeed(x)
+		elseif Player.sound then
+			Player.sound.PlaybackSpeed = x
+		end
+	end, function(x) return string.format("%.2fx", x) end, true)
+	local fxRows = {
+		Ctl.toggle(nv, 8, "Bass boost", nil, function() return Player.cfg.bass end, function(x) Player.setFx("bass", x) end),
+		Ctl.toggle(nv, 9, "Reverb", nil, function() return Player.cfg.reverb end, function(x) Player.setFx("reverb", x) end),
+		Ctl.toggle(nv, 10, "Echo", nil, function() return Player.cfg.echo end, function(x) Player.setFx("echo", x) end),
+	}
+	local function drawPresets()
+		local c = Player.cfg
+		local cur
+		for name, p in pairs(Player.presets) do
+			if math.abs(c.speed - p.speed) < 0.001 and c.bass == p.bass and c.reverb == p.reverb and c.echo == p.echo then cur = name end
+		end
+		for i, key in ipairs({ "normal", "nightcore", "slowed", "bass" }) do
+			local on = cur == key
+			local b = presets[i].btn
+			UI.tween(b, 0.15, { BackgroundColor3 = on and accentColor() or T.card })
+			presets[i].set(nil, ({ "Normal", "Nightcore", "Slowed", "Bass" })[i], on and T.ink or T.text)
+		end
+	end
+
+	section(nv, "Up next", 11)
+	local upList = UI.new("Frame", { Name = "UpNext", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 12 }, nv)
+	UI.list(upList, 6)
+	local clearQ = Ctl.action(nv, 13, "Clear the queue", "x", false, function()
+		Player.queue = {}
+		Bus.fire("player")
+	end)
+	Ctl.action(nv, 14, "Pop out the mini player", "picture-in-picture-2", false, function() PlayerUI.openMini() end)
+	local upKey = nil
+	local function drawUpNext()
+		local items = Player.upNext(5)
+		local keyParts = { tostring(#Player.queue) }
+		for _, it in ipairs(items) do
+			keyParts[#keyParts + 1] = it.t.id .. (it.q and "q" or "") .. it.t.name
+		end
+		local key = table.concat(keyParts, "|")
+		clearQ.Visible = #Player.queue > 0
+		if key == upKey then return end
+		upKey = key
+		clearList(upList)
+		if #items == 0 then
+			UI.label(upList, { Text = Player.cur and "Nothing after this one" or "Play a song to see what's next", TextSize = 11, TextColor3 = T.dim, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.new(1, 0, 0, 30), LayoutOrder = 1 })
+			return
+		end
+		for i, it in ipairs(items) do
+			local t = it.t
+			local row = UI.button(upList, { Name = "Next", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 40), LayoutOrder = i })
+			UI.corner(row, 12)
+			UI.label(row, { Text = tostring(i), Font = FONT_B, TextSize = 11, TextColor3 = T.dim, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromOffset(34, 40) })
+			UI.label(row, { Text = t.name, Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(34, 5), Size = UDim2.new(1, -76, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+			UI.label(row, { Text = it.q and "In your queue" or "Next in the list", TextSize = 10, TextColor3 = it.q and accentColor() or T.sub, Position = UDim2.fromOffset(34, 21), Size = UDim2.new(1, -76, 0, 13), TextTruncate = Enum.TextTruncate.AtEnd })
+			if it.q then
+				local x = UI.button(row, { Name = "Remove", BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -6, 0.5, 0), Size = UDim2.fromOffset(30, 30) })
+				UI.icon("x", 13, T.sub, x, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+				x.Activated:Connect(function()
+					if Player.queue[it.q] == t.id then table.remove(Player.queue, it.q) end
+					Bus.fire("player")
+				end)
+			end
+			Ctl.hoverable(row)
+			row.Activated:Connect(function()
+				if it.q and Player.queue[it.q] == t.id then
+					table.remove(Player.queue, it.q)
+					Player.start(t)
+				else
+					Player.play(t)
+				end
+			end)
+		end
+	end
+	PlayerUI.add(v)
+
+	local lv = MP.views[2]
+	local query, favOnly = "", false
+	local bar = UI.new("Frame", { Name = "SearchBar", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 32) }, lv)
+	UI.corner(bar, 10)
+	local barStroke = UI.stroke(bar, T.stroke, 1, 1)
+	UI.icon("search", 14, T.dim, bar, { Position = UDim2.fromOffset(11, 9) })
+	local box = UI.new("TextBox", {
+		Name = "Box",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(32, 0),
+		Size = UDim2.new(1, -64, 1, 0),
+		Font = FONT_M,
+		TextSize = 12,
+		TextColor3 = T.text,
+		PlaceholderText = "Search your songs",
+		PlaceholderColor3 = T.dim,
+		Text = "",
+		ClearTextOnFocus = false,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ClipsDescendants = true,
+	}, bar)
+	local clearBtn = UI.button(bar, { Name = "Clear", BackgroundTransparency = 1, Size = UDim2.fromOffset(28, 28), Position = UDim2.new(1, -30, 0, 2), Visible = false })
+	UI.icon("x", 13, T.sub, clearBtn, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+	clearBtn.Activated:Connect(function() box.Text = "" end)
+	box.Focused:Connect(function() UI.tween(barStroke, 0.2, { Transparency = 0.2 }) end)
+	box.FocusLost:Connect(function() UI.tween(barStroke, 0.2, { Transparency = 1 }) end)
+	local tools = UI.new("Frame", { Name = "Tools", BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 40), Size = UDim2.new(1, 0, 0, 34) }, lv)
+	local list = newScroll(lv, 82)
+	local rows = {}
+	local libDirty = true
+
+	local function filtered()
+		local out = {}
+		local q = string.lower(query)
+		for _, t in ipairs(Player.lib) do
+			if (not favOnly or t.fav) and (q == "" or string.find(string.lower(t.name), q, 1, true) or (t.by and string.find(string.lower(t.by), q, 1, true))) then
+				out[#out + 1] = t
+			end
+		end
+		return out
+	end
+
+	local toolBtns = Ctl.buttons(tools, 1, {
+		{ "play-fill", "Play all", function()
+			local l = filtered()
+			if #l == 0 then return notify("Music Player", "No songs to play", "info", 2) end
+			if Player.cfg.shuffle then Player.setShuffle(false) end
+			Player.play(l[1], l)
+		end },
+		{ "shuffle", "Shuffle", function()
+			local l = filtered()
+			if #l == 0 then return notify("Music Player", "No songs to play", "info", 2) end
+			Player.cfg.shuffle = true
+			local first = l[math.random(1, #l)]
+			Player.play(first, l)
+			Bus.fire("player")
+		end },
+		{ "heart", "Favorites", nil },
+	}, 34)
+
+	local function drawRowState()
+		for _, r in ipairs(rows) do
+			local cur = Player.cur == r.t and Player.state ~= "stopped"
+			UI.setIcon(r.ic, (cur and Player.state == "playing") and "volume-2" or "music")
+			r.ic.ImageColor3 = cur and accentColor() or T.sub
+			local g = r.ic:FindFirstChild("Glyph")
+			if g then g.TextColor3 = r.ic.ImageColor3 end
+			r.box.BackgroundColor3 = cur and accentColor() or T.card2
+			r.box.BackgroundTransparency = cur and 0.8 or 0
+			UI.setIcon(r.heart, r.t.fav and "heart-fill" or "heart")
+			r.heart.ImageColor3 = r.t.fav and accentColor() or T.dim
+			local hg = r.heart:FindFirstChild("Glyph")
+			if hg then hg.TextColor3 = r.heart.ImageColor3 end
+		end
+	end
+
+	local function renderLib()
+		libDirty = false
+		clearList(list)
+		rows = {}
+		toolBtns[3].set(favOnly and "heart-fill" or "heart", "Favorites", favOnly and accentColor() or T.text)
+		local l = filtered()
+		if #Player.lib == 0 then
+			emptyState(list, "list-music", "No songs yet", "Add Roblox audio, a link or your own files", 1, "Add songs", function() Panel.setTab(MP, 3) end)
+			return
+		end
+		if #l == 0 then
+			emptyState(list, favOnly and "heart" or "search", favOnly and "No favorites yet" or "Nothing matches", favOnly and "Tap the heart on a song to keep it here" or "Try another name", 1)
+			return
+		end
+		for i, t in ipairs(l) do
+			if i > 150 then break end
+			local row = UI.button(list, { Name = "Track", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 48), LayoutOrder = i })
+			UI.corner(row, 12)
+			local tb = UI.new("Frame", { Name = "IconBox", BackgroundColor3 = T.card2, Size = UDim2.fromOffset(32, 32), Position = UDim2.fromOffset(8, 8) }, row)
+			UI.corner(tb, 9)
+			local ic = UI.icon("music", 15, T.sub, tb, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+			UI.label(row, { Text = t.name, Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(48, 8), Size = UDim2.new(1, -116, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+			UI.label(row, { Text = Player.subText(t), TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(48, 25), Size = UDim2.new(1, -116, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+			local hb = UI.button(row, { Name = "Heart", BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -38, 0.5, 0), Size = UDim2.fromOffset(30, 30) })
+			local hic = UI.icon("heart", 15, T.dim, hb, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+			UI.pressable(hb, 0.8)
+			local mb = UI.button(row, { Name = "More", BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -6, 0.5, 0), Size = UDim2.fromOffset(30, 30) })
+			UI.icon("ellipsis", 16, T.sub, mb, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+			UI.pressable(mb, 0.85)
+			hb.Activated:Connect(function()
+				t.fav = not t.fav
+				Player.save()
+				if favOnly then
+					renderLib()
+				else
+					drawRowState()
+				end
+				Bus.fire("playerLib")
+			end)
+			mb.Activated:Connect(function() PlayerUI.trackWin(t) end)
+			Ctl.hoverable(row)
+			row.Activated:Connect(function() Player.play(t, l) end)
+			rows[#rows + 1] = { t = t, box = tb, ic = ic, heart = hic }
+		end
+		UI.label(list, {
+			Name = "Info",
+			Text = (#l > 150 and ("Showing 150 of " .. #l .. ", search to find more") or (#l .. (#l == 1 and " song" or " songs"))),
+			TextSize = 10,
+			TextColor3 = T.dim,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			Size = UDim2.new(1, 0, 0, 24),
+			LayoutOrder = 999,
+		})
+		drawRowState()
+	end
+	toolBtns[3].btn.Activated:Connect(function()
+		favOnly = not favOnly
+		list.CanvasPosition = Vector2.new(0, 0)
+		renderLib()
+	end)
+	local seq = 0
+	box:GetPropertyChangedSignal("Text"):Connect(function()
+		clearBtn.Visible = box.Text ~= ""
+		seq += 1
+		local my = seq
+		task.delay(0.15, function()
+			if my ~= seq then return end
+			query = Util.trim(box.Text)
+			list.CanvasPosition = Vector2.new(0, 0)
+			renderLib()
+		end)
+	end)
+
+	local av = MP.views[3]
+	local typed = { id = "", idName = "", url = "", urlName = "", many = "" }
+	local function field(order, title, placeholder, key, opts)
+		return Ctl.input(av, order, title, placeholder, function() return typed[key] end, function(x) typed[key] = x end, opts)
+	end
+	section(av, "Roblox audio", 1)
+	local idBox = field(2, "Audio ID", "the numbers from the audio's link", "id")
+	local idNameBox = field(3, "Name (optional)", "it finds the name by itself", "idName")
+	local function addId(play)
+		local t, err, existed = Player.addAsset(typed.id, typed.idName)
+		if not t then return notify("Couldn't add it", err, "error", 3) end
+		typed.id, typed.idName = "", ""
+		idBox.render()
+		idNameBox.render()
+		if play then
+			Player.play(t)
+		else
+			notify("Music Player", existed and "That one's already in your library" or ("Added " .. t.name), "ok", 2)
+		end
+	end
+	Ctl.buttons(av, 4, { { "plus", "Add", function() addId(false) end }, { "play-fill", "Add and play", function() addId(true) end } })
+	Ctl.note(av, 5, "Only public audio plays. Most audio uploaded since 2022 is private to its own game.")
+	section(av, "From a link", 6)
+	local urlBox = field(7, "Link to an .mp3 or .ogg", "https://...", "url")
+	local urlNameBox = field(8, "Name (optional)", "song name", "urlName")
+	local dl
+	local busy = false
+	dl = Ctl.buttons(av, 9, { { "download", "Download and add", function()
+		if busy then return end
+		busy = true
+		dl[1].set("loader-circle", "Downloading...", T.sub)
+		Player.download(typed.url, typed.urlName, function(ok, res)
+			busy = false
+			if not HUB.alive then return end
+			dl[1].set("download", "Download and add", T.text)
+			if ok then
+				typed.url, typed.urlName = "", ""
+				urlBox.render()
+				urlNameBox.render()
+				notify("Music Player", "Added " .. res.name, "ok", 2)
+			else
+				notify("Couldn't add it", res, "error", 4)
+			end
+		end)
+	end } })
+	Ctl.note(av, 10, "Use a direct file link, like a Discord attachment or a GitHub raw link. It gets saved in your music folder so it keeps working.")
+	section(av, "Your music folder", 11)
+	Ctl.note(av, 12, "Put .mp3 or .ogg files in " .. Player.dir .. " inside your executor's workspace folder, then tap Scan.")
+	Ctl.action(av, 13, "Scan my music folder", "folder-open", false, function()
+		local n, err = Player.scan()
+		if not n then return notify("Couldn't scan", err, "error", 3) end
+		notify("Music Player", n == 0 and "No new songs in the folder" or ("Added " .. n .. (n == 1 and " song" or " songs")), n == 0 and "info" or "ok", 2.5)
+	end)
+	section(av, "Lots at once", 14)
+	local manyBox = field(15, "Audio IDs, one per line", "an ID, then a name if you want one", "many", { lines = 4, raw = true })
+	Ctl.buttons(av, 16, { { "list-plus", "Add them all", function()
+		local added, skipped = 0, 0
+		for line in string.gmatch(typed.many .. "\n", "([^\n]*)\n") do
+			local id, rest = string.match(line, "^%s*%D*(%d%d%d+)%s*(.-)%s*$")
+			if id then
+				local t, _, existed = Player.addAsset(id, rest)
+				if t and not existed then added += 1 else skipped += 1 end
+			end
+		end
+		typed.many = ""
+		manyBox.render()
+		notify("Music Player", "Added " .. added .. (added == 1 and " song" or " songs") .. (skipped > 0 and (", skipped " .. skipped) or ""), added > 0 and "ok" or "info", 2.5)
+	end } })
+
+	local ov = MP.views[4]
+	section(ov, "Playback", 1)
+	local optRows = {
+		Ctl.toggle(ov, 2, "Fade in and out", "Songs fade instead of cutting off", function() return Player.cfg.fade end, function(x)
+			Player.cfg.fade = x
+			Player.save()
+		end),
+		Ctl.toggle(ov, 3, "Pick up where you left off", "Plays your last song when the hub loads", function() return Player.cfg.resume end, function(x)
+			Player.cfg.resume = x
+			Player.save()
+		end),
+		Ctl.toggle(ov, 4, "Quiet the game's sounds", "Game music goes quiet while yours plays", function() return Player.cfg.duck end, function(x)
+			Player.cfg.duck = x
+			Player.save()
+			Player.applyDuck()
+		end),
+		Ctl.toggle(ov, 5, "Visualizer", "Bars that bounce to the music", function() return Player.cfg.viz end, function(x)
+			Player.cfg.viz = x
+			Player.save()
+			Bus.fire("player")
+		end),
+	}
+	local sleep = Ctl.choice(ov, 6, "Sleep timer", { { 0, "Off" }, { 15, "15m" }, { 30, "30m" }, { 60, "1h" } }, function() return Player.sleepMins end, function(x)
+		Player.setSleep(x)
+		if x > 0 then notify("Sleep timer", "Music pauses in " .. (x == 60 and "1 hour" or (x .. " minutes")), "ok", 2) end
+	end)
+	section(ov, "Keys", 7)
+	keyRow(ov, 8, "Play / pause key", "playerKey")
+	keyRow(ov, 9, "Next song key", "playerNextKey")
+	Ctl.note(ov, 10, "Keys only work on a keyboard. You can also type play or skip in the command bar.")
+	section(ov, "Library", 11)
+	Ctl.action(ov, 12, "Copy my library", "upload", false, function()
+		local out = {}
+		for _, t in ipairs(Player.lib) do
+			if t.kind == "id" then
+				out[#out + 1] = { name = t.name, id = t.asset }
+			elseif t.url then
+				out[#out + 1] = { name = t.name, url = t.url }
+			end
+		end
+		if #out == 0 then return notify("Nothing to copy", "Your own files can't be shared, only IDs and links", "info", 3) end
+		local s = jsonEncode({ atsuko = "library", songs = out })
+		if s then copyText(s, #out .. (#out == 1 and " song" or " songs")) end
+	end)
+	local impText = ""
+	local imp = Ctl.input(ov, 13, "Paste a library to add it", "paste here, then tap Import", function() return impText end, function(x) impText = x end, { raw = true })
+	Ctl.buttons(ov, 14, { { "download", "Import", function()
+		local data = jsonDecode(Util.trim(impText))
+		if type(data) ~= "table" or type(data.songs) ~= "table" then return notify("Couldn't import that", "Paste the text from Copy my library", "error", 3) end
+		local added, links = 0, 0
+		for _, sng in ipairs(data.songs) do
+			if type(sng) == "table" then
+				if sng.id then
+					local t, _, existed = Player.addAsset(tostring(sng.id), type(sng.name) == "string" and sng.name or "")
+					if t and not existed then added += 1 end
+				elseif type(sng.url) == "string" then
+					links += 1
+					Player.download(sng.url, type(sng.name) == "string" and sng.name or "", function() end)
+				end
+			end
+		end
+		impText = ""
+		imp.render()
+		notify("Library imported", added .. " added" .. (links > 0 and (", downloading " .. links .. " more") or ""), "ok", 3)
+	end } })
+	Ctl.action(ov, 15, "Clear the library", "trash-2", true, function()
+		Player.stop()
+		Player.cur = nil
+		for _, t in ipairs(table.clone(Player.lib)) do
+			if t.kind == "file" and t.url then FS.delete(t.path) end
+		end
+		Player.lib, Player.queue, Player.ctx, Player.base, Player.ctxPos = {}, {}, {}, {}, 0
+		Player.reindex()
+		Player.save()
+		Bus.fire("playerLib")
+		Bus.fire("player")
+		notify("Music Player", "Library cleared", "ok", 2)
+	end, true)
+
+	MP.onTab = function(i)
+		if i == 2 and libDirty then renderLib() end
+		if i == 1 then
+			drawUpNext()
+			PlayerUI.each(PlayerUI.render)
+		end
+	end
+	MP.onShow = function()
+		if MP.tab == 2 and libDirty then renderLib() end
+		if MP.tab == 1 then drawUpNext() end
+		for _, r in ipairs(fxRows) do
+			r.render(false)
+		end
+		for _, r in ipairs(optRows) do
+			r.render(false)
+		end
+		speed.render()
+		sleep.render(false)
+		drawPresets()
+	end
+	local libQueued = false
+	Bus.on("playerLib", function()
+		libDirty = true
+		upKey = nil
+		if libQueued then return end
+		libQueued = true
+		task.defer(function()
+			libQueued = false
+			if not HUB.alive then return end
+			if Panel.open and Panel.page == "player" then
+				if MP.tab == 2 and libDirty then renderLib() end
+				if MP.tab == 1 then drawUpNext() end
+			end
+		end)
+	end)
+	Bus.on("player", function()
+		PlayerUI.each(PlayerUI.render)
+		Home.syncMusic()
+		if Panel.open and Panel.page == "player" then
+			if MP.tab == 1 then
+				drawUpNext()
+				drawPresets()
+				speed.render()
+				for _, r in ipairs(fxRows) do
+					r.render(true)
+				end
+				sleep.render(true)
+			end
+			if MP.tab == 2 then drawRowState() end
+		end
+	end)
+	Bus.on("accent", function()
+		if Panel.open and Panel.page == "player" then
+			if MP.tab == 2 then drawRowState() end
+			if MP.tab == 1 then drawPresets() end
+		end
+		PlayerUI.each(PlayerUI.render)
+	end)
+end
+PlayerUI.build()
+
+do
+	local hc = UI.button(Home.player, { Name = "Card", BackgroundColor3 = T.card, Size = UDim2.fromScale(1, 1) })
+	UI.corner(hc, 12)
+	local v = { root = hc, shown = function() return Panel.open and Panel.page == "home" and Home.player.Visible end }
+	v.art, v.icon, v.bars = PlayerUI.art(hc, 44, 10, UDim2.fromOffset(10, 9), 18, 5)
+	v.title = UI.label(hc, { Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(64, 12), Size = UDim2.new(1, -144, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+	v.sub = UI.label(hc, { TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(64, 30), Size = UDim2.new(1, -144, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+	local play, nxt
+	play, v.playIcon = MusicUI.button(hc, "play-fill", 32, 14, UDim2.new(1, -62, 0.5, -2), true)
+	nxt = MusicUI.button(hc, "skip-forward", 28, 13, UDim2.new(1, -26, 0.5, -2))
+	play.Activated:Connect(function() Player.toggle() end)
+	nxt.Activated:Connect(function() Player.next(false) end)
+	MusicUI.bar(hc, v, { Position = UDim2.new(0, 12, 1, -6), Size = UDim2.new(1, -24, 0, 2) }, false)
+	Ctl.hoverable(hc)
+	hc.Activated:Connect(function() Panel.nav("player") end)
+	PlayerUI.add(v)
+	Home.syncMusic()
+end
+
 Settings.onShow = function()
 	Settings.exInfo.Text = Home.executor
+	for _, c in ipairs(Settings.controls) do
+		c.render(false)
+	end
 end
 
 Edge.Activated:Connect(function()
@@ -6929,8 +9902,12 @@ end)
 
 Bus.on("repo", function()
 	updateSpin()
-	Scripts.invalidate()
-	if Panel.open and Panel.page == "home" then Home.renderRecent() end
+	if Repo.sig ~= Scripts.sig or #Repo.entries == 0 then
+		Scripts.invalidate()
+		if Panel.open and Panel.page == "home" then Home.renderRecent() end
+	else
+		Scripts.updateInfo()
+	end
 	if Detail.isOpen and Detail.entry then
 		local fresh = Repo.byPath[Detail.entry.path]
 		if fresh and fresh ~= Detail.entry then
@@ -6941,7 +9918,9 @@ Bus.on("repo", function()
 end)
 
 Bus.on("accent", function(instant)
-	if Detail.isOpen then Detail.refresh() end
+	if Detail.isOpen then
+		if instant then Detail.recolor() else Detail.refresh() end
+	end
 	if Panel.open and not instant then setNavSelected(Panel.page) end
 	if Panel.open and instant and navSelected == "home" then SideRefs.nav.home.ring.Color = accentColor() end
 end)
@@ -6951,50 +9930,17 @@ Bus.on("update", function(v)
 	if v then Home.bannerTitle.Text = "Update ready  ·  v" .. v end
 end)
 
-Bus.on("owner", function()
-	SideRefs.relayout()
-	Panel.indicate()
-	Home.crown.Visible = Owner.is
-	Scripts.invalidate()
-	if not Owner.is then
-		if Panel.page == "dev" then
-			if Panel.open then
-				Panel.switch("home")
-				setNavSelected("home")
-			else
-				Panel.page = "home"
-			end
-		end
-		for id in pairs(Win.open) do
-			if string.sub(id, 1, 4) == "dev_" then Win.close(id) end
-		end
-		if S.lastPage == "dev" then S.lastPage = "home" end
-	end
-	if Panel.open then setNavSelected(Panel.page) end
-end)
-
-Bus.on("ownerChecked", function()
-	if Owner.is then return end
-	local changed = false
-	for _, k in ipairs({ "owner", "repo", "branch", "logo" }) do
-		if S[k] ~= DEFAULTS[k] then
-			S[k] = DEFAULTS[k]
-			changed = true
-		end
-	end
-	if changed then
-		saveSettings()
-		Repo.set({})
-		Repo.src, Repo.meta = {}, {}
-		Repo.state = "idle"
-		Repo.loadCache()
-		Scripts.invalidate()
-		Repo.refresh(false)
-		Logo.load()
-	end
-end)
-
-local fps, frames, acc, tickAcc, rainbowAcc, hue = 60, 0, 0, 0, 0, 0
+local fps, frames, acc, tickAcc, rainbowAcc, hue, posAcc = 60, 0, 0, 0, 0, 0, 0
+do
+	local vizAcc = 0
+	hubConn(RunService.RenderStepped:Connect(function(dt)
+		vizAcc += dt
+		if vizAcc < 1 / 30 then return end
+		local step = vizAcc
+		vizAcc = 0
+		if Player.cur and Player.cfg.viz and Player.state ~= "stopped" then PlayerUI.viz(step) end
+	end))
+end
 hubConn(RunService.Heartbeat:Connect(function(dt)
 	frames += 1
 	acc += dt
@@ -7015,11 +9961,29 @@ hubConn(RunService.Heartbeat:Connect(function(dt)
 	if tickAcc >= 0.5 then
 		tickAcc = 0
 		local ping = getPing()
-		if Pill.frame.Visible then Pill.update(fps, ping, Runner.count()) end
+		if Pill.frame.Visible then
+			local song, playing = MusicUI.barText()
+			Pill.update(fps, ping, Runner.count(), song, playing, S.barClock and Util.shortTime(S.clock24) or nil)
+		end
 		if Panel.open then
 			if Panel.page == "home" then Home.tick(fps, ping) end
 			if Panel.page == "running" then Running.tick() end
 			if Detail.isOpen then Detail.tick() end
+		end
+		if Spot.state then MusicUI.each(MusicUI.tick, true) end
+		if Player.cur then PlayerUI.each(PlayerUI.tick, true) end
+		if Player.sleepAt and os.clock() >= Player.sleepAt then
+			Player.sleepAt, Player.sleepMins = nil, 0
+			Player.pause()
+			notify("Sleep timer", "Music paused, sleep well", "info", 4)
+		end
+		posAcc += 0.5
+		if posAcc >= 5 then
+			posAcc = 0
+			if Player.state == "playing" and Player.sound then
+				Player.cfg.pos = Player.sound.TimePosition
+				Player.save()
+			end
 		end
 	end
 end))
@@ -7040,10 +10004,16 @@ hubConn(UserInputService.InputBegan:Connect(function(input, gpe)
 	end
 	if gpe then return end
 	local name = input.KeyCode.Name
-	if S.toggleKey ~= "" and name == S.toggleKey then
+	if S.panicKey ~= "" and name == S.panicKey then
+		if HUB.hidden then Panel.toggleAll() else Panel.panic() end
+	elseif S.toggleKey ~= "" and name == S.toggleKey then
 		Panel.toggleAll()
 	elseif S.cmdKey ~= "" and name == S.cmdKey then
 		Cmd.openBar(true)
+	elseif S.playerKey ~= "" and name == S.playerKey then
+		Player.toggle()
+	elseif S.playerNextKey ~= "" and name == S.playerNextKey then
+		if Player.cur then Player.next(false) end
 	end
 end))
 
@@ -7061,7 +10031,11 @@ function HUB.Destroy()
 	if not HUB.alive then return end
 	pcall(Cmd.stopAll, true)
 	pcall(Win.closeAll)
+	pcall(Player.shutdown)
 	HUB.alive = false
+	for _, snd in pairs(Sfx.cache) do
+		pcall(function() snd:Destroy() end)
+	end
 	for _, c in ipairs(HUB.conns) do
 		pcall(function() c:Disconnect() end)
 	end
@@ -7106,11 +10080,37 @@ end)
 
 if Repo.loadCache() then Scripts.invalidate() end
 Panel.openBar()
+if S.openOnLoad then Panel.show(Panel.startId()) end
 Logo.load()
-Owner.check()
 Repo.refresh(false)
+if Player.cfg.resume then
+	local last = Player.byId[Player.cfg.last]
+	if last then
+		local at = Player.cfg.pos
+		task.delay(1, function()
+			if HUB.alive and Player.state == "stopped" then Player.play(last, nil, at) end
+		end)
+	end
+end
 if Repo.state == "cached" then autorun() end
 Ver.check(false)
+
+task.spawn(function()
+	Spot.cleanArt()
+	while HUB.alive do
+		task.wait(0.25)
+		local want = (Spot.connected() and not Spot.polling) and MusicUI.interval() or nil
+		if want and HUB.alive then
+			local due = Spot.lastPoll + want
+			local s = Spot.state
+			if s and s.playing and s.duration > 0 then
+				local endAt = s.at + (s.duration - s.progress) / 1000 + 0.8
+				if endAt > Spot.lastPoll then due = math.min(due, endAt) end
+			end
+			if os.clock() >= due then task.spawn(Spot.poll) end
+		end
+	end
+end)
 
 task.spawn(function()
 	while HUB.alive do
