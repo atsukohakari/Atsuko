@@ -1,8 +1,5 @@
 --[[
-	atsuko hub
-	by atsukohakari
-
-	loadstring(game:HttpGet("https://raw.githubusercontent.com/atsukohakari/Atsuko/main/Hub/AtsukoHub.lua"))()
+	atsuko hub i guess
 
 	icons from lucide.dev (ISC), license in Hub/LUCIDE_LICENSE.txt
 ]]
