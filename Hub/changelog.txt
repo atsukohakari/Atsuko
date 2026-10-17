@@ -1,0 +1,53 @@
+v1.0.5
+- fixed the hub not starting on some executors, the script got too big for how they read it
+- the hub doesn't need owner.txt or any other extra file, just AtsukoHub.lua
+- on small phones the title and the top bar don't overlap anymore
+
+v1.0.4
+- new look: big title at the top, see-through cards on the left and right, and a dock at the bottom that shows the page you're on
+- new scripts tab: scripts from scriptblox with trending, this game, universal and saved, a search bar, a keyless filter and run with one tap
+- tap a script to see its views, likes, tags and what it does, then run it, copy it, grab the key link or save it
+- spotify got way bigger: your playlists, liked songs, recently played, search, the queue, a like button and picking which device plays
+- lyrics on the spotify tab that follow the song, tap a line to jump there
+- players tab: everyone, friends and nearby, with a big avatar card and go to, spectate, follow, mark, hide and copy
+- home is a dashboard now: your profile, friends online, the game you're in, this server, now playing, quick switches and quick actions
+- layout settings: put the top bar at the top, left, right or bottom, the dock at the bottom, left or right, and show or hide page names in the dock
+- phones in landscape get a smaller header so there's more room, phones held upright get one card at a time
+- your own scripts tab is called my scripts now
+- after updating, log in to spotify once more so the hub can see your library
+
+v1.0.3
+- music player tab: play roblox audio ids, direct mp3/ogg links or your own files from the AtsukoHub/music folder, only you can hear it
+- library with search and favorites, a queue (play next or add to queue), shuffle, repeat one or all, seeking and volume
+- sound presets (normal, nightcore, slowed, bass) plus speed, bass boost, reverb and echo
+- visualizer, sleep timer, pick up where you left off, quiet the game's own music, play/pause and next song keys
+- music player mini window and home card, and the song shows on the top bar
+- the old music tab is called spotify now
+- new commands: float, gravity, follow, save spot, load spot, esp, x-ray, instant prompts, play and skip
+- follow button in player windows
+- new settings: font, open the panel when the hub loads, open on home or last page, clock on the top bar, click and notification sounds, panic key, and pick your own quick switches on home
+- tapping the top bar while only the side bar is out opens the panel now instead of closing everything
+
+v1.0.2
+- music tab: connect your own spotify app and see what's playing, with play/pause, skip, seek, shuffle, repeat and volume
+- now playing card on home, a mini player you can pop out, and the song can show on the top bar
+- simpler: no more extra setup pages, the hub just loads your scripts
+- cleaner home: one row of stats, one row of buttons, server hop sits in the server card
+- fixed long descriptions getting cut off, the go button in player windows forgetting the name, notifications sliding in from the wrong side at the bottom, the top/bottom picker sitting crooked and switches snapping when rainbow is on
+- lighter: noclip doesn't rescan your character every frame, rainbow accent does less work and the scripts list only rebuilds when something changed
+
+v1.0.1
+- new look like ak admin: little windows you can drag, resize, minimize and close
+- fps and ping bar at the top, tap it to open or hide the hub
+- the logo on the bar is home now, and the bar squeezes itself on small screens
+- commands tab: fly, noclip, speed, jump power, infinite jump, click tp, spin, go to player, sit, refresh, reset
+- visual commands: fullbright, no fog, time of day, fov, max zoom out, see through walls, spectate, boost fps
+- utility commands: anti afk, allow shift lock, rejoin, server hop, copy join script
+- command bar (press ; on pc) and chat commands with your own prefix
+- players tab: go to, spectate, copy name and id
+- home got quick switches, more stats and a server card
+- more settings: rainbow accent, blur, animation speed, notification time and spot, lock panel, fps cap, copy and load your settings
+- checks for updates by itself and shows this window when something changed
+
+v1.0.0
+- first version: scripts from github, run and stop, running list, console and settings

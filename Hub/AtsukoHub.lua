@@ -1,26 +1,27 @@
 --[[
-	atsuko hub v1.0.4
+	atsuko hub v1.0.5
 	by atsukohakari
 
 	icons from lucide.dev (ISC), license in Hub/LUCIDE_LICENSE.txt
 ]]
 
 if not game:IsLoaded() then game.Loaded:Wait() end
+local Core = {}
 
-local HUB_VERSION = "1.0.4"
+local HUB_VERSION = "1.0.5"
 local HUB_DIR = "Hub"
 local SRC = { owner = "atsukohakari", repo = "Atsuko", branch = "main" }
 local HOME_REPO = "https://raw.githubusercontent.com/" .. SRC.owner .. "/" .. SRC.repo .. "/" .. SRC.branch .. "/"
 local LOCAL_DIR = "AtsukoHub"
-local SCRIPT_EXT = { lua = true, luau = true, txt = true }
+Core.SCRIPT_EXT = { lua = true, luau = true, txt = true }
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
-local LogService = game:GetService("LogService")
-local TextService = game:GetService("TextService")
+Core.LogService = game:GetService("LogService")
+Core.TextService = game:GetService("TextService")
 
 local LP = Players.LocalPlayer
 while not LP do
@@ -180,11 +181,11 @@ function Util.hex(c)
 	return string.format("#%02x%02x%02x", math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
 end
 
-local B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+Core.B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 function Util.b64decode(data)
 	local map = {}
 	for i = 1, 64 do
-		map[string.byte(B64, i)] = i - 1
+		map[string.byte(Core.B64, i)] = i - 1
 	end
 	local out, n = table.create(#data * 3 // 4 + 1), 0
 	local acc, bits = 0, 0
@@ -209,7 +210,7 @@ end
 function Util.b64encode(data)
 	local out, n = table.create(math.ceil(#data / 3) * 4), 0
 	local function ch(v)
-		return string.sub(B64, v + 1, v + 1)
+		return string.sub(Core.B64, v + 1, v + 1)
 	end
 	for i = 1, #data, 3 do
 		local a, b, c = string.byte(data, i, i + 2)
@@ -363,7 +364,7 @@ function Bus.fire(name, ...)
 	end
 end
 
-local SETTINGS_FILE = LOCAL_DIR .. "/settings.json"
+Core.SETTINGS_FILE = LOCAL_DIR .. "/settings.json"
 local DEFAULTS = {
 	accent = "Lavender",
 	opacity = 0.04,
@@ -414,7 +415,7 @@ local DEFAULTS = {
 	cmd = {},
 	lastVersion = "",
 }
-local QUICK_DEFAULT = { "fly", "noclip", "infjump", "fullbright" }
+Core.QUICK_DEFAULT = { "fly", "noclip", "infjump", "fullbright" }
 local FONT_SETS = {
 	Gotham = { Enum.Font.GothamMedium, Enum.Font.GothamBold },
 	Builder = { Enum.Font.BuilderSansMedium, Enum.Font.BuilderSansBold },
@@ -423,7 +424,7 @@ local FONT_SETS = {
 }
 local S = {}
 
-local function normalizeSettings()
+function Core.normalizeSettings()
 	S.uiScale = math.clamp(tonumber(S.uiScale) or 1, 0.7, 1.4)
 	S.opacity = math.clamp(tonumber(S.opacity) or 0, 0, 0.6)
 	S.animSpeed = math.clamp(tonumber(S.animSpeed) or 1, 0.5, 2)
@@ -457,7 +458,7 @@ local function normalizeSettings()
 	for _, id in ipairs(S.quickCmds) do
 		if type(id) == "string" and #quick < 4 and not table.find(quick, id) then quick[#quick + 1] = id end
 	end
-	if #quick == 0 then quick = table.clone(QUICK_DEFAULT) end
+	if #quick == 0 then quick = table.clone(Core.QUICK_DEFAULT) end
 	S.quickCmds = quick
 	if S.barPos ~= "top" and S.barPos ~= "left" and S.barPos ~= "right" and S.barPos ~= "bottom" then S.barPos = "top" end
 	if S.dockPos ~= "bottom" and S.dockPos ~= "left" and S.dockPos ~= "right" then S.dockPos = "bottom" end
@@ -468,11 +469,11 @@ local function normalizeSettings()
 	S.sbSaved = saved
 end
 
-local function loadSettings()
+function Core.loadSettings()
 	for k, v in pairs(DEFAULTS) do
 		S[k] = (type(v) == "table") and {} or v
 	end
-	local data = jsonDecode(FS.read(SETTINGS_FILE))
+	local data = jsonDecode(FS.read(Core.SETTINGS_FILE))
 	if type(data) == "table" then
 		if data.lastVersion == nil then data.lastVersion = "1.0.0" end
 		for k, v in pairs(data) do
@@ -482,23 +483,23 @@ local function loadSettings()
 			end
 		end
 	end
-	normalizeSettings()
+	Core.normalizeSettings()
 end
 
-local saveQueued = false
+Core.saveQueued = false
 local function saveSettings()
-	if saveQueued then return end
-	saveQueued = true
+	if Core.saveQueued then return end
+	Core.saveQueued = true
 	task.delay(0.4, function()
-		saveQueued = false
+		Core.saveQueued = false
 		local s = jsonEncode(S)
-		if s then FS.write(SETTINGS_FILE, s) end
+		if s then FS.write(Core.SETTINGS_FILE, s) end
 	end)
 end
 
-loadSettings()
+Core.loadSettings()
 
-local function perScript(path)
+function Core.perScript(path)
 	local p = S.perScript[path]
 	if type(p) ~= "table" then
 		p = {}
@@ -541,11 +542,11 @@ local function notify(title, text, kind, dur)
 	Bus.fire("notify", title, text, kind, dur)
 end
 
-local SPOT_FILE = LOCAL_DIR .. "/spotify.json"
-local SPOT_DIR = LOCAL_DIR .. "/spotify"
-local SPOT_API = "https://api.spotify.com/v1"
+Core.SPOT_FILE = LOCAL_DIR .. "/spotify.json"
+Core.SPOT_DIR = LOCAL_DIR .. "/spotify"
+Core.SPOT_API = "https://api.spotify.com/v1"
 local SPOT_REDIRECT = "http://127.0.0.1:8888/callback"
-local SPOT_SCOPES = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative user-library-read user-library-modify user-read-recently-played"
+Core.SPOT_SCOPES = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative user-library-read user-library-modify user-read-recently-played"
 local Spot = {
 	cfg = { id = "", secret = "", refresh = "", token = "", exp = 0, scope = "" },
 	state = nil,
@@ -563,7 +564,7 @@ local Spot = {
 }
 
 function Spot.load()
-	local data = jsonDecode(FS.read(SPOT_FILE))
+	local data = jsonDecode(FS.read(Core.SPOT_FILE))
 	if type(data) ~= "table" then return end
 	for k, d in pairs(Spot.cfg) do
 		if type(data[k]) == type(d) then Spot.cfg[k] = data[k] end
@@ -572,7 +573,7 @@ end
 
 function Spot.save()
 	local s = jsonEncode(Spot.cfg)
-	if s then FS.write(SPOT_FILE, s) end
+	if s then FS.write(Core.SPOT_FILE, s) end
 end
 
 function Spot.hasApp()
@@ -589,7 +590,7 @@ function Spot.loginUrl()
 		{ "client_id", Spot.cfg.id },
 		{ "response_type", "code" },
 		{ "redirect_uri", SPOT_REDIRECT },
-		{ "scope", SPOT_SCOPES },
+		{ "scope", Core.SPOT_SCOPES },
 		{ "state", Spot.loginState },
 		{ "show_dialog", "true" },
 	})
@@ -671,7 +672,7 @@ function Spot.call(method, path, body)
 	local function send(b)
 		local h = { Authorization = "Bearer " .. Spot.cfg.token }
 		if b ~= nil and b ~= "" then h["Content-Type"] = "application/json" end
-		return Net.request(method, SPOT_API .. path, h, b)
+		return Net.request(method, Core.SPOT_API .. path, h, b)
 	end
 	if body == nil and method ~= "GET" then body = "" end
 	local code, raw, headers = send(body)
@@ -764,7 +765,7 @@ function Spot.loadArt(url)
 		if not HUB.alive or Spot.artUrl ~= url or not ok or type(data) ~= "string" then return end
 		local ext = (string.sub(data, 1, 3) == "\255\216\255" and "jpg") or (string.sub(data, 1, 4) == "\137PNG" and "png") or nil
 		if not ext then return end
-		local path = SPOT_DIR .. "/art_" .. Util.hash(url) .. "." .. ext
+		local path = Core.SPOT_DIR .. "/art_" .. Util.hash(url) .. "." .. ext
 		if not (FS.exists(path) or FS.write(path, data)) then return end
 		local okA, id = pcall(X.getcustomasset, path)
 		if not okA or type(id) ~= "string" or id == "" then return end
@@ -904,7 +905,7 @@ end
 
 function Spot.cleanArt()
 	if not (X.listfiles and HAS_FS) then return end
-	local ok, files = pcall(X.listfiles, SPOT_DIR)
+	local ok, files = pcall(X.listfiles, Core.SPOT_DIR)
 	if not ok or type(files) ~= "table" then return end
 	for _, f in ipairs(files) do
 		if type(f) == "string" and (string.find(f, "art_[%x]+%.%a+$") or string.find(f, "img_[%x]+%.%a+$")) then pcall(X.delfile or function() end, f) end
@@ -1062,7 +1063,7 @@ function Spot.fetchImage(url)
 	if not HUB.alive or not ok or type(data) ~= "string" then return nil end
 	local ext = (string.sub(data, 1, 3) == "\255\216\255" and "jpg") or (string.sub(data, 1, 4) == "\137PNG" and "png") or nil
 	if not ext then return nil end
-	local path = SPOT_DIR .. "/img_" .. Util.hash(url) .. "." .. ext
+	local path = Core.SPOT_DIR .. "/img_" .. Util.hash(url) .. "." .. ext
 	if not (FS.exists(path) or FS.write(path, data)) then return nil end
 	local okA, id = pcall(X.getcustomasset, path)
 	if not okA or type(id) ~= "string" or id == "" then return nil end
@@ -1345,8 +1346,8 @@ end
 
 Spot.load()
 
-local SoundService = game:GetService("SoundService")
-local OWN_SOUNDS = setmetatable({}, { __mode = "k" })
+Core.SoundService = game:GetService("SoundService")
+Core.OWN_SOUNDS = setmetatable({}, { __mode = "k" })
 
 local Sfx = { cache = {} }
 function Sfx.play(kind)
@@ -1358,8 +1359,8 @@ function Sfx.play(kind)
 		s = Instance.new("Sound")
 		s.Name = "AtsukoSfx"
 		s.SoundId = kind == "click" and "rbxasset://sounds/clickfast.wav" or "rbxasset://sounds/electronicpingshort.wav"
-		s.Parent = SoundService
-		OWN_SOUNDS[s] = true
+		s.Parent = Core.SoundService
+		Core.OWN_SOUNDS[s] = true
 		Sfx.cache[kind] = s
 	end
 	s.Volume = S.sfxVolume * (kind == "click" and 0.7 or 1)
@@ -1606,8 +1607,8 @@ do
 		ec.Enabled = Player.cfg.echo
 		ec.Parent = s
 		Player.fx = { bass = eq, reverb = rv, echo = ec }
-		s.Parent = SoundService
-		OWN_SOUNDS[s] = true
+		s.Parent = Core.SoundService
+		Core.OWN_SOUNDS[s] = true
 		if Player.endConn then Player.endConn:Disconnect() end
 		Player.endConn = s.Ended:Connect(function()
 			if Player.sound == s and HUB.alive then Player.onEnded() end
@@ -2041,12 +2042,12 @@ do
 		Player.ducking = want
 		if want then
 			local function duck(o)
-				if o:IsA("Sound") and not OWN_SOUNDS[o] and Player.ducked[o] == nil then
+				if o:IsA("Sound") and not Core.OWN_SOUNDS[o] and Player.ducked[o] == nil then
 					Player.ducked[o] = o.Volume
 					o.Volume = o.Volume * 0.12
 				end
 			end
-			local roots = { workspace, SoundService }
+			local roots = { workspace, Core.SoundService }
 			local pg = LP:FindFirstChildOfClass("PlayerGui")
 			if pg then roots[#roots + 1] = pg end
 			for _, r in ipairs(roots) do
@@ -2096,8 +2097,8 @@ do
 	Player.load()
 end
 
-local LIST_CACHE = LOCAL_DIR .. "/cache/list.json"
-local HIDDEN_TOP = { hub = true, testing = true }
+Core.LIST_CACHE = LOCAL_DIR .. "/cache/list.json"
+Core.HIDDEN_TOP = { hub = true, testing = true }
 local Repo = {
 	entries = {},
 	byPath = {},
@@ -2125,19 +2126,19 @@ end
 
 function Repo.isScript(path)
 	local ext = string.match(path, "%.([%w]+)$")
-	if not ext or not SCRIPT_EXT[string.lower(ext)] then return false end
+	if not ext or not Core.SCRIPT_EXT[string.lower(ext)] then return false end
 	for seg in string.gmatch(path, "[^/]+") do
 		local c = string.sub(seg, 1, 1)
 		if c == "_" or c == "." then return false end
 	end
 	local top = string.match(path, "^([^/]+)/")
-	if top and HIDDEN_TOP[string.lower(top)] then return false end
+	if top and Core.HIDDEN_TOP[string.lower(top)] then return false end
 	local file = string.lower(string.match(path, "([^/]+)$") or "")
 	if file == "license.txt" or file == "readme.txt" or file == "requirements.txt" or file == "robots.txt" then return false end
 	return true
 end
 
-local function makeEntry(path, size)
+function Core.makeEntry(path, size)
 	local dir = string.match(path, "^(.*)/[^/]+$") or ""
 	local cat = string.gsub(dir, "^[Ss]cripts/?", "")
 	if cat == "" then cat = "General" end
@@ -2160,7 +2161,7 @@ function Repo.shown()
 	return Repo.entries
 end
 
-local function sortEntries(list)
+function Core.sortEntries(list)
 	table.sort(list, function(a, b)
 		if a.category ~= b.category then
 			if a.category == "General" then return true end
@@ -2172,7 +2173,7 @@ local function sortEntries(list)
 end
 
 function Repo.set(list)
-	sortEntries(list)
+	Core.sortEntries(list)
 	local parts = table.create(#list)
 	for i, e in ipairs(list) do
 		parts[i] = e.path .. ":" .. e.size
@@ -2197,7 +2198,7 @@ function Repo.fetchList()
 			local list = {}
 			for _, it in ipairs(data.tree) do
 				if type(it) == "table" and it.type == "blob" and type(it.path) == "string" and Repo.isScript(it.path) then
-					list[#list + 1] = makeEntry(it.path, it.size)
+					list[#list + 1] = Core.makeEntry(it.path, it.size)
 				end
 			end
 			return true, list
@@ -2215,7 +2216,7 @@ function Repo.fetchList()
 			for _, it in ipairs(data.files) do
 				if type(it) == "table" and type(it.name) == "string" then
 					local p = string.gsub(it.name, "^/", "")
-					if Repo.isScript(p) then list[#list + 1] = makeEntry(p, it.size) end
+					if Repo.isScript(p) then list[#list + 1] = Core.makeEntry(p, it.size) end
 				end
 			end
 			return true, list
@@ -2225,12 +2226,12 @@ function Repo.fetchList()
 end
 
 function Repo.loadCache()
-	local data = jsonDecode(FS.read(LIST_CACHE))
+	local data = jsonDecode(FS.read(Core.LIST_CACHE))
 	if type(data) ~= "table" or data.key ~= Repo.key() or type(data.list) ~= "table" then return false end
 	local list = {}
 	for _, it in ipairs(data.list) do
 		if type(it) == "table" and type(it.path) == "string" and Repo.isScript(it.path) then
-			list[#list + 1] = makeEntry(it.path, it.size)
+			list[#list + 1] = Core.makeEntry(it.path, it.size)
 		end
 	end
 	Repo.set(list)
@@ -2244,7 +2245,7 @@ function Repo.saveCache()
 		plain[#plain + 1] = { path = e.path, size = e.size }
 	end
 	local s = jsonEncode({ key = Repo.key(), list = plain })
-	if s then FS.write(LIST_CACHE, s) end
+	if s then FS.write(Core.LIST_CACHE, s) end
 end
 
 function Repo.refresh(manual)
@@ -2288,13 +2289,13 @@ function Repo.refresh(manual)
 	end)
 end
 
-local function validSource(b)
+function Core.validSource(b)
 	if type(b) ~= "string" or #b == 0 then return false end
 	if b == "404: Not Found" or string.find(b, "^%s*<!DOCTYPE") or string.find(b, "^%s*<html") then return false end
 	return true
 end
 
-local function sourceCachePath(path)
+function Core.sourceCachePath(path)
 	return LOCAL_DIR .. "/cache/src/" .. string.gsub(path, "[^%w%-%._]", "_") .. ".txt"
 end
 
@@ -2308,17 +2309,17 @@ function Repo.source(entry, fresh)
 	if mem and not fresh then return true, mem, "memory" end
 	Repo.sourceSeq += 1
 	local ok, body = Net.get(Repo.raw(entry.path) .. "?t=" .. os.time() .. Repo.sourceSeq)
-	if not (ok and validSource(body)) then
+	if not (ok and Core.validSource(body)) then
 		ok, body = Net.get(Repo.cdn(entry.path))
-		ok = ok and validSource(body)
+		ok = ok and Core.validSource(body)
 	end
 	if ok then
 		Repo.src[entry.path] = body
 		Repo.meta[entry.path] = nil
-		FS.write(sourceCachePath(entry.path), body)
+		FS.write(Core.sourceCachePath(entry.path), body)
 		return true, body, "net"
 	end
-	local cached = mem or FS.read(sourceCachePath(entry.path))
+	local cached = mem or FS.read(Core.sourceCachePath(entry.path))
 	if cached then
 		Repo.src[entry.path] = cached
 		return true, cached, "cache"
@@ -2377,10 +2378,10 @@ function Repo.getMeta(path)
 end
 
 local Runner = { pending = {} }
-local BASE_ENV = GENV
+Core.BASE_ENV = GENV
 if X.getfenv then
 	local e = X.getfenv()
-	if type(e) == "table" then BASE_ENV = e end
+	if type(e) == "table" then Core.BASE_ENV = e end
 end
 local realTask, realCoroutine, realInstance, realPrint, realWarn = task, coroutine, Instance, print, warn
 
@@ -2409,7 +2410,7 @@ function Runner.list()
 	return l
 end
 
-local function pruneThreads(rec)
+function Core.pruneThreads(rec)
 	local keep = {}
 	for _, th in ipairs(rec.threads) do
 		if realCoroutine.status(th) ~= "dead" then keep[#keep + 1] = th end
@@ -2418,7 +2419,7 @@ local function pruneThreads(rec)
 	rec.threadCap = math.max(400, #keep * 2)
 end
 
-local function pruneInsts(rec)
+function Core.pruneInsts(rec)
 	local keep, now = {}, os.clock()
 	for i, o in ipairs(rec.insts) do
 		local born = rec.instBorn[i] or now
@@ -2434,7 +2435,7 @@ local function pruneInsts(rec)
 	rec.instCap = math.max(4000, #keep * 2)
 end
 
-local function installConnHook()
+function Core.installConnHook()
 	if SHARED.hooked ~= nil then return end
 	SHARED.hooked = false
 	if not (X.hookmetamethod and X.getrawmetatable and X.getnamecallmethod and X.checkcaller and X.newcclosure and X.getfenv) then return end
@@ -2479,13 +2480,13 @@ local function installConnHook()
 	SHARED.hooked = ok
 end
 
-local function makeEnv(rec)
+function Core.makeEnv(rec)
 	local env = {}
 	local function track(th)
 		if type(th) == "thread" and not rec.stopping then
 			local l = rec.threads
 			l[#l + 1] = th
-			if #l > (rec.threadCap or 400) then pruneThreads(rec) end
+			if #l > (rec.threadCap or 400) then Core.pruneThreads(rec) end
 		end
 		return th
 	end
@@ -2518,7 +2519,7 @@ local function makeEnv(rec)
 				local l = rec.insts
 				l[#l + 1] = o
 				rec.instBorn[#l] = os.clock()
-				if #l > (rec.instCap or 4000) then pruneInsts(rec) end
+				if #l > (rec.instCap or 4000) then Core.pruneInsts(rec) end
 			end
 			return o
 		end,
@@ -2548,10 +2549,10 @@ local function makeEnv(rec)
 		Stop = function() Runner.stop(rec.path) end,
 		Notify = function(title, text) notify(tostring(title), tostring(text or ""), "info") end,
 	}
-	return setmetatable(env, { __index = BASE_ENV })
+	return setmetatable(env, { __index = Core.BASE_ENV })
 end
 
-local function globalTables()
+function Core.globalTables()
 	local list, seen = {}, {}
 	for _, t in ipairs({ GENV, _G, shared }) do
 		if type(t) == "table" and not seen[t] then
@@ -2562,9 +2563,9 @@ local function globalTables()
 	return list
 end
 
-local function snapshotGlobals()
+function Core.snapshotGlobals()
 	local snaps = {}
-	for _, t in ipairs(globalTables()) do
+	for _, t in ipairs(Core.globalTables()) do
 		local vals = {}
 		pcall(function()
 			for k, v in next, t do
@@ -2576,16 +2577,16 @@ local function snapshotGlobals()
 	return snaps
 end
 
-local PROTECTED_KEYS = { __AtsukoHubShared = true, __AtsukoHubInstance = true, AtsukoHub = true }
+Core.PROTECTED_KEYS = { __AtsukoHubShared = true, __AtsukoHubInstance = true, AtsukoHub = true }
 
-local function globalChanges(rec)
+function Core.globalChanges(rec)
 	local out = {}
 	if type(rec.globals) ~= "table" then return out end
 	for _, snap in ipairs(rec.globals) do
 		local t, vals = snap.t, snap.vals
 		pcall(function()
 			for k, v in next, t do
-				if not PROTECTED_KEYS[k] and vals[k] ~= v then
+				if not Core.PROTECTED_KEYS[k] and vals[k] ~= v then
 					local mine = true
 					for _, other in pairs(SHARED.running) do
 						if other ~= rec and (other.seq or 0) > (rec.seq or 0) and type(other.globals) == "table" then
@@ -2612,7 +2613,7 @@ local function envOf(f)
 	return ok and e or nil
 end
 
-local function ownedBy(v, rec)
+function Core.ownedBy(v, rec)
 	local t = type(v)
 	if t == "function" then
 		if not rec.env then return true end
@@ -2637,13 +2638,13 @@ local function ownedBy(v, rec)
 	return mine or not found
 end
 
-local function canFullyStop(rec)
+function Core.canFullyStop(rec)
 	if not rec.env then return false end
 	if SHARED.hooked then return true end
 	return X.getconnections ~= nil and X.isexecutorclosure ~= nil
 end
 
-local function sweepConnections(rec)
+function Core.sweepConnections(rec)
 	if not (rec.env and X.getconnections and X.isexecutorclosure and X.getfenv) then return end
 	local sigs = {}
 	local function add(obj, name)
@@ -2708,7 +2709,7 @@ function Runner.respawn()
 	return char
 end
 
-local function waitRespawn(oldChar)
+function Core.waitRespawn(oldChar)
 	local t0 = os.clock()
 	while os.clock() - t0 < 12 and HUB.alive do
 		local c = LP.Character
@@ -2745,8 +2746,8 @@ function Runner.unload(path, quiet, noRespawn)
 	rec.active = false
 	local me = realCoroutine.running()
 	local threads, conns, insts = rec.threads, rec.conns, rec.insts
-	local full = canFullyStop(rec)
-	local changes = globalChanges(rec)
+	local full = Core.canFullyStop(rec)
+	local changes = Core.globalChanges(rec)
 
 	local graceful = #rec.cleanups > 0 or rec.kind == "commands"
 	for i = #rec.cleanups, 1, -1 do
@@ -2782,7 +2783,7 @@ function Runner.unload(path, quiet, noRespawn)
 	for _, c in ipairs(conns) do
 		pcall(function() c:Disconnect() end)
 	end
-	sweepConnections(rec)
+	Core.sweepConnections(rec)
 	for i = #insts, 1, -1 do
 		local o = insts[i]
 		pcall(function() o:Destroy() end)
@@ -2790,7 +2791,7 @@ function Runner.unload(path, quiet, noRespawn)
 
 	if full then
 		for _, ch in ipairs(changes) do
-			if ch.added and ownedBy(ch.v, rec) then pcall(function() ch.t[ch.k] = nil end) end
+			if ch.added and Core.ownedBy(ch.v, rec) then pcall(function() ch.t[ch.k] = nil end) end
 		end
 	end
 	if rec.env then SHARED.owners[rec.env] = nil end
@@ -2806,7 +2807,7 @@ function Runner.unload(path, quiet, noRespawn)
 	return oldChar
 end
 
-local function cmdShape(v)
+function Core.cmdShape(v)
 	if type(v) ~= "table" then return nil end
 	local r, s = nil, nil
 	pcall(function()
@@ -2829,32 +2830,32 @@ local function cmdShape(v)
 	return nil
 end
 
-local function squash(str)
+function Core.squash(str)
 	return (string.gsub(string.lower(str), "[^%w]", ""))
 end
 
-local function findCommands(rec, older)
-	for _, ch in ipairs(globalChanges(rec)) do
-		local c = cmdShape(ch.v)
-		if c and type(ch.k) == "string" and ownedBy(ch.v, rec) then
+function Core.findCommands(rec, older)
+	for _, ch in ipairs(Core.globalChanges(rec)) do
+		local c = Core.cmdShape(ch.v)
+		if c and type(ch.k) == "string" and Core.ownedBy(ch.v, rec) then
 			c.key = ch.k
 			return c
 		end
 	end
 	if older then
-		local want = squash(rec.name)
+		local want = Core.squash(rec.name)
 		for _, snap in ipairs(rec.globals or {}) do
 			local found = nil
 			pcall(function()
 				for k, v in next, snap.t do
 					if type(k) == "string" and type(v) == "table" then
-						local nk = squash(k)
+						local nk = Core.squash(k)
 						local n = 0
 						while n < #nk and n < #want and string.byte(nk, n + 1) == string.byte(want, n + 1) do
 							n += 1
 						end
 						if n >= 6 then
-							local c = cmdShape(v)
+							local c = Core.cmdShape(v)
 							if c then
 								c.key = k
 								found = c
@@ -2870,7 +2871,7 @@ local function findCommands(rec, older)
 	return nil
 end
 
-local function cmdRun(rec)
+function Core.cmdRun(rec)
 	local path = rec.path
 	Runner.pending[path] = true
 	Bus.fire("running")
@@ -2896,7 +2897,7 @@ local function cmdRun(rec)
 	Bus.fire("running")
 end
 
-local function cmdStop(rec, quiet)
+function Core.cmdStop(rec, quiet)
 	if not rec.active then return nil end
 	rec.active = false
 	rec.lastStopAt = os.clock()
@@ -2914,7 +2915,7 @@ end
 function Runner.stop(path, quiet, noRespawn)
 	local rec = SHARED.running[path]
 	if not rec then return nil end
-	if rec.kind == "commands" then return cmdStop(rec, quiet) end
+	if rec.kind == "commands" then return Core.cmdStop(rec, quiet) end
 	return Runner.unload(path, quiet, noRespawn)
 end
 
@@ -2933,7 +2934,7 @@ function Runner.stopAll(except, quiet)
 	return lastChar
 end
 
-local function pushRecent(path)
+function Core.pushRecent(path)
 	for i = #S.recent, 1, -1 do
 		if S.recent[i] == path then table.remove(S.recent, i) end
 	end
@@ -2944,10 +2945,10 @@ local function pushRecent(path)
 	saveSettings()
 end
 
-local function runNow(entry)
+function Core.runNow(entry)
 	if S.oneAtATime and Runner.count() > 0 then
 		local old = Runner.stopAll(entry.path, true)
-		if old then waitRespawn(old) end
+		if old then Core.waitRespawn(old) end
 	end
 	if SHARED.running[entry.path] or not HUB.alive then return end
 	local ok, src, from = Repo.source(entry, true)
@@ -2973,17 +2974,17 @@ local function runNow(entry)
 	}
 	local sandbox = S.smartStop and X.setfenv and not (meta.sandbox and string.lower(meta.sandbox) == "off")
 	if sandbox then
-		installConnHook()
-		local env = makeEnv(rec)
+		Core.installConnHook()
+		local env = Core.makeEnv(rec)
 		if pcall(X.setfenv, f, env) then
 			rec.env = env
 			SHARED.owners[env] = rec
 		end
 	end
-	rec.globals = snapshotGlobals()
+	rec.globals = Core.snapshotGlobals()
 	SHARED.running[entry.path] = rec
 	SHARED.last = rec
-	if not entry.remote then pushRecent(entry.path) end
+	if not entry.remote then Core.pushRecent(entry.path) end
 	Log.add("ok", entry.name, "started" .. (from == "cache" and " (offline copy)" or ""))
 	notify(entry.name, from == "cache" and "Started (offline copy)" or "Started", "ok")
 	Bus.fire("running")
@@ -3020,18 +3021,18 @@ local function runNow(entry)
 	realTask.spawn(function()
 		local t0, doneAt = os.clock(), nil
 		while SHARED.running[entry.path] == rec and not rec.stopping and HUB.alive do
-			local c = findCommands(rec, false)
+			local c = Core.findCommands(rec, false)
 			if not c and realCoroutine.status(main) == "dead" then
 				doneAt = doneAt or os.clock()
 				if os.clock() - doneAt > 0.6 then
-					c = findCommands(rec, true)
+					c = Core.findCommands(rec, true)
 					if not c then break end
 				end
 			end
 			if c then
 				rec.cmds, rec.kind, rec.active = c, "commands", false
 				Log.add("info", entry.name, "uses its own run / stop commands (" .. tostring(c.key) .. ")")
-				if rec.status ~= "error" then cmdRun(rec) else Bus.fire("running") end
+				if rec.status ~= "error" then Core.cmdRun(rec) else Bus.fire("running") end
 				return
 			end
 			if os.clock() - t0 > 25 then break end
@@ -3053,9 +3054,9 @@ function Runner.run(entry)
 			realTask.spawn(function()
 				if S.oneAtATime then
 					local old = Runner.stopAll(entry.path, true)
-					if old then waitRespawn(old) end
+					if old then Core.waitRespawn(old) end
 				end
-				cmdRun(rec)
+				Core.cmdRun(rec)
 			end)
 		end
 		return
@@ -3063,7 +3064,7 @@ function Runner.run(entry)
 	Runner.pending[entry.path] = true
 	Bus.fire("running")
 	realTask.spawn(function()
-		local ok, err = pcall(runNow, entry)
+		local ok, err = pcall(Core.runNow, entry)
 		Runner.pending[entry.path] = nil
 		if not ok then
 			Log.add("error", entry.name, err)
@@ -3087,7 +3088,7 @@ local function findEntry(q)
 	return nil
 end
 
-local API = {
+Core.API = {
 	Version = HUB_VERSION,
 	Run = function(q)
 		local e = findEntry(q)
@@ -3132,7 +3133,7 @@ local API = {
 	end,
 	Notify = function(title, text) notify(tostring(title), tostring(text or ""), "info") end,
 }
-GENV.AtsukoHub = API
+GENV.AtsukoHub = Core.API
 
 local T = {
 	side = Color3.fromRGB(18, 19, 23),
@@ -3154,7 +3155,7 @@ local T = {
 	orange = Color3.fromRGB(255, 160, 90),
 	ink = Color3.fromRGB(14, 15, 19),
 }
-local ACCENTS = {
+Core.ACCENTS = {
 	{ "Lavender", Color3.fromRGB(200, 168, 255) },
 	{ "Sakura", Color3.fromRGB(255, 152, 200) },
 	{ "Sky", Color3.fromRGB(122, 196, 255) },
@@ -3168,17 +3169,17 @@ local rainbowColor = nil
 local FONT_M, FONT_B = FONT_SETS[S.font][1], FONT_SETS[S.font][2]
 local TOUCH = Enum.UserInputType.Touch
 local MOUSE1 = Enum.UserInputType.MouseButton1
-local MOVE = Enum.UserInputType.MouseMovement
+Core.MOVE = Enum.UserInputType.MouseMovement
 
 local function accentColor()
 	if S.rainbow and rainbowColor then return rainbowColor end
-	for _, a in ipairs(ACCENTS) do
+	for _, a in ipairs(Core.ACCENTS) do
 		if a[1] == S.accent then return a[2] end
 	end
-	return ACCENTS[1][2]
+	return Core.ACCENTS[1][2]
 end
 
-local function kindColor(kind)
+function Core.kindColor(kind)
 	if kind == "ok" then return T.green end
 	if kind == "error" then return T.red end
 	if kind == "warn" then return T.yellow end
@@ -3367,8 +3368,8 @@ function Z.front(frame)
 	frame.ZIndex = Z.n
 end
 
-local ICON_SET = "v5-c9b72952"
-local ICON_DATA = {
+Core.ICON_SET = "v5-c9b72952"
+Core.ICON_DATA = {
 	["activity"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAC1klEQVR42u1b63HbMAwGeB2AG9QjaANrg2qDeISO0BGyQZINmA3YCSJPYHmCKBOgf5hrLyUoSqQskDLudNaRkgh+/PDgwwB3uctqQkQNETV77HhLRBf6K5ddAUFEb/S/vO2l8x3x0knTV63wzW5hXTUMuAQYcNmD15+SpmYTaDM9UywAXWkAYGYToKhGEbE6BswJcZLCoVrZ/j/cJdoM1gx/xl1iw6HK1PkDABw8VQYArKf84N6pxgQ4m7YOBLFZoVrR/q+IOCDiAADXqv0Ak/E9/lP/6Kl/r4IBRNQG6O+7/xQdeLeo0feNLs1lSck+4Ogpe40sOxYNgAtlzQT9Q2XN1uEwlQGcDZtIAMqOBkyWNwSeHzzPP5cMwPucDhHRs7RwqBI63wKAjqR/qE5vuUqU4gNOEfE/tq4rjfrc2p+NeNdK2jP49kU5DQAPEyOimdAHABDj0Iwn/jdEpBFxXDggP5xOId0+235h22F2dGJlTGTPaUHHHyaW4SmabW4/L0VOMxQfU8MhET0l6Nrmng6/IOKcDpiUtJiIfgaccJJz62ciOSyk7ill04TJP2KlZ52gS0tP7lcz7fcAMAKARUS7EGsDAE9MWtxPgRfQ7ex088nowrCMzJNh29IwSsWdPyCiX0xHdOAdnXtdQW2IgVkwO2wT8g+RLBgzTKbGFB3UxhjYmeHwOHPuIR4Anxl4N02ckzvMnH0WyQBudtgumH3KBsBtmpwjO+srO7tvlCtbL6srARgYBpjOd5/T/kUAEEin2wn6fySk4uLMIHiGgDt7kKNtJQQDy4XDwNkDWxMAobR4Nfv3TYc3C4dEdAWA7xH5AIA7e1ATA0KrRMe1Rl8aAD6b1sziRzbvj4IA2OSgpSQGAAD8jnjmNWeD0gAwC02lGgDsrQGQmBUOoWX43O0pgRjYW46+RABMoo+owgz6qR2d2gFov/iCYa//QN3nX2/vckP5A4tBUoE6YmnxAAAAAElFTkSuQmCC",
 	["armchair"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACfElEQVR42u1aMW7bQBCcFVIGCIsU6UIDeQDzAvMJKpOOT8gT9APLL7BcJZ2VF0R+gajaAcQgTQwEiAyknxS+AInAo3gij3e0dgAWIkXu7uzd3uyRgEKhUCgUilOFdLmZ5BTAOYAMQD6w7ysAJYBbEVkOaplkQvKG8eCGZDLICCCZAlgDSCIbzTsAb0WkcrlpcoShqwiDh/HpyvWmiWP2ZwHmugtykh+8TQGSWwDp3ukHAAtTlHYDZjsHUAB4sXetEpEzX8WvDkWodJMs6hzyZSwfzJjbalSH3EsNiE7EiHSecqMmoA8oAUqAEtAar2yVOOQq4OJrl6XmoqER+WW6wqGDnxrbNlx0Tg7JjOS2bUcWYSe6Jpl1MbR1bEvnAxAwd/RpfdRIOMKQswrrS432nhiSacPD7kh+J3lvub7ySMDKYvPe+HTX4HfqWmDqMN3732LI/sDi0+IY3w/2/W0y2zBSMg/BZ20zaxkpMxcd0GoeN2w/+dAGiaMP+8hOXQkmKoVr8MzTc78E3ivRZmhIAjYB/d/EQMAyIAHLGAiYA7gOEPy1iMyCF0GzMVkYoZEOFHzl+grM+ypgHKowMugqoAQoASeDnQsBqydIQNn7hkiMcPVdLA9JAWwtNr4CeA7gpzliwEtz/AbwxvKfMyft0GFTNEbMrfqlgYDEzJvXI5/7GwC57VX65IDEnQL4NvLgi6bvCCYH5G2Jx720yxEGf2ky31j9xaEmvAPwsebSbeBAz2vOvReRT303Qz8soyQPvOyxra8qhZWAbgRUePwo8r9dmQhi+Lz3+8FJ9jrOt4xk+fedXMivQ/7VKySXxqfSx2s5hUKhUCgUTxN/AK+jUL3wlY7hAAAAAElFTkSuQmCC",
 	["arrow-down"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABSUlEQVR42u3azbGCMABF4cyrgA4sRUqgBDuQjtKKHWARztiB2/M2vNHhRSU/QELuWbJA74fjIoMxSimllFJKrR5wBI41Dm+AgWcD0NQE0PO/fovv8rORQee41tYE4KqpHcAIQAACEIAABCAAAQhAAAIQgAByBBhPcs6ABbpcRgDd+J3Oi54sTY6xAGzgfS6OE6FL4L3s5D7DUuNb3NmtABzj/2rX/A84hf4SIh+INcac1v7QK++za/0CPjx5gOuSAE0KhBiAb+MXP15PgRAKsPn4VAghANmMT4HgC5Dd+FgEH4Bsx8cgzAXIfnwowhyAYsaHIHwDKG68L8IngGLH+yC8Ayh+vAfCfea18sZ7IMytvPEJEcodnwCh/PERCPsZH4Cwv/EeCPsdP0G4OcbfqnlXEDgAj5fxD+Bgamt8YbI3SimllFJKrd4vypK6jexzykgAAAAASUVORK5CYII=",
@@ -3473,7 +3474,7 @@ local ICON_DATA = {
 	["zoom-out"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADKElEQVR42u1by3HbMBBdZHw3SlAHZglMBVIqMN0BO5A6iDoQc8gpB6sDyxWIrkBMBWIqeDkEmuFw8CXxU8yd0UGcoRZ4+7C7eICIFltsscU+sbHQDgAURPRIRKV4xIloRUSt+N6Jz2/GWHf3iALgANYADgCucLMzgO8CtLuc+AH+7ALg+V4mvp0QbRcgNrlOvgw48bG9AeDZJEEAFREdHF97H33nRPTk8H5HRN8YY23qyNus9R5AA2BjihyAFYAawNHid69JlwSAV8MAO8GOOTllbwFElVvkewA7X+tUsMLEiDLm5CvD5ItAfmvDcihiTL7UDKINkZ1H/jcCZFXzxEM655pSF3zyw5ZaA0IT0vFOQ3seOQfpluEqZvT7VP26JiBvIZw1Cme7xH1IG7wqiOir6jxPDIAqKR99Z948GhD5+E6yshia/n1GGzFVgDa+HFyjlptpY5SVxb2vmhsOXX8AyFrli8tvfFE8VyW5U2aShCzpOfUDD4rn0nLCGOtt2CNE0LlmI5LOFlEfZogZ0iaFiLaeotsD+DpF/ABQ2L7nugRMkd96pDc3KU6MsdPc8asAWE0csG8L3m6rAJiiuXVE9Mfz+H6YutVQAMjs0UDHTiTPD4+TrycyZF5yVG07MyuByj2BDwZ0CoerzDAoQi0BFYU2mQEgOzr78EWvNuh2M9x2vfbBAFXbu06tBViw8eQLYdWGaJ8JAy4ysca3ky6aAOk2rl2U4GhU2NfEa/8aTaXWsKBOBMA5qlCrkZ6iCyQAfiY5o1AIkPHO5sh4Kl3HWHedBoQqsP9fmsk3seinO5sDgG0g4M/Z3BMw5IPbSW3pyZfLxauoIFSWF5rWEyP+rGhygoDAJoJQ0j9F1iR+9qI1Pd42WIyx94GY8TTY1VUedncvjLGoOaFFXGssGBh1OXDNCbJP64elLisQbkKJpleYO3HpxavsQBhIVEdDubSxTlyV4zMTcnwQRiVzr2mgZPeNatfOci4ILDZDxtKbj/8IWFzbjVcdEjLOxISC/nczgLB31QTvzgTNX+izm4IJRfIkGBmEW3tNRNQk/4/BYosttliO9hd0aw5FrCaMJQAAAABJRU5ErkJggg==",
 }
 local ICONS = {}
-local GLYPHS = {
+Core.GLYPHS = {
 	["chevron-left"] = "<",
 	["chevron-right"] = ">",
 	x = "x",
@@ -3512,10 +3513,10 @@ local GLYPHS = {
 	["audio-lines"] = "~",
 }
 
-local function setupIcons()
+function Core.setupIcons()
 	if not (HAS_FS and X.getcustomasset) then return end
-	local dir = LOCAL_DIR .. "/icons/" .. ICON_SET
-	for name, b64 in pairs(ICON_DATA) do
+	local dir = LOCAL_DIR .. "/icons/" .. Core.ICON_SET
+	for name, b64 in pairs(Core.ICON_DATA) do
 		local path = dir .. "/" .. name .. ".png"
 		local ok = FS.exists(path) or FS.write(path, Util.b64decode(b64))
 		if ok then
@@ -3525,10 +3526,10 @@ local function setupIcons()
 	end
 end
 
-setupIcons()
+Core.setupIcons()
 
-local function glyphFor(name)
-	return GLYPHS[name] or string.upper(string.sub(name, 1, 1))
+function Core.glyphFor(name)
+	return Core.GLYPHS[name] or string.upper(string.sub(name, 1, 1))
 end
 
 function UI.icon(name, size, color, parent, props)
@@ -3553,7 +3554,7 @@ function UI.icon(name, size, color, parent, props)
 			Font = FONT_B,
 			TextSize = math.max(8, math.floor(size * 0.8)),
 			TextColor3 = color,
-			Text = glyphFor(name),
+			Text = Core.glyphFor(name),
 		}, img)
 	end
 	img.Parent = parent
@@ -3563,7 +3564,7 @@ end
 function UI.setIcon(img, name)
 	img.Image = ICONS[name] or ""
 	local g = img:FindFirstChild("Glyph")
-	if g then g.Text = glyphFor(name) end
+	if g then g.Text = Core.glyphFor(name) end
 end
 
 function UI.tint(img, color, t)
@@ -3596,10 +3597,10 @@ end
 
 function UI.onHover(btn, f)
 	btn.InputBegan:Connect(function(i)
-		if i.UserInputType == MOVE then f(true) end
+		if i.UserInputType == Core.MOVE then f(true) end
 	end)
 	btn.InputEnded:Connect(function(i)
-		if i.UserInputType == MOVE then f(false) end
+		if i.UserInputType == Core.MOVE then f(false) end
 	end)
 end
 
@@ -3611,7 +3612,7 @@ hubConn(UserInputService.InputChanged:Connect(function(input)
 	local d = Drag.cur
 	if not d then return end
 	local kind = d.input.UserInputType
-	if (kind == TOUCH and input == d.input) or (kind == MOUSE1 and input.UserInputType == MOVE) then
+	if (kind == TOUCH and input == d.input) or (kind == MOUSE1 and input.UserInputType == Core.MOVE) then
 		local pos = input.Position
 		local ok, e = pcall(d.move, pos, pos - d.start)
 		if not ok then warn("[Atsuko Hub] " .. tostring(e)) end
@@ -3634,7 +3635,7 @@ local function textWidth(text, size, font)
 	local v = widthCache[key]
 	if v then return v end
 	local ok, w = pcall(function()
-		return TextService:GetTextSize(text, size, font, Vector2.new(1000, 100)).X
+		return Core.TextService:GetTextSize(text, size, font, Vector2.new(1000, 100)).X
 	end)
 	v = ok and w or (#text * size * 0.6)
 	widthCount += 1
@@ -3655,11 +3656,11 @@ local Gui = UI.new("ScreenGui", {
 pcall(function() Gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets end)
 
 local Root = UI.new("Frame", { Name = "Root", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1) }, Gui)
-local RootScale = UI.new("UIScale", {}, Root)
+Core.RootScale = UI.new("UIScale", {}, Root)
 
 local PANEL_W = 292
 local L = { scale = 1, W = 1280, H = 720, panelH = 380 }
-local NAV = {
+Core.NAV = {
 	{ id = "home", title = "Home", icon = "house" },
 	{ id = "explore", title = "Scripts", icon = "code" },
 	{ id = "scripts", title = "My Scripts", short = "Mine", icon = "layout-list" },
@@ -3671,8 +3672,8 @@ local NAV = {
 	{ id = "console", title = "Console", icon = "square-terminal" },
 	{ id = "settings", title = "Settings", icon = "settings" },
 }
-local function navIndex(id)
-	for i, n in ipairs(NAV) do
+function Core.navIndex(id)
+	for i, n in ipairs(Core.NAV) do
 		if n.id == id then return i end
 	end
 	return 1
@@ -3733,14 +3734,14 @@ function Logo.load()
 	end)
 end
 
-local ToastBox = UI.new("Frame", {
+Core.ToastBox = UI.new("Frame", {
 	Name = "Toasts",
 	BackgroundTransparency = 1,
 	Position = UDim2.fromOffset(400, 8),
 	Size = UDim2.fromOffset(260, 180),
 	ZIndex = 5000,
 }, Root)
-local toastList = UI.list(ToastBox, 0, nil, Enum.HorizontalAlignment.Center)
+Core.toastList = UI.list(Core.ToastBox, 0, nil, Enum.HorizontalAlignment.Center)
 local Toast = { list = {}, n = 0, place = function() end }
 
 function Toast.dismiss(t)
@@ -3763,13 +3764,13 @@ function Toast.show(title, text, kind, dur)
 	Sfx.play("ping")
 	dur = dur or S.toastTime
 	Toast.n += 1
-	local from = toastList.VerticalAlignment == Enum.VerticalAlignment.Bottom and 72 or -72
+	local from = Core.toastList.VerticalAlignment == Enum.VerticalAlignment.Bottom and 72 or -72
 	local holder = UI.new("Frame", {
 		Name = "Toast",
 		BackgroundTransparency = 1,
 		Size = UDim2.fromOffset(260, 0),
 		LayoutOrder = Toast.n,
-	}, ToastBox)
+	}, Core.ToastBox)
 	local card = UI.button(holder, {
 		Name = "Card",
 		BackgroundColor3 = T.side,
@@ -3779,7 +3780,7 @@ function Toast.show(title, text, kind, dur)
 	})
 	UI.corner(card, 14)
 	UI.stroke(card, T.stroke, 1, 0.35)
-	local col = kindColor(kind)
+	local col = Core.kindColor(kind)
 	local iconName = (kind == "ok" and "check") or (kind == "error" and "circle-x") or (kind == "warn" and "triangle-alert") or "info"
 	local iconBg = UI.new("Frame", { BackgroundColor3 = col, BackgroundTransparency = 0.82, Size = UDim2.fromOffset(30, 30), Position = UDim2.fromOffset(11, 11) }, card)
 	UI.corner(iconBg, 10)
@@ -3814,12 +3815,12 @@ local Edge = UI.button(Root, {
 	ZIndex = 3000,
 })
 UI.corner(Edge, 14)
-local edgeStroke = UI.stroke(Edge, T.stroke, 1, 0.3)
+Core.edgeStroke = UI.stroke(Edge, T.stroke, 1, 0.3)
 local edgeIcon = UI.icon("chevron-left", 17, T.text, Edge, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(13, 33) })
 UI.accent(edgeIcon, "ImageColor3")
 UI.pressable(Edge, 0.9)
 UI.onHover(Edge, function(on)
-	UI.tween(edgeStroke, 0.15, { Transparency = on and 0 or 0.3 })
+	UI.tween(Core.edgeStroke, 0.15, { Transparency = on and 0 or 0.3 })
 end)
 
 local Dock = { items = {}, order = {}, sel = nil, shown = false, token = 0, vertical = false, item = 40, thick = 52, w = 400, h = 52 }
@@ -3850,7 +3851,7 @@ do
 	}, f)
 	Dock.pill = UI.new("Frame", { Name = "Pill", BackgroundColor3 = T.card2, BackgroundTransparency = 1, Size = UDim2.fromOffset(40, 40) }, Dock.scroll)
 	Dock.pillCorner = UI.corner(Dock.pill, 20)
-	for _, def in ipairs(NAV) do
+	for _, def in ipairs(Core.NAV) do
 		local b = UI.button(Dock.scroll, { Name = def.id, BackgroundTransparency = 1, Size = UDim2.fromOffset(40, 40), ClipsDescendants = true })
 		local ic = UI.icon(def.icon, 18, T.sub, b, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(20, 20) })
 		local lab = UI.label(b, { Name = "Label", Text = def.short or def.title, Font = FONT_B, TextSize = 12, TextColor3 = T.text, TextTransparency = 1, Position = UDim2.fromOffset(36, 0), Size = UDim2.new(1, -40, 1, 0), TextTruncate = Enum.TextTruncate.AtEnd })
@@ -4201,7 +4202,7 @@ P.bg = UI.new("Frame", {
 UI.corner(P.bg, 22)
 P.bgStroke = UI.stroke(P.bg, T.stroke, 1, 0.3)
 
-local function headerButton(name, order)
+function Core.headerButton(name, order)
 	local b = UI.button(Tools.frame, {
 		Name = name,
 		BackgroundColor3 = T.side,
@@ -4220,8 +4221,8 @@ local function headerButton(name, order)
 	end)
 	return { btn = b, icon = ic, fn = nil }
 end
-P.left = headerButton("HeaderLeft", 10)
-P.right = headerButton("HeaderRight", 11)
+P.left = Core.headerButton("HeaderLeft", 10)
+P.right = Core.headerButton("HeaderRight", 11)
 P.left.btn.Activated:Connect(function()
 	if P.left.fn then P.left.fn() end
 end)
@@ -4602,7 +4603,8 @@ do
 	end
 end
 
-local CHANGELOG = {
+Core.CHANGELOG = {
+	{ version = "1.0.5", notes = { "fixed the hub not starting on some executors, the script got too big for how they read it", "the hub doesn't need owner.txt or any other extra file, just AtsukoHub.lua", "on small phones the title and the top bar don't overlap anymore" } },
 	{ version = "1.0.4", notes = { "new look: big title at the top, see-through cards on the left and right, and a dock at the bottom that shows the page you're on", "new scripts tab: scripts from scriptblox with trending, this game, universal and saved, a search bar, a keyless filter and run with one tap", "tap a script to see its views, likes, tags and what it does, then run it, copy it, grab the key link or save it", "spotify got way bigger: your playlists, liked songs, recently played, search, the queue, a like button and picking which device plays", "lyrics on the spotify tab that follow the song, tap a line to jump there", "players tab: everyone, friends and nearby, with a big avatar card and go to, spectate, follow, mark, hide and copy", "home is a dashboard now: your profile, friends online, the game you're in, this server, now playing, quick switches and quick actions", "layout settings: put the top bar at the top, left, right or bottom, the dock at the bottom, left or right, and show or hide page names in the dock", "phones in landscape get a smaller header so there's more room, phones held upright get one card at a time", "your own scripts tab is called my scripts now", "after updating, log in to spotify once more so the hub can see your library" } },
 	{ version = "1.0.3", notes = { "music player tab: play roblox audio ids, direct mp3/ogg links or your own files from the AtsukoHub/music folder, only you can hear it", "library with search and favorites, a queue (play next or add to queue), shuffle, repeat one or all, seeking and volume", "sound presets (normal, nightcore, slowed, bass) plus speed, bass boost, reverb and echo", "visualizer, sleep timer, pick up where you left off, quiet the game's own music, play/pause and next song keys", "music player mini window and home card, and the song shows on the top bar", "the old music tab is called spotify now", "new commands: float, gravity, follow, save spot, load spot, esp, x-ray, instant prompts, play and skip", "follow button in player windows", "new settings: font, open the panel when the hub loads, open on home or last page, clock on the top bar, click and notification sounds, panic key, and pick your own quick switches on home", "tapping the top bar while only the side bar is out opens the panel now instead of closing everything" } },
 	{ version = "1.0.2", notes = { "music tab: connect your own spotify app and see what's playing, with play/pause, skip, seek, shuffle, repeat and volume", "now playing card on home, a mini player you can pop out, and the song can show on the top bar", "simpler: no more extra setup pages, the hub just loads your scripts", "cleaner home: one row of stats, one row of buttons, server hop sits in the server card", "fixed long descriptions getting cut off, the go button in player windows forgetting the name, notifications sliding in from the wrong side at the bottom, the top/bottom picker sitting crooked and switches snapping when rainbow is on", "lighter: noclip doesn't rescan your character every frame, rainbow accent does less work and the scripts list only rebuilds when something changed" } },
@@ -4687,11 +4689,11 @@ do
 			minW = 220,
 			minH = 160,
 			build = function(_, body)
-				if #CHANGELOG == 0 then
+				if #Core.CHANGELOG == 0 then
 					UI.label(body, { Text = "Nothing written down yet.", TextSize = 11, TextColor3 = T.sub, Size = UDim2.new(1, 0, 0, 30) })
 					return
 				end
-				for i, entry in ipairs(CHANGELOG) do
+				for i, entry in ipairs(Core.CHANGELOG) do
 					local head = UI.label(body, {
 						Name = "Version",
 						Text = "v" .. entry.version .. (entry.version == HUB_VERSION and "  ·  you have this" or ""),
@@ -4790,7 +4792,7 @@ local function applyLayout()
 	local s = math.max(0.45, math.min(auto * S.uiScale, fit))
 	L.scale = s
 	L.W, L.H = sz.X / s, sz.Y / s
-	RootScale.Scale = s
+	Core.RootScale.Scale = s
 	Root.Size = UDim2.fromScale(1 / s, 1 / s)
 	Shell.layout()
 	Win.relayout()
@@ -4837,12 +4839,13 @@ function Shell.layout()
 	Shell.narrow = narrow
 	Shell.x1, Shell.x2, Shell.barOn = x1, x2, barOn
 	local headY, toolsY = M, M
+	Shell.barTight = barOn and bp == "top" and (W / 2 - math.max(Pill.frame.Size.X.Offset, 340) / 2 - 10 - x1) < 230
 	if barOn then
 		if bp == "left" then
 			headY += 32
 		elseif bp == "right" then
 			toolsY += 32
-		elseif bp == "top" and narrow then
+		elseif bp == "top" and (narrow or Shell.barTight) then
 			headY += 32
 			toolsY += 32
 		end
@@ -4904,6 +4907,8 @@ function Shell.fitHead()
 	end
 	if Shell.narrow then
 		Head.maxW = math.max(150, (x2 - x1) - toolsW - 6)
+	elseif Shell.barTight then
+		Head.maxW = math.max(150, math.min((x2 - x1) * 0.6, (x2 - x1) - toolsW - 12))
 	elseif Shell.barOn and S.barPos == "top" then
 		Head.maxW = math.max(150, math.min((x2 - x1) * 0.55, L.W / 2 - Pill.frame.Size.X.Offset / 2 - 10 - x1))
 	else
@@ -4948,7 +4953,7 @@ function Shell.applyPage(pg, instant)
 	if pg and pg.layout then pg.layout(w, st.h) end
 end
 
-local toastSpot = nil
+Core.toastSpot = nil
 function Toast.place(instant)
 	local w, h = 260, 180
 	local barOn = S.statsBar and Pill.frame.Visible
@@ -4962,15 +4967,15 @@ function Toast.place(instant)
 	else
 		y = (barOn and S.barPos == "top") and 38 or 8
 	end
-	toastList.VerticalAlignment = bottom and Enum.VerticalAlignment.Bottom or Enum.VerticalAlignment.Top
+	Core.toastList.VerticalAlignment = bottom and Enum.VerticalAlignment.Bottom or Enum.VerticalAlignment.Top
 	local key = math.floor(x) .. "," .. math.floor(y)
-	if key == toastSpot then return end
-	local first = toastSpot == nil
-	toastSpot = key
-	UI.tween(ToastBox, (first or instant or #Toast.list == 0) and 0 or 0.35, { Position = UDim2.fromOffset(x, y) })
+	if key == Core.toastSpot then return end
+	local first = Core.toastSpot == nil
+	Core.toastSpot = key
+	UI.tween(Core.ToastBox, (first or instant or #Toast.list == 0) and 0 or 0.35, { Position = UDim2.fromOffset(x, y) })
 end
 
-local function setNavSelected(id)
+function Core.setNavSelected(id)
 	Dock.select(id)
 end
 
@@ -4979,7 +4984,7 @@ function Panel.place()
 	Shell.layout()
 end
 
-local function showEdge(on)
+function Core.showEdge(on)
 	Shell.edgeShown = on
 	if on then
 		UI.tween(Edge, 0.45, { Position = Shell.edgeOn or Edge.Position }, Enum.EasingStyle.Back)
@@ -4988,13 +4993,13 @@ local function showEdge(on)
 	end
 end
 
-local function showSide(on)
+function Core.showSide(on)
 	Dock.show(on)
 	Toast.place()
 end
 
 local spinTween = nil
-local function setSpin(on)
+function Core.setSpin(on)
 	local ic = P.right.icon
 	if on and S.animations then
 		if not spinTween then
@@ -5013,7 +5018,7 @@ end
 
 local function updateSpin()
 	local pg = Panel.page and Pages[Panel.page]
-	setSpin(pg ~= nil and pg.spinWhileLoading == true and Repo.state == "loading")
+	Core.setSpin(pg ~= nil and pg.spinWhileLoading == true and Repo.state == "loading")
 end
 
 function Panel.headText(pg)
@@ -5140,7 +5145,7 @@ function Panel.switch(id, instant)
 			if pg ~= newP then pg.frame.Visible = false end
 		end
 	else
-		local dir = (navIndex(id) > navIndex(oldP.id)) and 1 or -1
+		local dir = (Core.navIndex(id) > Core.navIndex(oldP.id)) and 1 or -1
 		newP.frame.Position = UDim2.fromScale(0, dir)
 		UI.tween(newP.frame, 0.45, { Position = UDim2.fromScale(0, 0) })
 		oldP.tk = (oldP.tk or 0) + 1
@@ -5193,7 +5198,7 @@ function Panel.show(id)
 	end
 	UI.tween(P.card, 0.5, { Position = UDim2.fromOffset(4, 4) })
 	UI.tween(Head.frame, 0.45, { Position = UDim2.fromOffset(Head.x, Head.y) })
-	setNavSelected(id)
+	Core.setNavSelected(id)
 	Toast.place()
 	Z.front(P.holder)
 	Blur.set(true)
@@ -5211,7 +5216,7 @@ function Panel.hide()
 	end)
 	Head.frame.Visible = false
 	Tools.frame.Visible = false
-	setNavSelected(nil)
+	Core.setNavSelected(nil)
 	Toast.place()
 	Blur.set(false)
 end
@@ -5226,15 +5231,15 @@ end
 function Panel.openBar()
 	Panel.unhide()
 	Panel.mode = "bar"
-	showEdge(false)
-	showSide(true)
+	Core.showEdge(false)
+	Core.showSide(true)
 end
 
 function Panel.closeAll()
 	Panel.mode = "closed"
 	Panel.hide()
-	showSide(false)
-	showEdge(not HUB.hidden)
+	Core.showSide(false)
+	Core.showEdge(not HUB.hidden)
 end
 
 function Panel.nav(id)
@@ -5249,7 +5254,7 @@ function Panel.nav(id)
 	end
 	if Panel.open then
 		Panel.switch(id)
-		setNavSelected(id)
+		Core.setNavSelected(id)
 	else
 		Panel.show(id)
 	end
@@ -5455,7 +5460,7 @@ local function skeleton(parent, n)
 	end
 end
 
-local function confirmTap(setText, normalText, action)
+function Core.confirmTap(setText, normalText, action)
 	local armed, tk = false, 0
 	return function()
 		if armed then
@@ -5485,7 +5490,7 @@ local function copyText(text, what)
 	end
 end
 
-local function pseudoEntry(path, name)
+function Core.pseudoEntry(path, name)
 	return Repo.byPath[path] or Repo.remote[path] or { path = path, name = name or Util.prettyName(path), category = "Not in repo", size = 0, ext = "" }
 end
 
@@ -5696,7 +5701,7 @@ do
 		local lab = UI.label(b, { Text = text, TextSize = 12, TextColor3 = col, Position = UDim2.fromOffset(38, 0), Size = UDim2.new(1, -50, 1, 0), TextTruncate = Enum.TextTruncate.AtEnd })
 		hoverable(b)
 		if confirm then
-			b.Activated:Connect(confirmTap(function(t, armed)
+			b.Activated:Connect(Core.confirmTap(function(t, armed)
 				lab.Text = t
 				lab.TextColor3 = armed and T.yellow or col
 			end, text, fn))
@@ -6059,7 +6064,7 @@ D.optRespawn = Ctl.toggle(D.scroll, 4, "Respawn when stopped", "Ends reanimates 
 	return Detail.entry ~= nil and Runner.wantsRespawn(Detail.entry.path)
 end, function(v)
 	if not Detail.entry then return end
-	perScript(Detail.entry.path).respawn = v
+	Core.perScript(Detail.entry.path).respawn = v
 	saveSettings()
 end)
 D.optAuto = Ctl.toggle(D.scroll, 5, "Run when the hub loads", nil, function()
@@ -6067,12 +6072,12 @@ D.optAuto = Ctl.toggle(D.scroll, 5, "Run when the hub loads", nil, function()
 	return type(p) == "table" and p.autorun == true
 end, function(v)
 	if not Detail.entry then return end
-	perScript(Detail.entry.path).autorun = v or nil
+	Core.perScript(Detail.entry.path).autorun = v or nil
 	saveSettings()
 end)
 
 D.tools = UI.new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 36), LayoutOrder = 6 }, D.scroll)
-local function smallButton(parent, icon, text, i)
+function Core.smallButton(parent, icon, text, i)
 	local b = UI.button(parent, {
 		BackgroundColor3 = T.card,
 		Size = UDim2.new(1 / 3, -4, 1, 0),
@@ -6086,9 +6091,9 @@ local function smallButton(parent, icon, text, i)
 	end)
 	return b, set
 end
-D.copy = smallButton(D.tools, "copy", "Copy", 1)
-D.reload = smallButton(D.tools, "download", "Refresh", 2)
-D.unload, D.unloadSet = smallButton(D.tools, "power", "Unload", 3)
+D.copy = Core.smallButton(D.tools, "copy", "Copy", 1)
+D.reload = Core.smallButton(D.tools, "download", "Refresh", 2)
+D.unload, D.unloadSet = Core.smallButton(D.tools, "power", "Unload", 3)
 D.unload.Activated:Connect(function()
 	local e = Detail.entry
 	if not e then return end
@@ -6128,7 +6133,7 @@ D.aboutInfo = UI.label(D.about, {
 	LayoutOrder = 3,
 })
 
-local function fillAbout(e)
+function Core.fillAbout(e)
 	local meta = Repo.getMeta(e.path)
 	if not meta then
 		D.aboutText.Text = "Loading info..."
@@ -6149,9 +6154,9 @@ local function fillAbout(e)
 	end
 end
 
-local function loadAbout(e, fresh)
+function Core.loadAbout(e, fresh)
 	if Repo.src[e.path] and not fresh then
-		fillAbout(e)
+		Core.fillAbout(e)
 		return
 	end
 	D.aboutText.Text = "Loading info..."
@@ -6159,7 +6164,7 @@ local function loadAbout(e, fresh)
 		local ok = Repo.source(e, fresh)
 		if Detail.entry ~= e or not HUB.alive then return end
 		if ok then
-			fillAbout(e)
+			Core.fillAbout(e)
 		else
 			D.aboutText.Text = "Couldn't download this script right now."
 		end
@@ -6172,7 +6177,7 @@ D.copy.Activated:Connect(function()
 end)
 D.reload.Activated:Connect(function()
 	local e = Detail.entry
-	if e then loadAbout(e, true) end
+	if e then Core.loadAbout(e, true) end
 end)
 
 function Detail.fill(e)
@@ -6185,7 +6190,7 @@ function Detail.fill(e)
 	D.optRespawn.render(false)
 	D.optAuto.render(false)
 	Detail.refresh()
-	loadAbout(e, false)
+	Core.loadAbout(e, false)
 end
 
 function Detail.resize() end
@@ -6465,7 +6470,7 @@ do
 	end
 	Home.rejoin, Home.rejoinSet = Home.pill(sv, "rotate-ccw", "Rejoin", UDim2.fromOffset(12, 84), UDim2.new(0.5, -15, 0, 28))
 	Home.hop = Home.pill(sv, "shuffle", "Server hop", UDim2.new(0.5, 3, 0, 84), UDim2.new(0.5, -15, 0, 28))
-	Home.rejoin.Activated:Connect(confirmTap(function(text, armed)
+	Home.rejoin.Activated:Connect(Core.confirmTap(function(text, armed)
 		Home.rejoinSet(armed and "check" or "rotate-ccw", armed and "Sure?" or text, armed and T.yellow or T.text)
 	end, "Rejoin", function()
 		notify("Rejoining", "See you in a moment", "info")
@@ -6610,7 +6615,7 @@ function Home.renderRecent()
 	end
 end
 
-local function getPing()
+function Core.getPing()
 	local ok, v = pcall(function()
 		return game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue()
 	end)
@@ -6703,7 +6708,7 @@ do
 	end
 end
 
-local function scriptRow(sf, e, order, viewIndex)
+function Core.scriptRow(sf, e, order, viewIndex)
 	local row = UI.button(sf, { Name = "Row", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 50), LayoutOrder = order })
 	UI.corner(row, 12)
 	local box = UI.new("Frame", { BackgroundTransparency = 0.82, Size = UDim2.fromOffset(34, 34), Position = UDim2.fromOffset(8, 8) }, row)
@@ -6810,7 +6815,7 @@ function Scripts.render(i)
 					lastCat = e.category
 					section(sf, e.category, nextOrder())
 				end
-				scriptRow(sf, e, nextOrder(), i)
+				Core.scriptRow(sf, e, nextOrder(), i)
 				shown += 1
 			end
 		end
@@ -6832,7 +6837,7 @@ function Scripts.render(i)
 		local shown = 0
 		for _, e in ipairs(list) do
 			if S.favorites[e.path] and match(e) then
-				scriptRow(sf, e, nextOrder(), i)
+				Core.scriptRow(sf, e, nextOrder(), i)
 				shown += 1
 			end
 		end
@@ -6842,7 +6847,7 @@ function Scripts.render(i)
 		for _, path in ipairs(S.recent) do
 			local e = Repo.byPath[path]
 			if Repo.visible(e) and match(e) then
-				scriptRow(sf, e, nextOrder(), i)
+				Core.scriptRow(sf, e, nextOrder(), i)
 				shown += 1
 			end
 		end
@@ -6966,7 +6971,7 @@ function SB.source(it)
 	if it.source and it.source ~= "" then return true, it.source, "net" end
 	if it.paid then return false, "that's a paid script" end
 	local ok, body = Net.get(SB.base .. "/raw/" .. Util.urlEncode(it.slug))
-	if ok and validSource(body) and not string.find(body, '^%s*{%s*"message"') then
+	if ok and Core.validSource(body) and not string.find(body, '^%s*{%s*"message"') then
 		it.source = body
 		return true, body, "net"
 	end
@@ -7498,7 +7503,7 @@ function Running.render()
 			UI.accent(b, "BackgroundColor3")
 			iconText(b, "play-fill", "Run", T.ink, 11)
 			UI.pressable(b, 0.92)
-			b.Activated:Connect(function() Runner.run(pseudoEntry(path, name)) end)
+			b.Activated:Connect(function() Runner.run(Core.pseudoEntry(path, name)) end)
 		elseif rec and not Runner.pending[path] then
 			local b = UI.button(r, { BackgroundColor3 = T.red, BackgroundTransparency = 0.86, Size = UDim2.fromOffset(66, 28), Position = UDim2.new(1, -78, 0.5, -14) })
 			UI.corner(b, 14)
@@ -7512,7 +7517,7 @@ function Running.render()
 			UI.tween(r, 0.15, { BackgroundColor3 = on and T.card2 or T.card })
 		end)
 		r.Activated:Connect(function()
-			local e = pseudoEntry(path, name)
+			local e = Core.pseudoEntry(path, name)
 			if e.sb then
 				Explore.open(e.sb)
 			else
@@ -7524,7 +7529,7 @@ function Running.render()
 		row(rec.name, rec.path, rec, false)
 	end
 	for _, path in ipairs(pend) do
-		row(pseudoEntry(path).name, path, nil, false)
+		row(Core.pseudoEntry(path).name, path, nil, false)
 	end
 	if #active > 1 then
 		order += 1
@@ -7598,7 +7603,7 @@ function Console.render(i)
 		if i == 1 or it.kind == "error" then
 			n += 1
 			if n > 80 then break end
-			local col = kindColor(it.kind)
+			local col = Core.kindColor(it.kind)
 			if it.kind == "info" then col = T.sub end
 			local head = string.format('<font color="%s"><b>%s</b></font>  <font color="%s">%s%s</font>', Util.hex(col), Util.rich(it.src), Util.hex(T.dim), it.time, it.count > 1 and ("  x" .. it.count) or "")
 			local l = UI.label(sf, {
@@ -7626,13 +7631,13 @@ function Console.render(i)
 	end
 end
 
-local consoleQueued = false
+Core.consoleQueued = false
 Bus.on("log", function()
 	Console.dirty = { true, true }
-	if Panel.open and Panel.page == "console" and not consoleQueued then
-		consoleQueued = true
+	if Panel.open and Panel.page == "console" and not Core.consoleQueued then
+		Core.consoleQueued = true
 		task.delay(0.2, function()
-			consoleQueued = false
+			Core.consoleQueued = false
 			if HUB.alive and Panel.page == "console" then Console.render(Console.tab) end
 		end)
 	end
@@ -9190,7 +9195,7 @@ do
 	end
 end
 
-local function cmdRow(sf, def, order)
+function Core.cmdRow(sf, def, order)
 	local row = UI.button(sf, { Name = "Cmd_" .. def.id, BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 50), LayoutOrder = order })
 	UI.corner(row, 12)
 	local boxF = UI.new("Frame", { Name = "IconBox", BackgroundColor3 = T.card2, Size = UDim2.fromOffset(34, 34), Position = UDim2.fromOffset(8, 8) }, row)
@@ -9247,7 +9252,7 @@ function Commands.render()
 				end
 				if hit then
 					n += 1
-					cmdRow(sf, def, n)
+					Core.cmdRow(sf, def, n)
 				end
 			end
 		end
@@ -9281,7 +9286,7 @@ do
 			local def = Cmd.by[id]
 			if def and def.kind == "toggle" and def.icon and not table.find(out, def.id) and #out < 4 then out[#out + 1] = def.id end
 		end
-		if #out == 0 then out = table.clone(QUICK_DEFAULT) end
+		if #out == 0 then out = table.clone(Core.QUICK_DEFAULT) end
 		return out
 	end
 	function Home.buildQuick()
@@ -9427,7 +9432,7 @@ do
 	end
 end
 
-local function headshot(p)
+function Core.headshot(p)
 	return "rbxthumb://type=AvatarHeadShot&id=" .. tostring(p.UserId) .. "&w=150&h=150"
 end
 
@@ -9554,11 +9559,11 @@ function PlayersPage.clearFx()
 	end
 end
 
-local function playerRow(sf, p, order, right)
+function Core.playerRow(sf, p, order, right)
 	local row = UI.button(sf, { Name = "P_" .. p.Name, BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 48), LayoutOrder = order })
 	UI.corner(row, 12)
 	local st = UI.stroke(row, accentColor(), 1, PlayersPage.sel == p and 0.4 or 1)
-	local av = UI.new("ImageLabel", { BackgroundColor3 = T.card2, Size = UDim2.fromOffset(32, 32), Position = UDim2.fromOffset(9, 8), Image = headshot(p) }, row)
+	local av = UI.new("ImageLabel", { BackgroundColor3 = T.card2, Size = UDim2.fromOffset(32, 32), Position = UDim2.fromOffset(9, 8), Image = Core.headshot(p) }, row)
 	UI.corner(av, 16)
 	UI.label(row, { Text = p.DisplayName, Font = FONT_B, TextSize = 13, Position = UDim2.fromOffset(50, 8), Size = UDim2.new(1, -110, 0, 17), TextTruncate = Enum.TextTruncate.AtEnd })
 	UI.label(row, { Text = "@" .. p.Name .. (p == LP and ", you" or ""), TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(50, 26), Size = UDim2.new(1, -110, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
@@ -9614,7 +9619,7 @@ function PlayersPage.render(i)
 	local titles = { "In this server  ·  " .. #all, "Your friends here  ·  " .. #list, "Closest to you" }
 	section(sf, titles[i], 0)
 	for n, p in ipairs(list) do
-		playerRow(sf, p, n, i == 3 and (math.floor(dist[p] + 0.5) .. " studs") or nil)
+		Core.playerRow(sf, p, n, i == 3 and (math.floor(dist[p] + 0.5) .. " studs") or nil)
 	end
 	if #list == 0 then
 		if i == 2 then
@@ -9753,7 +9758,7 @@ function PlayersPage.tick()
 	l.Text = table.concat(bits, "  ·  ")
 end
 
-local function playersChanged()
+function Core.playersChanged()
 	PlayersPage.dirty = { true, true, true }
 	if Panel.open and Panel.page == "players" then
 		task.defer(function()
@@ -9761,12 +9766,12 @@ local function playersChanged()
 		end)
 	end
 end
-hubConn(Players.PlayerAdded:Connect(playersChanged))
+hubConn(Players.PlayerAdded:Connect(Core.playersChanged))
 hubConn(Players.PlayerRemoving:Connect(function(p)
 	pcall(FX.clear, p)
 	PlayersPage.friend[p.UserId] = nil
 	if PlayersPage.sel == p and Aside.key == "player" then Aside.hide() end
-	task.delay(0.1, playersChanged)
+	task.delay(0.1, Core.playersChanged)
 end))
 Bus.on("cmd", function(id)
 	if id ~= "view" and id ~= "follow" then return end
@@ -9879,7 +9884,7 @@ function MusicUI.each(f, onlyShown)
 	MusicUI.views = keep
 end
 
-local SPOT_SEEK = {
+Core.SPOT_SEEK = {
 	dur = function()
 		local s = Spot.state
 		return s and s.duration or 0
@@ -9889,7 +9894,7 @@ local SPOT_SEEK = {
 }
 
 function MusicUI.bar(parent, v, props, seekable, api)
-	api = api or SPOT_SEEK
+	api = api or Core.SPOT_SEEK
 	local track = UI.new("Frame", { Name = "Track", BackgroundColor3 = T.card2, BorderSizePixel = 0 }, parent)
 	for k, val in pairs(props) do
 		track[k] = val
@@ -11004,7 +11009,7 @@ Settings.views = { newScroll(Settings.frame, 0, true), newScroll(Settings.frame,
 Settings.controls = {}
 local waitingKey = nil
 
-local function applyLook()
+function Core.applyLook()
 	Dock.frame.BackgroundTransparency = S.opacity
 	Edge.BackgroundTransparency = S.opacity
 	if not Shell.bare then P.bg.BackgroundTransparency = S.opacity end
@@ -11022,19 +11027,19 @@ local function reg(c)
 	return c
 end
 
-local function applyFpsCap()
+function Core.applyFpsCap()
 	if X.setfpscap then pcall(X.setfpscap, S.fpsCap) end
 end
 
 function Settings.applyAll()
-	applyLook()
+	Core.applyLook()
 	UI.applyAccent()
 	applyLayout()
 	updateSpin()
 	Pill.frame.Visible = S.statsBar and not HUB.hidden
 	Toast.place(true)
 	Blur.set(Panel.open)
-	if S.fpsCap > 0 then applyFpsCap() end
+	if S.fpsCap > 0 then Core.applyFpsCap() end
 	UI.setFont(S.font)
 	Home.buildQuick()
 	for _, c in ipairs(Settings.controls) do
@@ -11120,7 +11125,7 @@ do
 	sw.Name = "Accent"
 	UI.label(sw, { Text = "Accent color", TextSize = 12, Position = UDim2.fromOffset(12, 8), Size = UDim2.new(1, -24, 0, 18) })
 	local rings = {}
-	for i, a in ipairs(ACCENTS) do
+	for i, a in ipairs(Core.ACCENTS) do
 		local b = UI.button(sw, {
 			Name = "Swatch_" .. a[1],
 			BackgroundColor3 = a[2],
@@ -11163,7 +11168,7 @@ do
 	end))
 	reg(Ctl.slider(v, 5, "Background opacity", 0.4, 1, 0.05, function() return 1 - S.opacity end, function(x, final)
 		S.opacity = math.clamp(1 - x, 0, 0.6)
-		applyLook()
+		Core.applyLook()
 		if final then saveSettings() end
 	end, function(x) return math.floor(x * 100 + 0.5) .. "%" end, true))
 	reg(Ctl.slider(v, 6, "Size", 0.7, 1.4, 0.05, function() return S.uiScale end, function(x, final)
@@ -11292,7 +11297,7 @@ do
 			if final then
 				S.fpsCap = x
 				saveSettings()
-				applyFpsCap()
+				Core.applyFpsCap()
 			end
 		end, function(x) return x == 0 and "No cap" or tostring(x) end, false))
 	end
@@ -11372,7 +11377,7 @@ do
 	section(v, "Home", 10)
 	Ctl.action(v, 11, "Pick the quick switches on Home", "layout-grid", false, function() Home.pickQuick() end)
 	Ctl.action(v, 12, "Put the quick switches back", "rotate-ccw", false, function()
-		S.quickCmds = table.clone(QUICK_DEFAULT)
+		S.quickCmds = table.clone(Core.QUICK_DEFAULT)
 		saveSettings()
 		Home.buildQuick()
 		Win.close("quickpick")
@@ -11418,7 +11423,7 @@ do
 				n += 1
 			end
 		end
-		normalizeSettings()
+		Core.normalizeSettings()
 		saveSettings()
 		imp.box.Text = ""
 		Settings.applyAll()
@@ -12262,7 +12267,7 @@ end
 Edge.Activated:Connect(function()
 	Panel.openBar()
 end)
-for _, def in ipairs(NAV) do
+for _, def in ipairs(Core.NAV) do
 	Dock.items[def.id].btn.Activated:Connect(function()
 		Panel.nav(def.id)
 	end)
@@ -12277,7 +12282,7 @@ Home.banner.Activated:Connect(function()
 	Ver.update()
 end)
 
-local function updateBadge()
+function Core.updateBadge()
 	local n = Runner.count()
 	Dock.badgeText.Text = tostring(n)
 	if n > 0 then
@@ -12292,7 +12297,7 @@ local function updateBadge()
 end
 
 Bus.on("running", function()
-	updateBadge()
+	Core.updateBadge()
 	Scripts.updateStatus()
 	if Detail.isOpen then Detail.refresh() end
 	if Panel.open and Panel.page == "running" then Running.render() end
@@ -12371,7 +12376,7 @@ hubConn(RunService.Heartbeat:Connect(function(dt)
 	tickAcc += dt
 	if tickAcc >= 0.5 then
 		tickAcc = 0
-		local ping = getPing()
+		local ping = Core.getPing()
 		if Pill.frame.Visible then
 			local song, playing = MusicUI.barText()
 			Pill.update(fps, ping, Runner.count(), song, playing, S.barClock and Util.shortTime(S.clock24) or nil)
@@ -12408,7 +12413,7 @@ hubConn(RunService.Heartbeat:Connect(function(dt)
 	end
 end))
 
-hubConn(LogService.MessageOut:Connect(function(msg, kind)
+hubConn(Core.LogService.MessageOut:Connect(function(msg, kind)
 	if kind ~= Enum.MessageType.MessageError then return end
 	local name = string.match(msg, "Atsuko/(.-):%d+:")
 	if name then Log.add("error", name, msg) end
@@ -12437,12 +12442,12 @@ hubConn(UserInputService.InputBegan:Connect(function(input, gpe)
 	end
 end))
 
-local layoutQueued = false
+Core.layoutQueued = false
 hubConn(Gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-	if layoutQueued then return end
-	layoutQueued = true
+	if Core.layoutQueued then return end
+	Core.layoutQueued = true
 	task.defer(function()
-		layoutQueued = false
+		Core.layoutQueued = false
 		if HUB.alive then applyLayout() end
 	end)
 end))
@@ -12463,7 +12468,7 @@ function HUB.Destroy()
 	if Blur.fx then pcall(function() Blur.fx:Destroy() end) end
 	pcall(function() Gui:Destroy() end)
 	if GENV.__AtsukoHubInstance == HUB then GENV.__AtsukoHubInstance = nil end
-	if GENV.AtsukoHub == API then GENV.AtsukoHub = nil end
+	if GENV.AtsukoHub == Core.API then GENV.AtsukoHub = nil end
 end
 
 do
@@ -12482,21 +12487,21 @@ do
 end
 
 applyLayout()
-updateBadge()
+Core.updateBadge()
 Pill.update(60, nil, 0)
-if S.fpsCap > 0 then applyFpsCap() end
+if S.fpsCap > 0 then Core.applyFpsCap() end
 
-local autoRan = false
-local function autorun()
-	if autoRan or #Repo.entries == 0 then return end
-	autoRan = true
+Core.autoRan = false
+function Core.autorun()
+	if Core.autoRan or #Repo.entries == 0 then return end
+	Core.autoRan = true
 	for _, e in ipairs(Repo.entries) do
 		local p = S.perScript[e.path]
 		if type(p) == "table" and p.autorun == true and Repo.visible(e) and not SHARED.running[e.path] then Runner.run(e) end
 	end
 end
 Bus.on("repo", function()
-	if Repo.state == "ready" or Repo.state == "cached" then autorun() end
+	if Repo.state == "ready" or Repo.state == "cached" then Core.autorun() end
 end)
 
 if Repo.loadCache() then Scripts.invalidate() end
@@ -12513,7 +12518,7 @@ if Player.cfg.resume then
 		end)
 	end
 end
-if Repo.state == "cached" then autorun() end
+if Repo.state == "cached" then Core.autorun() end
 Ver.check(false)
 
 task.spawn(function()
@@ -12542,9 +12547,9 @@ task.spawn(function()
 	end
 end)
 
-local running = Runner.count()
-if running > 0 then
-	notify("Atsuko Hub", running .. (running == 1 and " script is" or " scripts are") .. " still running", "ok")
+Core.running = Runner.count()
+if Core.running > 0 then
+	notify("Atsuko Hub", Core.running .. (Core.running == 1 and " script is" or " scripts are") .. " still running", "ok")
 else
 	local ex = Home.executor ~= "unknown" and (" on " .. Home.executor) or ""
 	notify("Atsuko Hub", "v" .. HUB_VERSION .. " loaded" .. ex .. (S.toggleKey ~= "" and UserInputService.KeyboardEnabled and ("  ·  " .. S.toggleKey .. " to hide") or ""), "ok")
