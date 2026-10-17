@@ -1,6 +1,6 @@
 --[[
 	atsuko hub v1.0.5
-	by atsukohakari
+	by AtsukoHakariBA (i hate my life)
 
 	icons from lucide.dev (ISC), license in Hub/LUCIDE_LICENSE.txt
 ]]
