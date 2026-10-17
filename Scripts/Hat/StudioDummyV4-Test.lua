@@ -2838,6 +2838,14 @@ local function LCCore(FD, CFG)
 	end
 	local FILE = CFG.alignFile or "LCGunAlign.json"
 	local SLOTKEY = {"gun1", "gun2", "muzzle", "railgun", "sword", "swordback", "gunship"}
+	local PERGUN = {key = nil, name = nil, saved = {}, base = {table.clone(DEFAULT[1]), table.clone(DEFAULT[3])}}
+	function PERGUN.use(key)
+		local one = key and PERGUN.saved[key]
+		VAL[1] = table.clone((one and one[1]) or PERGUN.base[1])
+		VAL[3] = table.clone((one and one[3]) or PERGUN.base[2])
+		rebuild(1)
+		rebuild(3)
+	end
 	local function loadAlign()
 		if not (isfile and readfile) then
 			return false, "your executor can't read files"
@@ -2868,13 +2876,50 @@ local function LCCore(FD, CFG)
 				rebuild(s)
 			end
 		end
+		PERGUN.base = {table.clone(VAL[1]), table.clone(VAL[3])}
+		PERGUN.saved = {}
+		if type(data.perGun) == "table" then
+			for key, g in pairs(data.perGun) do
+				if type(key) == "string" and type(g) == "table" then
+					local one = {}
+					for _, slot in ipairs({1, 3}) do
+						local a = g[SLOTKEY[slot]]
+						local v = {0, 0, 0, 0, 0, 0}
+						if type(a) == "table" then
+							for k = 1, 6 do
+								local n = tonumber(a[k])
+								if n and n == n and math.abs(n) < 1e5 then
+									v[k] = n
+								end
+							end
+						end
+						one[slot] = v
+					end
+					PERGUN.saved[key] = one
+				end
+			end
+		end
+		if PERGUN.key then
+			PERGUN.use(PERGUN.key)
+		end
 		return true
 	end
 	local function saveAlign()
 		if not writefile then
 			return false, "your executor can't save files"
 		end
-		local txt = HttpService:JSONEncode({v = 1, gun1 = VAL[1], gun2 = VAL[2], muzzle = VAL[3], railgun = VAL[4], sword = VAL[5], swordback = VAL[6], gunship = VAL[7]})
+		local g1, mz = VAL[1], VAL[3]
+		if PERGUN.key then
+			PERGUN.saved[PERGUN.key] = {table.clone(VAL[1]), [3] = table.clone(VAL[3])}
+			g1, mz = PERGUN.base[1], PERGUN.base[2]
+		else
+			PERGUN.base = {table.clone(VAL[1]), table.clone(VAL[3])}
+		end
+		local per = {}
+		for key, one in pairs(PERGUN.saved) do
+			per[key] = {gun1 = one[1], muzzle = one[3]}
+		end
+		local txt = HttpService:JSONEncode({v = 2, gun1 = g1, gun2 = VAL[2], muzzle = mz, railgun = VAL[4], sword = VAL[5], swordback = VAL[6], gunship = VAL[7], perGun = next(per) and per or nil})
 		local ok, e = pcall(writefile, FILE, txt)
 		if not ok then
 			return false, tostring(e)
@@ -2890,6 +2935,23 @@ local function LCCore(FD, CFG)
 	end
 	function C.alignVal(s)
 		return VAL[s]
+	end
+	function C.setGunKey(key, name)
+		PERGUN.name = name
+		if key == "" then
+			key = nil
+		end
+		if key == PERGUN.key then
+			return
+		end
+		PERGUN.key = key
+		PERGUN.use(key)
+		if C.refreshAlignBoxes then
+			C.refreshAlignBoxes()
+		end
+	end
+	function C.gunKeyName()
+		return PERGUN.key and (PERGUN.name or PERGUN.key) or nil
 	end
 	local NGUNS = 3
 	local OFFIDX = {1, 2, 4}
@@ -3222,11 +3284,11 @@ local function LCCore(FD, CFG)
 		return b
 	end
 
-	local toggle = btn({Name = "Toggle", Size = UDim2.new(0, 96, 0, 28), Position = UDim2.new(0, 12, 0, 8), Text = "Align", Visible = CFG.alignButton ~= false, BackgroundColor3 = COL.bg, BackgroundTransparency = 0.1}, gui)
+	local toggle = btn({Name = "Toggle", Size = UDim2.new(0, 96, 0, 28), Position = UDim2.new(0, 12, 0, 8), Text = "Align", Visible = CFG.alignButton ~= false, BackgroundColor3 = COL.bg, BackgroundTransparency = 0.1, ZIndex = 5}, gui)
 	mk("UIStroke", {Color = COL.line, Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border}, toggle)
 
 	local W, HEAD, BODY_H = 280, 36, 524
-	local main = mk("Frame", {Name = "Panel", Size = UDim2.new(0, W, 0, HEAD + BODY_H), Position = UDim2.new(0, 12, 0, 8), BackgroundColor3 = COL.bg, BackgroundTransparency = 0.04, BorderSizePixel = 0, Visible = false, Active = true, ClipsDescendants = true}, gui)
+	local main = mk("Frame", {Name = "Panel", Size = UDim2.new(0, W, 0, HEAD + BODY_H), Position = UDim2.new(0, 12, 0, CFG.alignButton ~= false and 44 or 8), BackgroundColor3 = COL.bg, BackgroundTransparency = 0.04, BorderSizePixel = 0, Visible = false, Active = true, ClipsDescendants = true}, gui)
 	round(main, 10)
 	mk("UIStroke", {Color = COL.line, Thickness = 1}, main)
 	local uiScale = mk("UIScale", {Scale = 1}, main)
@@ -3489,7 +3551,8 @@ local function LCCore(FD, CFG)
 		local ok, e = saveAlign()
 		if ok then
 			setDirty(false)
-			status("Saved to " .. FILE, COL.good)
+			local gname = C.gunKeyName and C.gunKeyName()
+			status(gname and ("Saved for " .. gname) or ("Saved to " .. FILE), COL.good)
 		else
 			status("Not saved: " .. tostring(e), COL.bad)
 		end
@@ -3653,6 +3716,14 @@ local function LCCore(FD, CFG)
 
 	refreshBoxes()
 	setDirty(false)
+	C.refreshAlignBoxes = function()
+		undo = {}
+		undoBtn.Text = "Undo"
+		refreshBoxes()
+		if C.gunKeyName and C.gunKeyName() then
+			status("gun: " .. C.gunKeyName() .. ", its own spot is saved for just this gun", COL.accent, true)
+		end
+	end
 	gui.Parent = C.guiParent()
 	fit()
 	C.connect(gui:GetPropertyChangedSignal("AbsoluteSize"), fit)
@@ -3685,7 +3756,8 @@ end
 
 local SD = {
 	GunMeshes = {"4615369575", "97638566524944", "118424096643898", "130706166370149"},
-	GunWords = {"horus", "hoshino", "shotgun", "hyperlaser", "holdable", "railgun", "starslayer", "kinetic", "staff", "laser"},
+	GunItems = {"106131818389598", "136404593344849", "117510548336968"},
+	GunWords = {"full stop", "fullstop", "full-stop", "horus", "hoshino", "shotgun", "hyperlaser", "holdable", "railgun", "starslayer", "kinetic", "staff", "laser", "rifle"},
 	GunFlip = false,
 	ScreenMeshes = {"139838579317536"},
 	ScreenWords = {"bluescreen", "screen", "bsod", "error", "popup"},
@@ -3974,16 +4046,37 @@ local function note(text)
 		end)
 	end
 end
-local VERSION = 4
+local VERSION = 5
 local old = _G.StudioDummyCommands
 if type(old) == "table" then
 	if type(old.kill) == "function" and (old.version or 0) < VERSION then
 		pcall(old.kill)
 	else
-		note('Do "-run" to run the script, and "-stop" to stop the script.')
+		if type(old.run) == "function" then
+			task.spawn(old.run)
+		end
 		return
 	end
 end
+task.spawn(function()
+	for _, id in ipairs(SD.GunItems) do
+		local mesh = nil
+		pcall(function()
+			for _, o in ipairs(game:GetObjects("rbxassetid://" .. id)) do
+				local h = o:IsA("BasePart") and o or o:FindFirstChild("Handle", true)
+				if h and not mesh then
+					local sm = not h:IsA("MeshPart") and h:FindFirstChildOfClass("SpecialMesh") or nil
+					local m = h:IsA("MeshPart") and h.MeshId or (sm and sm.MeshId)
+					mesh = type(m) == "string" and m:match("%d+") or nil
+				end
+				o:Destroy()
+			end
+		end)
+		if mesh and not table.find(SD.GunMeshes, mesh) then
+			table.insert(SD.GunMeshes, mesh)
+		end
+	end
+end)
 local Pics = {}
 do
 	local band, bor, bxor, bnot, lshift, rshift = bit32.band, bit32.bor, bit32.bxor, bit32.bnot, bit32.lshift, bit32.rshift
@@ -5329,6 +5422,9 @@ local function startDummy()
 					take(HAT.gun, best, fitGun, " [picked by shape]")
 				end
 			end
+			if C.setGunKey then
+				C.setGunKey(HAT.gun.e and meshNum(HAT.gun.e) or nil, HAT.gun.e and accName(HAT.gun.e) or nil)
+			end
 			if not told and #list > 0 then
 				told = true
 				if not (HAT.gun.e and HAT.screen.e and HAT.bullet.e) then
@@ -5344,7 +5440,7 @@ local function startDummy()
 			local function yn(s)
 				return s.e and "worn" or "no"
 			end
-			return "Gun: " .. yn(HAT.gun) .. (HAT.gun2.e and " (both halves)" or "") .. "  |  Screen: " .. yn(HAT.screen) .. "  |  Panels: " .. yn(HAT.screen2) .. "  |  Bullet: " .. yn(HAT.bullet)
+			return "Gun: " .. (HAT.gun.e and accName(HAT.gun.e) or "no") .. (HAT.gun2.e and " (both halves)" or "") .. "  |  Screen: " .. yn(HAT.screen) .. "  |  Panels: " .. yn(HAT.screen2) .. "  |  Bullet: " .. yn(HAT.bullet)
 		end
 
 		local function gunHolder()
@@ -7343,6 +7439,7 @@ local function startDummy()
 		if not LIMB then
 			table.insert(BTN, {"emotes", "D", "Dance", -62, -124})
 		end
+		table.insert(BTN, {"align", "A", "Align", -124, -124})
 		for _, def in ipairs(BTN) do
 			local b = Instance.new("TextButton")
 			b.Size = UDim2.fromOffset(54, 54)
@@ -9809,7 +9906,7 @@ local function startDummy()
 				if on then
 					note("antivoid: on. if there's nothing under you, you stay up instead of falling")
 				else
-					note("antivoid: off. you fall like normal now (falling into the void stops the script, -run to come back)")
+					note("antivoid: off. you fall like normal now (falling into the void stops the script, run it again to come back)")
 				end
 			elseif name == "gun" then
 				local a = string.lower(arg or ""):gsub("%s+", " ")
@@ -9880,7 +9977,7 @@ local function startDummy()
 					end
 				end
 			elseif name == "help" or name == "cmds" or name == "commands" then
-				C.notify("Studio Dummy V4", "<b>Keys</b>  click / tap shoot, E bash, Z teleport, M next mode (touch the screen), N normal, F fly, Shift shift lock, R spawn\n<b>Screen</b>  -screen (player), -screen move x y z, -screen rotate (degrees), -screen disable / enable (wobble, random, crazy), -screen spin, -screen speed (number)\n<b>Video</b>  -video, -video size (number), -video link (url), -tiktok\n<b>You</b>  -tp, -stand (player) (side), -move x/y/z, -idle, -sit, -size (number / auto), -gun left / right / float, -antivoid (on / off), -speed, -rapid, -noclip" .. (LIMB and "" or "\n<b>Emotes</b>  Shift + Right Ctrl, -emote (name), -emote stop, -emote random") .. "\n<b>Any time</b>  -refresh (-re), -rejoin (-rj), -align, -stop", 14)
+				C.notify("Studio Dummy V4", "<b>Keys</b>  click / tap shoot, E bash, Z teleport, M next mode (touch the screen), N normal, F fly, Shift shift lock, R spawn\n<b>Screen</b>  -screen (player), -screen move x y z, -screen rotate (degrees), -screen disable / enable (wobble, random, crazy), -screen spin, -screen speed (number)\n<b>Video</b>  -video, -video size (number), -video link (url), -tiktok\n<b>You</b>  -tp, -stand (player) (side), -move x/y/z, -idle, -sit, -size (number / auto), -gun left / right / float, -antivoid (on / off), -speed, -rapid, -noclip" .. (LIMB and "" or "\n<b>Emotes</b>  Shift + Right Ctrl, -emote (name), -emote stop, -emote random") .. "\n<b>Any time</b>  -refresh (-re), -rejoin (-rj), -align", 14)
 			elseif name == "align" then
 				if C.toggleAlign then
 					C.toggleAlign()
@@ -10112,6 +10209,12 @@ local function startDummy()
 				local lib = P4.emotes()
 				if lib then
 					lib.toggle()
+				end
+				return
+			end
+			if key == "align" then
+				if C.toggleAlign then
+					C.toggleAlign()
 				end
 				return
 			end
@@ -10385,7 +10488,7 @@ local function runCmd()
 	lastCmdAt = os.clock()
 	placeToken += 1
 	if current and current.alive then
-		note("already running, type -stop to stop")
+		note("already running")
 		return
 	end
 	busy = true
@@ -10407,7 +10510,7 @@ local function runCmd()
 		end
 		current = nil
 	elseif not (current and current.alive) then
-		note("reanimate didnt start, try -run again")
+		note("reanimate didnt start, try again")
 	else
 		note('Studio Dummy V4 (Testing) Made by Vulnerali / padero. Credits for the other people that made this script possible, especially "MyWorld & rqz" actually good.')
 		local me = current
@@ -10444,7 +10547,7 @@ local function stopCmd(noPlace)
 		task.spawn(placeAt, spot)
 	end
 	lastRigCF = nil
-	note(did and "stopped. -run to start again" or "not running. type -run to start")
+	note(did and "stopped" or "not running")
 end
 
 local rejoinCon = nil
@@ -10487,7 +10590,7 @@ local function rejoinCmd()
 end
 local function refreshCmd()
 	if current and current.alive then
-		note("studio dummy is running, type -stop first")
+		note("studio dummy is running, stop it first")
 		return
 	end
 	local ch = lpp.Character
@@ -10538,7 +10641,7 @@ local function onChat(msg)
 		return
 	end
 	name = string.lower(name)
-	if name ~= "run" and name ~= "stop" and not INSTANCE_CMDS[name] and not ANYTIME[name] then
+	if not INSTANCE_CMDS[name] and not ANYTIME[name] then
 		return
 	end
 	local key = string.lower(body)
@@ -10549,18 +10652,10 @@ local function onChat(msg)
 	lastCmd, lastAt = key, now
 	if ANYTIME[name] then
 		task.spawn(ANYTIME[name])
-	elseif name == "run" then
-		task.spawn(runCmd)
-	elseif name == "stop" then
-		if current and current.alive and current.screenOn and current.screenOn() then
-			note("-screen is on, type -screen stop first")
-		else
-			task.spawn(stopCmd)
-		end
 	elseif current and current.alive and current.cmd then
 		task.spawn(current.cmd, name, arg)
 	else
-		note("not running. type -run first")
+		note("not running right now")
 	end
 end
 local lp0 = game:GetService("Players").LocalPlayer
@@ -10584,6 +10679,9 @@ _G.StudioDummyCommands = {
 	version = VERSION,
 	run = runCmd,
 	stop = stopCmd,
+	running = function()
+		return busy or (current ~= nil and current.alive == true)
+	end,
 	kill = function()
 		for _, c in ipairs(chatCons) do
 			pcall(function()
@@ -10596,4 +10694,4 @@ _G.StudioDummyCommands = {
 		current = nil
 	end,
 }
-note('Do "-run" to run the script, and "-stop" to stop the script.')
+task.spawn(runCmd)
