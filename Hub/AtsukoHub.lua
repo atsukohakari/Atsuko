@@ -1,5 +1,5 @@
 --[[
-	atsuko hub v1.0.7
+	atsuko hub v1.0.8
 	by atsukohakari
 
 	icons from lucide.dev (ISC), license in Hub/LUCIDE_LICENSE.txt
@@ -8,7 +8,7 @@
 if not game:IsLoaded() then game.Loaded:Wait() end
 local Core = {}
 
-local HUB_VERSION = "1.0.7"
+local HUB_VERSION = "1.0.8"
 local HUB_DIR = "Hub"
 local SRC = { owner = "atsukohakari", repo = "Atsuko", branch = "main" }
 local HOME_REPO = "https://raw.githubusercontent.com/" .. SRC.owner .. "/" .. SRC.repo .. "/" .. SRC.branch .. "/"
@@ -4625,6 +4625,7 @@ do
 end
 
 Core.CHANGELOG = {
+	{ version = "1.0.8", notes = { "opening a script doesn't lag anymore, works with checks a little at a time in the background and remembers what it found", "works with shows 6 of each kind first, tap show all to see the rest", "studio dummy doesn't freeze the game when it starts anymore" } },
 	{ version = "1.0.7", notes = { "works with: open a script and the hub finds the guns, swords and hats it supports by itself, with the shop name and id, and shows which ones you're wearing or own", "studio dummy: run and stop from the hub only, no more -run / -stop", "studio dummy: works with the full stop rifle, and the align panel remembers each gun on its own (tap A on the touch buttons to open and close it)" } },
 	{ version = "1.0.6", notes = { "tap a script, a player, a playlist or a scriptblox script again to close its info", "scripts with their own run and stop (like studio dummy) show as stopped when they stop by themselves", "no more -run talk in the hub, the run and stop buttons do it all" } },
 	{ version = "1.0.5", notes = { "fixed the hub not starting on some executors, the script got too big for how they read it", "the hub doesn't need owner.txt or any other extra file, just AtsukoHub.lua", "on small phones the title and the top bar don't overlap anymore" } },
@@ -6168,13 +6169,14 @@ UI.corner(D.gear, 12)
 UI.pad(D.gear, 12, 12, 10, 12)
 UI.list(D.gear, 6)
 
-local Gear = { file = LOCAL_DIR .. "/cache/gear.json", token = 0, db = nil, owned = {}, open = {}, loads = 0 }
+local Gear = { file = LOCAL_DIR .. "/cache/gear.json", VER = 2, ROWS = 6, db = nil, owned = {}, ownQ = {}, open = {}, wide = {}, sts = {}, keys = {}, creators = {}, loads = 0, fails = 0, nextLoad = 0 }
 Gear.ACC = { [8] = true, [41] = true, [42] = true, [43] = true, [44] = true, [45] = true, [46] = true, [47] = true, [57] = true, [58] = true }
 Gear.MESH = { [4] = true, [40] = true }
 Gear.GUN = { "gun", "rifle", "cannon", "blaster", "pistol", "shotgun", "railgun", "sniper", "launcher", "rpg", "revolver", "minigun", "smg", "musket", "uzi", "glock", "carbine", "firearm", "hyperlaser" }
 Gear.SWORD = { "sword", "katana", "blade", "scythe", "saber", "sabre", "dagger", "knife", "claymore", "rapier", "glaive", "halberd", "spear", "lance", "cleaver", "machete" }
 Gear.GUNCTX = { "muzzle", "barrel", "laser", "bullet" }
 Gear.OTHER = { "head", "torso", "arm", "leg", "larm", "rarm", "lleg", "rleg", "screen", "rig", "hair", "panel", "wing", "body", "limb", "partname", "texture", "emote", "song", "sound", "snd", "anim", "decal", "image", "icon", "music", "audio" }
+Gear.PLAIN = { handle = true, meshpart = true, mesh = true, accessory = true, model = true, union = true, untitled = true, part = true, gun = true, sword = true, object = true }
 Gear.CATS = { { "gun", "Guns" }, { "sword", "Swords" }, { "other", "Other hats" } }
 
 function Gear.has(text, words)
@@ -6202,6 +6204,10 @@ function Gear.kind(name)
 	return nil
 end
 
+function Gear.norm(s)
+	return (string.gsub(string.lower(tostring(s or "")), "[^%w]", ""))
+end
+
 function Gear.time(iso)
 	if type(iso) ~= "string" then return 0 end
 	local y, mo, d, h, mi, s = string.match(iso, "^(%d+)%-(%d+)%-(%d+)T(%d+):(%d+):(%d+)")
@@ -6219,8 +6225,16 @@ function Gear.load()
 	if Gear.db then return Gear.db end
 	local data = jsonDecode(FS.read(Gear.file))
 	if type(data) ~= "table" or data.v ~= 1 then data = { v = 1 } end
-	for _, k in ipairs({ "info", "mesh", "item", "creators", "guess" }) do
+	data.creators = nil
+	for _, k in ipairs({ "info", "mesh", "item", "guess", "scripts" }) do
 		if type(data[k]) ~= "table" then data[k] = {} end
+	end
+	local now = os.time()
+	for k, c in pairs(data.info) do
+		if type(c) ~= "table" or now - (tonumber(c.w) or 0) > 86400 * 30 then data.info[k] = nil end
+	end
+	for k, c in pairs(data.scripts) do
+		if type(c) ~= "table" or now - (tonumber(c.w) or 0) > 86400 * 3 then data.scripts[k] = nil end
 	end
 	Gear.db = data
 	return data
@@ -6232,7 +6246,7 @@ function Gear.save()
 		return
 	end
 	Gear.saving = true
-	task.delay(2, function()
+	task.delay(3, function()
 		Gear.saving = false
 		local s = jsonEncode(Gear.db)
 		if s then FS.write(Gear.file, s) end
@@ -6243,36 +6257,69 @@ function Gear.save()
 	end)
 end
 
-function Gear.scan(src)
-	local found, order, seen = {}, {}, {}
-	local stack = {}
-	local n = 0
-	for line in string.gmatch(src .. "\n", "([^\n]*)\n") do
-		local indent = #(string.match(line, "^[ \t]*") or "")
-		local body = string.sub(line, indent + 1)
-		if body ~= "" then
+function Gear.breathe(st, force)
+	if force or os.clock() - st.t0 > 0.004 then
+		task.wait()
+		st.t0 = os.clock()
+	end
+	return st.live()
+end
+
+function Gear.print(list)
+	local h = 0
+	for _, ent in ipairs(list) do
+		local s = ent.id .. (ent.hint or "-")
+		for i = 1, #s do
+			h = (h * 31 + string.byte(s, i)) % 2147483629
+		end
+	end
+	return #list .. "-" .. h
+end
+
+function Gear.scan(src, st)
+	local found, order, seen, stack = {}, {}, {}, {}
+	local n, len, pos, step = 0, #src, 1, 0
+	local big = len + 2
+	local nextId = string.find(src, "%d%d%d%d%d%d%d") or big
+	local nextOpen = string.find(src, "{[ \t\r]*\n") or big
+	while pos <= len and n < 400 do
+		local e = string.find(src, "\n", pos, true) or (len + 1)
+		local s = string.find(src, "[^ \t\r\n]", pos)
+		if not s then break end
+		if s < e then
+			local indent = s - pos
 			while #stack > 0 and stack[#stack].i >= indent do
-				table.remove(stack)
+				stack[#stack] = nil
 			end
-			if string.find(body, "%d%d%d%d%d%d%d") then
+			if nextId < pos then nextId = string.find(src, "%d%d%d%d%d%d%d", pos) or big end
+			if nextId < e then
+				local body = string.sub(src, s, e - 1)
 				local ctx = body
-				for _, s in ipairs(stack) do
-					ctx = s.n .. " " .. ctx
+				for _, o in ipairs(stack) do
+					ctx = o.n .. " " .. ctx
 				end
+				local hint = nil
 				for id in string.gmatch(body, "%f[%w%.]%d%d%d%d%d%d%d+%f[^%w%.]") do
 					if #id <= 17 and not seen[id] and not string.find(id, "^%d00000+$") then
+						if hint == nil then hint = Gear.hint(ctx) or false end
 						seen[id] = true
-						found[id] = Gear.hint(ctx) or false
+						found[id] = hint
 						order[#order + 1] = id
 						n += 1
 						if n >= 400 then break end
 					end
 				end
 			end
-			local open = string.match(body, "^local%s+([%w_]+)%s*=%s*{%s*$") or string.match(body, "^([%w_%.%[%]\"']+)%s*=%s*{%s*$") or string.match(body, "^([%w_%.%[%]\"']+)%s*=%s*[%w_%.]+%(%s*{%s*$")
-			if open then stack[#stack + 1] = { i = indent, n = open } end
+			if nextOpen < pos then nextOpen = string.find(src, "{[ \t\r]*\n", pos) or big end
+			if nextOpen < e then
+				local body = string.sub(src, s, e - 1)
+				local open = string.match(body, "^local%s+([%w_]+)%s*=%s*{%s*$") or string.match(body, "^([%w_%.%[%]\"']+)%s*=%s*{%s*$") or string.match(body, "^([%w_%.%[%]\"']+)%s*=%s*[%w_%.]+%(%s*{%s*$")
+				if open then stack[#stack + 1] = { i = indent, n = open } end
+			end
 		end
-		if n >= 400 then break end
+		pos = e + 1
+		step += 1
+		if step % 96 == 0 and not Gear.breathe(st, step % 1536 == 0) then return nil end
 	end
 	local list = {}
 	for i, id in ipairs(order) do
@@ -6318,12 +6365,7 @@ function Gear.info(id)
 	return c
 end
 
-function Gear.creatorItems(name, ct)
-	local db = Gear.load()
-	local key = ct .. ":" .. name
-	local c = db.creators[key]
-	if c and os.time() - (c.w or 0) < 86400 * 3 then return c.items end
-	if not X.request or name == "" then return nil end
+function Gear.fetchCreator(name, ct)
 	local items, cursor = {}, nil
 	local limit = 120
 	for _ = 1, 3 do
@@ -6347,8 +6389,22 @@ function Gear.creatorItems(name, ct)
 		cursor = data.nextPageCursor
 		if type(cursor) ~= "string" or cursor == "" then break end
 	end
-	db.creators[key] = { w = os.time(), items = items }
-	Gear.save()
+	return items
+end
+
+function Gear.creatorItems(name, ct)
+	local key = ct .. ":" .. name
+	while Gear.keys[key] do
+		task.wait(0.1)
+	end
+	local c = Gear.creators[key]
+	if c then return c end
+	if not X.request or name == "" then return nil end
+	Gear.keys[key] = true
+	local ok, items = pcall(Gear.fetchCreator, name, ct)
+	Gear.keys[key] = nil
+	if not ok or not items then return nil end
+	Gear.creators[key] = items
 	return items
 end
 
@@ -6356,18 +6412,45 @@ function Gear.itemMesh(id)
 	local db = Gear.load()
 	local c = db.item[id]
 	if c ~= nil then return c end
-	if Gear.loads >= 80 then return nil end
-	local objs = nil
-	local ok = pcall(function()
-		objs = game:GetObjects("rbxassetid://" .. id)
-	end)
-	if (not ok or type(objs) ~= "table") and X.getobjects then
-		ok = pcall(function()
-			objs = X.getobjects("rbxassetid://" .. id)
-		end)
+	while Gear.loading do
+		task.wait(0.1)
 	end
-	if not ok or type(objs) ~= "table" then
-		Gear.noLoad = true
+	c = db.item[id]
+	if c ~= nil then return c end
+	if Gear.noLoad or Gear.loads >= (Gear.async and 40 or 12) then return nil end
+	Gear.loading = true
+	local gap = Gear.nextLoad - os.clock()
+	if gap > 0 then task.wait(gap) end
+	local url = "rbxassetid://" .. id
+	local objs, ok = nil, false
+	if Gear.async ~= false then
+		ok = pcall(function()
+			objs = game:GetObjectsAsync(url)
+		end)
+		ok = ok and type(objs) == "table"
+		if ok then
+			Gear.async = true
+		elseif Gear.async == nil then
+			Gear.async = false
+		end
+	end
+	if not ok and Gear.async == false then
+		ok = pcall(function()
+			objs = game:GetObjects(url)
+		end)
+		ok = ok and type(objs) == "table"
+		if not ok and X.getobjects then
+			ok = pcall(function()
+				objs = X.getobjects(url)
+			end)
+			ok = ok and type(objs) == "table"
+		end
+	end
+	Gear.nextLoad = os.clock() + (Gear.async and 0.15 or 0.6)
+	Gear.loading = false
+	if not ok then
+		Gear.fails += 1
+		if Gear.fails >= 3 and Gear.loads == 0 then Gear.noLoad = true end
 		return nil
 	end
 	Gear.loads += 1
@@ -6393,7 +6476,19 @@ function Gear.itemMesh(id)
 	return mesh or false
 end
 
-function Gear.meshItem(id, info)
+function Gear.pick(near, info)
+	local key = Gear.norm(info.n)
+	if #key >= 4 and not Gear.PLAIN[key] then
+		for i = 1, math.min(#near, 40) do
+			if Gear.norm(near[i].it.n) == key then return near[i].it end
+		end
+	end
+	local a, b = near[1], near[2]
+	if a and a.d <= 3600 and (not b or b.d >= a.d + math.max(1800, a.d)) then return a.it end
+	return nil
+end
+
+function Gear.meshItem(id, info, canLoad)
 	local db = Gear.load()
 	local c = db.mesh[id]
 	if c then return c, db.guess[id] == true end
@@ -6406,22 +6501,24 @@ function Gear.meshItem(id, info)
 		if d > -3600 then near[#near + 1] = { it = it, d = math.abs(d) } end
 	end
 	table.sort(near, function(a, b) return a.d < b.d end)
-	local found, blind = nil, false
-	for i = 1, math.min(6, #near) do
-		local m = Gear.itemMesh(near[i].it.id)
-		if m == nil then
-			blind = true
-			break
+	local found, guess, blind = Gear.pick(near, info), false, false
+	if not found and near[1] then
+		if not canLoad then return nil, false, true end
+		for i = 1, math.min(3, #near) do
+			local m = Gear.itemMesh(near[i].it.id)
+			if m == nil then
+				blind = true
+				break
+			end
+			if m == id then
+				found = near[i].it
+				break
+			end
 		end
-		if m == id then
-			found = near[i].it
-			break
+		if not found and blind and near[1].d < 7200 then
+			found = near[1].it
+			guess = true
 		end
-	end
-	local guess = false
-	if not found and blind and near[1] and near[1].d < 7200 then
-		found = near[1].it
-		guess = true
 	end
 	if found then
 		db.mesh[id] = found.id
@@ -6462,97 +6559,227 @@ function Gear.worn()
 end
 
 function Gear.checkOwned(id)
-	if Gear.owned[id] ~= nil then return Gear.owned[id] end
+	local v = Gear.owned[id]
+	if v ~= nil then return v end
 	Gear.owned[id] = "busy"
-	task.spawn(function()
-		local ok, own = pcall(function()
-			return game:GetService("MarketplaceService"):PlayerOwnsAsset(LP, tonumber(id))
+	Gear.ownQ[#Gear.ownQ + 1] = id
+	if not Gear.owning then
+		Gear.owning = true
+		task.spawn(function()
+			while #Gear.ownQ > 0 and HUB.alive do
+				local nid = table.remove(Gear.ownQ, 1)
+				local ok, own = pcall(function()
+					return game:GetService("MarketplaceService"):PlayerOwnsAsset(LP, tonumber(nid))
+				end)
+				Gear.owned[nid] = ok and own == true
+				if ok and own == true then Gear.queue() end
+			end
+			Gear.owning = false
 		end)
-		Gear.owned[id] = ok and own == true
-		if Gear.cur and HUB.alive then Gear.render() end
-	end)
+	end
 	return "busy"
 end
 
-function Gear.run(e, src)
-	Gear.token += 1
-	local my = Gear.token
-	local st = { e = e, list = Gear.scan(src), items = {}, missed = {}, done = 0, total = 0, busy = true, showOther = Gear.open[e.path] == true }
-	Gear.cur = st
-	local function work(wantOther)
-		local queue = {}
-		for _, ent in ipairs(st.list) do
-			local isOther = ent.hint == "other"
-			if not ent.seen and (isOther == wantOther) then queue[#queue + 1] = ent end
+function Gear.add(st, ent, info, itemId, guess)
+	if not itemId or st.items[itemId] then return end
+	local ii = Gear.load().info[itemId]
+	if not ii then
+		ii = Gear.info(itemId)
+		if st.items[itemId] then return end
+	end
+	if ii.t == -1 then ii = info end
+	local cat = Gear.kind(ii.n) or (ent.hint ~= "other" and ent.hint) or "other"
+	st.items[itemId] = { id = itemId, name = ii.n or "?", cat = cat, price = ii.p, sale = ii.s, guess = guess or nil, mesh = (itemId ~= ent.id) and ent.id or nil }
+end
+
+function Gear.step(st, ent, canLoad)
+	local info = Gear.info(ent.id)
+	if info.t == -1 then return end
+	if Gear.ACC[info.t] then
+		Gear.add(st, ent, info, ent.id, false)
+	elseif Gear.MESH[info.t] and (ent.hint or info.c ~= "Roblox") then
+		local r, g, later = Gear.meshItem(ent.id, info, canLoad)
+		if r then
+			Gear.add(st, ent, info, r, g)
+		elseif later then
+			return "later"
+		else
+			st.missed[#st.missed + 1] = { id = ent.id, hint = ent.hint }
 		end
-		table.sort(queue, function(a, b)
-			local pa = (a.hint == "gun" or a.hint == "sword") and 0 or 1
-			local pb = (b.hint == "gun" or b.hint == "sword") and 0 or 1
-			return pa < pb
-		end)
-		st.total += #queue
-		st.busy = true
-		Gear.render()
-		for _, ent in ipairs(queue) do
-			if Gear.token ~= my or not HUB.alive then return end
-			ent.seen = true
-			local info = Gear.info(ent.id)
-			local itemId, guess = nil, false
-			if info.t ~= -1 and Gear.ACC[info.t] then
-				itemId = ent.id
-			elseif info.t ~= -1 and Gear.MESH[info.t] and (ent.hint or info.c ~= "Roblox") then
-				local r, g = Gear.meshItem(ent.id, info)
-				if r then
-					itemId, guess = r, g
+	end
+end
+
+function Gear.pass(st, other)
+	local queue = {}
+	for _, ent in ipairs(st.list) do
+		if not ent.done and ((ent.hint == "other" or ent.later == true) == other) then queue[#queue + 1] = ent end
+	end
+	if #queue == 0 then return end
+	local function rank(ent)
+		return (ent.hint == "gun" or ent.hint == "sword") and 0 or 1
+	end
+	table.sort(queue, function(a, b) return rank(a) < rank(b) end)
+	st.done, st.total, st.word = 0, #queue, "checking"
+	Gear.queue()
+	local idx, workers, slow = 0, 3, {}
+	local function worker()
+		while true do
+			idx += 1
+			local ent = queue[idx]
+			if not ent or not Gear.breathe(st) then break end
+			local ok, r = pcall(Gear.step, st, ent, false)
+			if ok and r == "later" then
+				if other or ent.hint then
+					slow[#slow + 1] = ent
 				else
-					st.missed[#st.missed + 1] = { id = ent.id, hint = ent.hint }
+					ent.later = true
 				end
-			end
-			if itemId and not st.items[itemId] then
-				local ii = Gear.load().info[itemId] or info
-				local cat = Gear.kind(ii.n) or (ent.hint ~= "other" and ent.hint) or "other"
-				st.items[itemId] = { id = itemId, name = ii.n or "?", cat = cat, price = ii.p, sale = ii.s, guess = guess, mesh = (itemId ~= ent.id) and ent.id or nil }
+			else
+				ent.done = true
 			end
 			st.done += 1
-			if st.done % 3 == 0 then Gear.render() end
+			Gear.queue()
 		end
-		if Gear.token ~= my then return end
-		st.busy = false
+		workers -= 1
+	end
+	for _ = 1, 3 do
+		task.spawn(worker)
+	end
+	while workers > 0 do
+		task.wait(0.05)
+	end
+	st.done, st.total, st.word = 0, #slow, "matching"
+	for _, ent in ipairs(slow) do
+		if not st.live() then return end
+		pcall(Gear.step, st, ent, true)
+		ent.done = true
+		st.done += 1
+		Gear.queue()
+	end
+end
+
+function Gear.keep(st)
+	local db = Gear.load()
+	local items, miss = {}, {}
+	for _, it in pairs(st.items) do
+		items[#items + 1] = { i = it.id, n = it.name, c = it.cat, p = it.price, s = it.sale == true, g = it.guess == true, m = it.mesh }
+	end
+	for _, m in ipairs(st.missed) do
+		miss[#miss + 1] = m.hint or ""
+	end
+	db.scripts[st.e.path] = { f = st.fp, v = Gear.VER, w = os.time(), n = st.count or 0, o = st.otherDone and 1 or 0, items = items, miss = miss }
+	Gear.save()
+end
+
+function Gear.restore(st, c)
+	st.otherDone = c.o == 1
+	for _, it in ipairs(type(c.items) == "table" and c.items or {}) do
+		if type(it) == "table" and type(it.i) == "string" then
+			st.items[it.i] = { id = it.i, name = it.n or "?", cat = it.c or "other", price = tonumber(it.p), sale = it.s == true, guess = it.g == true or nil, mesh = it.m }
+		end
+	end
+	st.missed = {}
+	for _, h in ipairs(type(c.miss) == "table" and c.miss or {}) do
+		st.missed[#st.missed + 1] = { hint = h ~= "" and h or nil }
+	end
+end
+
+function Gear.steps(st)
+	local db = Gear.load()
+	if not st.list then
+		local list = Gear.scan(st.src, st)
+		if not list then return end
+		st.list = list
+		st.count = #list
+		st.fp = Gear.print(list)
+		local c = db.scripts[st.e.path]
+		if type(c) == "table" and c.f == st.fp and c.v == Gear.VER and os.time() - (tonumber(c.w) or 0) < 86400 * 3 then
+			Gear.restore(st, c)
+			if st.otherDone or not st.showOther then
+				st.cached = true
+				st.busy = false
+				return
+			end
+		end
+		st.missed = {}
+	elseif st.cached then
+		st.cached = nil
+		st.missed = {}
+	end
+	Gear.pass(st, false)
+	if not st.live() then return end
+	if st.showOther then
+		Gear.pass(st, true)
+		if not st.live() then return end
+		st.otherDone = true
+	end
+	st.busy = false
+	Gear.keep(st)
+end
+
+function Gear.work(st, delay)
+	if st.running then return end
+	st.running = true
+	task.wait(delay or 0.45)
+	if st.live() then
+		st.t0 = os.clock()
+		local ok, err = pcall(Gear.steps, st)
+		if not ok then
+			st.busy = false
+			Log.add("error", "Hub", "works with: " .. Util.firstLine(tostring(err)))
+		end
+	end
+	st.running = false
+	if Gear.cur == st then Gear.queue() end
+end
+
+function Gear.more(st)
+	st.showOther = true
+	Gear.open[st.e.path] = true
+	if st.otherDone and not st.busy then
 		Gear.render()
+		return
 	end
-	st.more = function()
-		if st.busy then return end
-		st.showOther = true
-		Gear.open[e.path] = true
-		task.spawn(work, true)
-	end
-	task.spawn(function()
-		work(false)
-		if st.showOther and Gear.token == my then work(true) end
+	st.busy = true
+	Gear.render()
+	task.spawn(Gear.work, st, 0.05)
+end
+
+function Gear.queue()
+	if Gear.queued then return end
+	Gear.queued = true
+	task.delay(0.25, function()
+		if not Gear.queued then return end
+		Gear.queued = false
+		if HUB.alive and Detail.isOpen then Gear.render() end
 	end)
 end
 
 function Gear.render()
+	Gear.queued = false
 	local st = Gear.cur
 	local box = D.gear
 	if not st or not box or Detail.entry ~= st.e then return end
 	for _, c in ipairs(box:GetChildren()) do
 		if c:IsA("GuiObject") then c:Destroy() end
 	end
+	if not st.count or st.count == 0 then
+		box.Visible = false
+		return
+	end
 	local head = UI.new("Frame", { Name = "Head", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 16), LayoutOrder = 0 }, box)
 	UI.label(head, { Text = "WORKS WITH", Font = FONT_B, TextSize = 10, TextColor3 = T.dim, Size = UDim2.new(1, -90, 1, 0) })
 	if st.busy then
-		UI.label(head, { Text = "checking " .. math.min(st.done + 1, math.max(st.total, 1)) .. " of " .. math.max(st.total, 1), TextSize = 10, TextColor3 = T.sub, TextXAlignment = Enum.TextXAlignment.Right, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0), Size = UDim2.fromOffset(120, 16) })
+		local txt = st.total > 0 and ((st.word or "checking") .. " " .. math.min(st.done + 1, st.total) .. " of " .. st.total) or "looking..."
+		UI.label(head, { Text = txt, TextSize = 10, TextColor3 = T.sub, TextXAlignment = Enum.TextXAlignment.Right, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0), Size = UDim2.fromOffset(120, 16) })
 	end
 	local names, meshes = Gear.worn()
+	local itemMesh = Gear.load().item
 	local groups = { gun = {}, sword = {}, other = {} }
 	for _, it in pairs(st.items) do
-		local wearing = names[string.lower(it.name)] == true or (it.mesh ~= nil and meshes[it.mesh] == true) or meshes[tostring(Gear.load().item[it.id] or "")] == true
+		local wearing = names[string.lower(it.name)] == true or (it.mesh ~= nil and meshes[it.mesh] == true) or meshes[tostring(itemMesh[it.id] or "")] == true
 		it.state = wearing and "wear" or nil
-		if not wearing then
-			local own = Gear.checkOwned(it.id)
-			if own == true then it.state = "own" end
-		end
+		if not wearing and Gear.checkOwned(it.id) == true then it.state = "own" end
 		local g = groups[it.cat] or groups.other
 		g[#g + 1] = it
 	end
@@ -6576,10 +6803,14 @@ function Gear.render()
 			order += 1
 			if isOther and not st.showOther then
 				UI.label(hb, { Text = "Show", Font = FONT_B, TextSize = 10, TextColor3 = T.sub, TextXAlignment = Enum.TextXAlignment.Right, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0), Size = UDim2.fromOffset(80, 20) })
-				hb.Activated:Connect(function() st.more() end)
+				hb.Activated:Connect(function() Gear.more(st) end)
 			else
 				any = any or #list > 0
-				for _, it in ipairs(list) do
+				local key = st.e.path .. "|" .. def[1]
+				local wide = Gear.wide[key] == true
+				local shown = wide and #list or math.min(#list, Gear.ROWS)
+				for i = 1, shown do
+					local it = list[i]
 					local row = UI.button(box, { Name = "Item", BackgroundColor3 = T.card2, Size = UDim2.new(1, 0, 0, 40), LayoutOrder = order })
 					UI.corner(row, 10)
 					local bw = it.state and 62 or 0
@@ -6599,9 +6830,17 @@ function Gear.render()
 						UI.corner(pill, 10)
 						UI.label(pill, { Text = good and "Wearing" or "Owned", Font = FONT_B, TextSize = 9, TextColor3 = col, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromScale(1, 1) })
 					end
-					Ctl.hoverable(row)
+					UI.pressable(row, 0.98)
 					row.Activated:Connect(function()
 						copyText("https://www.roblox.com/catalog/" .. it.id, it.name .. " link")
+					end)
+					order += 1
+				end
+				if #list > Gear.ROWS then
+					local more = UI.button(box, { Name = "More", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 20), LayoutOrder = order, Text = wide and "Show less" or ("Show all " .. #list), Font = FONT_B, TextSize = 10, TextColor3 = T.sub })
+					more.Activated:Connect(function()
+						Gear.wide[key] = not wide or nil
+						Gear.render()
 					end)
 					order += 1
 				end
@@ -6627,24 +6866,30 @@ function Gear.render()
 	elseif any and not st.busy then
 		UI.label(box, { Text = "Tap an item to copy its shop link.", TextSize = 10, TextColor3 = T.dim, Size = UDim2.new(1, 0, 0, 14), LayoutOrder = 999 })
 	end
-	if not any and not st.busy and #st.list > 0 and st.showOther then
+	if not any and not st.busy and st.showOther then
 		UI.label(box, { Text = "No accessories found in this script.", TextSize = 11, TextColor3 = T.sub, Size = UDim2.new(1, 0, 0, 16), LayoutOrder = 998 })
 	end
-	box.Visible = #st.list > 0
+	box.Visible = true
 end
 
 function Gear.show(e)
 	local src = Repo.src[e.path]
 	if not src then
+		Gear.cur = nil
 		if D.gear then D.gear.Visible = false end
 		return
 	end
-	if Gear.cur and Gear.cur.e == e and Gear.cur.src == src then
-		Gear.render()
-		return
+	local st = Gear.sts[e.path]
+	if not st or st.src ~= src or st.e ~= e then
+		st = { e = e, src = src, items = {}, missed = {}, done = 0, total = 0, busy = true, showOther = Gear.open[e.path] == true }
+		st.live = function()
+			return Gear.cur == st and HUB.alive and Detail.isOpen and Detail.entry == e
+		end
+		Gear.sts[e.path] = st
 	end
-	Gear.run(e, src)
-	Gear.cur.src = src
+	Gear.cur = st
+	Gear.render()
+	if st.busy and not st.running then task.spawn(Gear.work, st) end
 end
 
 function Core.fillAbout(e)

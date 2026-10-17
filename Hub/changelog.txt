@@ -1,3 +1,8 @@
+v1.0.8
+- opening a script doesn't lag anymore, works with checks a little at a time in the background and remembers what it found
+- works with shows 6 of each kind first, tap show all to see the rest
+- studio dummy doesn't freeze the game when it starts anymore
+
 v1.0.7
 - works with: open a script and the hub finds the guns, swords and hats it supports by itself, with the shop name and id, and shows which ones you're wearing or own
 - studio dummy: run and stop from the hub only, no more -run / -stop
