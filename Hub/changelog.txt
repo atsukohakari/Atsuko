@@ -1,3 +1,13 @@
+v1.0.7
+- works with: open a script and the hub finds the guns, swords and hats it supports by itself, with the shop name and id, and shows which ones you're wearing or own
+- studio dummy: run and stop from the hub only, no more -run / -stop
+- studio dummy: works with the full stop rifle, and the align panel remembers each gun on its own (tap A on the touch buttons to open and close it)
+
+v1.0.6
+- tap a script, a player, a playlist or a scriptblox script again to close its info
+- scripts with their own run and stop (like studio dummy) show as stopped when they stop by themselves
+- no more -run talk in the hub, the run and stop buttons do it all
+
 v1.0.5
 - fixed the hub not starting on some executors, the script got too big for how they read it
 - the hub doesn't need owner.txt or any other extra file, just AtsukoHub.lua
