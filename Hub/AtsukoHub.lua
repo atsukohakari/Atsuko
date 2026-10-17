@@ -1,5 +1,5 @@
 --[[
-	atsuko hub v1.0.3
+	atsuko hub v1.0.4
 	by atsukohakari
 
 	icons from lucide.dev (ISC), license in Hub/LUCIDE_LICENSE.txt
@@ -7,7 +7,7 @@
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 
-local HUB_VERSION = "1.0.3"
+local HUB_VERSION = "1.0.4"
 local HUB_DIR = "Hub"
 local SRC = { owner = "atsukohakari", repo = "Atsuko", branch = "main" }
 local HOME_REPO = "https://raw.githubusercontent.com/" .. SRC.owner .. "/" .. SRC.repo .. "/" .. SRC.branch .. "/"
@@ -378,7 +378,6 @@ local DEFAULTS = {
 	favorites = {},
 	recent = {},
 	perScript = {},
-	panelPos = false,
 	lastPage = "home",
 	animSpeed = 1,
 	blur = false,
@@ -386,7 +385,6 @@ local DEFAULTS = {
 	toastTime = 3.2,
 	toastPos = "top",
 	rainbow = false,
-	lockPanel = false,
 	cmdKey = "Semicolon",
 	chatCmds = false,
 	chatPrefix = ";",
@@ -407,6 +405,11 @@ local DEFAULTS = {
 	playerKey = "",
 	playerNextKey = "",
 	quickCmds = {},
+	barPos = "top",
+	dockPos = "bottom",
+	dockLabels = true,
+	sbKeyless = false,
+	sbSaved = {},
 	windows = {},
 	cmd = {},
 	lastVersion = "",
@@ -435,7 +438,6 @@ local function normalizeSettings()
 	for k, v in pairs(S.cmd) do
 		if type(k) ~= "string" or type(v) ~= "table" then S.cmd[k] = nil end
 	end
-	if type(S.panelPos) == "table" and not (tonumber(S.panelPos.x) and tonumber(S.panelPos.y)) then S.panelPos = false end
 	local clean = {}
 	for _, p in ipairs(S.recent) do
 		if type(p) == "string" and #clean < 12 then clean[#clean + 1] = p end
@@ -457,6 +459,13 @@ local function normalizeSettings()
 	end
 	if #quick == 0 then quick = table.clone(QUICK_DEFAULT) end
 	S.quickCmds = quick
+	if S.barPos ~= "top" and S.barPos ~= "left" and S.barPos ~= "right" and S.barPos ~= "bottom" then S.barPos = "top" end
+	if S.dockPos ~= "bottom" and S.dockPos ~= "left" and S.dockPos ~= "right" then S.dockPos = "bottom" end
+	local saved = {}
+	for _, it in ipairs(S.sbSaved) do
+		if type(it) == "table" and type(it.slug) == "string" and type(it.title) == "string" and #saved < 100 then saved[#saved + 1] = it end
+	end
+	S.sbSaved = saved
 end
 
 local function loadSettings()
@@ -469,11 +478,7 @@ local function loadSettings()
 		for k, v in pairs(data) do
 			local d = DEFAULTS[k]
 			if d ~= nil then
-				if type(v) == type(d) then
-					S[k] = v
-				elseif k == "panelPos" and type(v) == "table" then
-					S[k] = v
-				end
+				if type(v) == type(d) then S[k] = v end
 			end
 		end
 	end
@@ -540,9 +545,9 @@ local SPOT_FILE = LOCAL_DIR .. "/spotify.json"
 local SPOT_DIR = LOCAL_DIR .. "/spotify"
 local SPOT_API = "https://api.spotify.com/v1"
 local SPOT_REDIRECT = "http://127.0.0.1:8888/callback"
-local SPOT_SCOPES = "user-read-playback-state user-modify-playback-state user-read-currently-playing"
+local SPOT_SCOPES = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative user-library-read user-library-modify user-read-recently-played"
 local Spot = {
-	cfg = { id = "", secret = "", refresh = "", token = "", exp = 0 },
+	cfg = { id = "", secret = "", refresh = "", token = "", exp = 0, scope = "" },
 	state = nil,
 	err = nil,
 	seq = 0,
@@ -602,13 +607,15 @@ function Spot.useToken(data)
 	Spot.cfg.token = data.access_token
 	Spot.cfg.exp = os.time() + (tonumber(data.expires_in) or 3600)
 	if type(data.refresh_token) == "string" and data.refresh_token ~= "" then Spot.cfg.refresh = data.refresh_token end
+	if type(data.scope) == "string" and data.scope ~= "" then Spot.cfg.scope = data.scope end
 	Spot.save()
 end
 
 function Spot.logout(msg)
-	Spot.cfg.refresh, Spot.cfg.token, Spot.cfg.exp = "", "", 0
+	Spot.cfg.refresh, Spot.cfg.token, Spot.cfg.exp, Spot.cfg.scope = "", "", 0, ""
 	Spot.save()
 	Spot.state, Spot.err = nil, nil
+	Spot.likes, Spot.lists.playlists, Spot.lists.state = {}, nil, "idle"
 	Spot.artUrl, Spot.artId = nil, nil
 	Bus.fire("spotifyConn")
 	Bus.fire("spotify")
@@ -677,12 +684,13 @@ function Spot.call(method, path, body)
 	return code, jsonDecode(raw)
 end
 
-local function spotArt(images)
+local function spotArt(images, want)
 	if type(images) ~= "table" then return nil end
+	want = want or 300
 	local best, bestD = nil, math.huge
 	for _, im in ipairs(images) do
 		if type(im) == "table" and type(im.url) == "string" then
-			local d = math.abs((tonumber(im.width) or 300) - 300)
+			local d = math.abs((tonumber(im.width) or want) - want)
 			if d < bestD then best, bestD = im.url, d end
 		end
 	end
@@ -704,8 +712,13 @@ function Spot.parse(d)
 		s.canVolume = d.device.supports_volume ~= false and s.volume ~= nil
 	end
 	local it = d.item
+	if type(d.context) == "table" and type(d.context.uri) == "string" then
+		s.ctxUri = d.context.uri
+		s.ctxType = tostring(d.context.type or "")
+	end
 	if type(it) == "table" then
 		s.id = tostring(it.id or it.uri or it.name or "")
+		s.uri = type(it.uri) == "string" and it.uri or nil
 		s.title = tostring(it.name or "")
 		s.duration = tonumber(it.duration_ms) or 0
 		if type(it.artists) == "table" then
@@ -713,6 +726,7 @@ function Spot.parse(d)
 			for _, a in ipairs(it.artists) do
 				if type(a) == "table" and type(a.name) == "string" then names[#names + 1] = a.name end
 			end
+			s.artists = names
 			s.artist = table.concat(names, ", ")
 			if type(it.album) == "table" then
 				s.album = type(it.album.name) == "string" and it.album.name or nil
@@ -806,7 +820,7 @@ end
 
 function Spot.control(what, arg)
 	if not Spot.connected() then
-		notify("Spotify", "Connect it on the Music page first", "info")
+		notify("Spotify", "Connect it on the Spotify page first", "info")
 		return
 	end
 	local s = Spot.state
@@ -893,8 +907,440 @@ function Spot.cleanArt()
 	local ok, files = pcall(X.listfiles, SPOT_DIR)
 	if not ok or type(files) ~= "table" then return end
 	for _, f in ipairs(files) do
-		if type(f) == "string" and string.find(f, "art_[%x]+%.%a+$") then pcall(X.delfile or function() end, f) end
+		if type(f) == "string" and (string.find(f, "art_[%x]+%.%a+$") or string.find(f, "img_[%x]+%.%a+$")) then pcall(X.delfile or function() end, f) end
 	end
+end
+
+Spot.need = { "playlist-read-private", "playlist-read-collaborative", "user-library-read", "user-library-modify", "user-read-recently-played" }
+Spot.likes = {}
+Spot.likeBusy = {}
+Spot.ctxNames = {}
+Spot.lists = { playlists = nil, state = "idle", err = nil }
+Spot.img = { cache = {}, files = {}, wait = {}, active = 0, queue = {} }
+Spot.lrc = { cache = {}, order = {}, busy = {} }
+Spot.UA = "AtsukoHub/" .. HUB_VERSION .. " (github.com/atsukohakari/Atsuko)"
+
+function Spot.hasScope(name)
+	return string.find(" " .. (Spot.cfg.scope or "") .. " ", " " .. name .. " ", 1, true) ~= nil
+end
+
+function Spot.missingScopes()
+	if not Spot.connected() then return false end
+	for _, sc in ipairs(Spot.need) do
+		if not Spot.hasScope(sc) then return true end
+	end
+	return false
+end
+
+function Spot.reconnect()
+	Spot.cfg.refresh, Spot.cfg.token, Spot.cfg.exp, Spot.cfg.scope = "", "", 0, ""
+	Spot.save()
+	Spot.state, Spot.err = nil, nil
+	Bus.fire("spotifyConn")
+	Bus.fire("spotify")
+	notify("Spotify", "Log in again with step 3 to unlock everything", "info", 4)
+end
+
+function Spot.json(method, path, tbl)
+	return Spot.call(method, path, tbl ~= nil and jsonEncode(tbl) or nil)
+end
+
+function Spot.after(good)
+	task.wait(good and 0.6 or 0.05)
+	local t0 = os.clock()
+	while Spot.polling and os.clock() - t0 < 5 do
+		task.wait(0.05)
+	end
+	Spot.poll()
+end
+
+function Spot.act(method, path, tbl, okMsg)
+	if not Spot.connected() then
+		notify("Spotify", "Connect it on the Spotify page first", "info")
+		return
+	end
+	Spot.seq += 1
+	task.spawn(function()
+		local code, data = Spot.json(method, path, tbl)
+		if not HUB.alive then return end
+		local good = code >= 200 and code < 300
+		if good then
+			if okMsg then notify("Spotify", okMsg, "ok", 2) end
+		elseif code ~= 401 then
+			notify("Spotify", Spot.why(code, data), "error", 3)
+		end
+		Spot.after(good)
+		Bus.fire("spotifyQueue")
+	end)
+end
+
+function Spot.playContext(uri, offsetUri)
+	local body = { context_uri = uri }
+	if offsetUri then body.offset = { uri = offsetUri } end
+	Spot.act("PUT", "/me/player/play", body)
+end
+
+function Spot.playUris(uris, index)
+	if #uris == 0 then return end
+	local body = { uris = uris }
+	if index and index > 1 then body.offset = { position = index - 1 } end
+	Spot.act("PUT", "/me/player/play", body)
+end
+
+function Spot.queueAdd(uri, name)
+	Spot.act("POST", "/me/player/queue?uri=" .. Util.urlEncode(uri), nil, (name and ("Added " .. name) or "Added") .. " to your queue")
+end
+
+function Spot.transfer(id, name)
+	Spot.act("PUT", "/me/player", { device_ids = { id }, play = true }, name and ("Playing on " .. name) or nil)
+end
+
+function Spot.liked(uri)
+	return uri ~= nil and Spot.likes[uri] == true
+end
+
+function Spot.checkLike(s)
+	local uri = s and s.uri
+	if not (uri and string.find(uri, "^spotify:track:")) or not Spot.hasScope("user-library-read") then return end
+	if Spot.likes[uri] ~= nil or Spot.likeBusy[uri] then return end
+	Spot.likeBusy[uri] = true
+	task.spawn(function()
+		local code, data = Spot.call("GET", "/me/library/contains?uris=" .. Util.urlEncode(uri))
+		Spot.likeBusy[uri] = nil
+		if not HUB.alive then return end
+		if code == 200 and type(data) == "table" then
+			Spot.likes[uri] = data[1] == true
+			Bus.fire("spotify")
+		end
+	end)
+end
+
+function Spot.setLike(uri, on)
+	if not uri then return end
+	if not Spot.hasScope("user-library-modify") then
+		notify("Spotify", "Reconnect Spotify to like songs", "info", 3)
+		return
+	end
+	Spot.likes[uri] = on
+	Bus.fire("spotify")
+	task.spawn(function()
+		local code, data = Spot.json(on and "PUT" or "DELETE", "/me/library?uris=" .. Util.urlEncode(uri), { uris = { uri } })
+		if not HUB.alive then return end
+		if code < 200 or code >= 300 then
+			Spot.likes[uri] = not on
+			Bus.fire("spotify")
+			if code ~= 401 then notify("Spotify", Spot.why(code, data), "error", 3) end
+		else
+			notify("Spotify", on and "Added to Liked Songs" or "Removed from Liked Songs", "ok", 2)
+		end
+	end)
+end
+
+function Spot.track(it)
+	if type(it) ~= "table" or type(it.uri) ~= "string" then return nil end
+	local names = {}
+	if type(it.artists) == "table" then
+		for _, a in ipairs(it.artists) do
+			if type(a) == "table" and type(a.name) == "string" then names[#names + 1] = a.name end
+		end
+	end
+	local album = type(it.album) == "table" and it.album or nil
+	local show = type(it.show) == "table" and it.show or nil
+	return {
+		uri = it.uri,
+		id = it.id,
+		name = tostring(it.name or "?"),
+		artist = (#names > 0 and table.concat(names, ", ")) or (show and tostring(show.name or "")) or "",
+		album = album and type(album.name) == "string" and album.name or nil,
+		thumb = (album and spotArt(album.images, 64)) or spotArt(it.images, 64),
+		duration = tonumber(it.duration_ms) or 0,
+	}
+end
+
+function Spot.fetchImage(url)
+	local ok, data = Net.get(url)
+	if not HUB.alive or not ok or type(data) ~= "string" then return nil end
+	local ext = (string.sub(data, 1, 3) == "\255\216\255" and "jpg") or (string.sub(data, 1, 4) == "\137PNG" and "png") or nil
+	if not ext then return nil end
+	local path = SPOT_DIR .. "/img_" .. Util.hash(url) .. "." .. ext
+	if not (FS.exists(path) or FS.write(path, data)) then return nil end
+	local okA, id = pcall(X.getcustomasset, path)
+	if not okA or type(id) ~= "string" or id == "" then return nil end
+	local I = Spot.img
+	I.cache[url] = id
+	table.insert(I.files, { url = url, path = path })
+	while #I.files > 90 do
+		local old = table.remove(I.files, 1)
+		I.cache[old.url] = nil
+		FS.delete(old.path)
+	end
+	return id
+end
+
+function Spot.pump()
+	local I = Spot.img
+	while I.active < 3 and #I.queue > 0 do
+		local url = table.remove(I.queue, 1)
+		I.active += 1
+		task.spawn(function()
+			local id = Spot.fetchImage(url)
+			I.active -= 1
+			local cbs = I.wait[url]
+			I.wait[url] = nil
+			if id and cbs then
+				for _, f in ipairs(cbs) do
+					pcall(f, id)
+				end
+			end
+			if HUB.alive then Spot.pump() end
+		end)
+	end
+end
+
+function Spot.image(url, cb)
+	if type(url) ~= "string" or url == "" or not (HAS_FS and X.getcustomasset) then return nil end
+	local I = Spot.img
+	local id = I.cache[url]
+	if id then return id end
+	local w = I.wait[url]
+	if w then
+		w[#w + 1] = cb
+		return nil
+	end
+	I.wait[url] = { cb }
+	I.queue[#I.queue + 1] = url
+	Spot.pump()
+	return nil
+end
+
+function Spot.setImage(img, url, holder)
+	if not url then return end
+	local id = Spot.image(url, function(got)
+		if img.Parent then
+			img.Image = got
+			if holder then holder.Visible = false end
+		end
+	end)
+	if id then
+		img.Image = id
+		if holder then holder.Visible = false end
+	end
+end
+
+function Spot.fetchPlaylists()
+	if Spot.lists.state == "loading" then return end
+	if not Spot.hasScope("playlist-read-private") then
+		Spot.lists.state = "scope"
+		Bus.fire("spotifyLists")
+		return
+	end
+	Spot.lists.state = "loading"
+	Bus.fire("spotifyLists")
+	task.spawn(function()
+		local code, data = Spot.call("GET", "/me/playlists?limit=50")
+		if not HUB.alive then return end
+		if code == 200 and type(data) == "table" and type(data.items) == "table" then
+			local out = {}
+			for _, p in ipairs(data.items) do
+				if type(p) == "table" and type(p.id) == "string" then
+					local box = (type(p.items) == "table" and p.items) or (type(p.tracks) == "table" and p.tracks) or {}
+					out[#out + 1] = {
+						id = p.id,
+						uri = type(p.uri) == "string" and p.uri or ("spotify:playlist:" .. p.id),
+						name = tostring(p.name or "Playlist"),
+						owner = type(p.owner) == "table" and tostring(p.owner.display_name or p.owner.id or "") or "",
+						count = tonumber(box.total),
+						thumb = spotArt(p.images, 64),
+						image = spotArt(p.images, 300),
+					}
+					Spot.ctxNames[out[#out].uri] = out[#out].name
+				end
+			end
+			Spot.lists.playlists = out
+			Spot.lists.state = "ready"
+			Spot.lists.err = nil
+		else
+			Spot.lists.state = "error"
+			Spot.lists.err = Spot.why(code, data)
+		end
+		Bus.fire("spotifyLists")
+	end)
+end
+
+function Spot.fetchTracks(kind, id)
+	local path
+	if kind == "playlist" then
+		path = "/playlists/" .. Util.urlEncode(id) .. "/items?limit=50"
+	elseif kind == "liked" then
+		path = "/me/tracks?limit=50"
+	elseif kind == "recent" then
+		path = "/me/player/recently-played?limit=30"
+	else
+		return nil, "?"
+	end
+	local code, data = Spot.call("GET", path)
+	if code ~= 200 or type(data) ~= "table" or type(data.items) ~= "table" then
+		if kind == "playlist" and (code == 403 or code == 404) then return nil, "Spotify only shows songs in playlists you made or share" end
+		return nil, Spot.why(code, data)
+	end
+	local out, seen = {}, {}
+	for _, e in ipairs(data.items) do
+		if type(e) == "table" then
+			local t = Spot.track(e.item or e.track)
+			if t and not (kind == "recent" and seen[t.uri]) then
+				seen[t.uri] = true
+				out[#out + 1] = t
+			end
+		end
+	end
+	return out
+end
+
+function Spot.search(q)
+	local code, data = Spot.call("GET", "/search?type=track&limit=10&q=" .. Util.urlEncode(q))
+	if code ~= 200 or type(data) ~= "table" then return nil, Spot.why(code, data) end
+	local out = {}
+	local items = type(data.tracks) == "table" and data.tracks.items or nil
+	for _, it in ipairs(type(items) == "table" and items or {}) do
+		local t = Spot.track(it)
+		if t then out[#out + 1] = t end
+	end
+	return out
+end
+
+function Spot.fetchQueue()
+	local code, data = Spot.call("GET", "/me/player/queue")
+	if code ~= 200 or type(data) ~= "table" then return nil, code == 204 and "Nothing is playing" or Spot.why(code, data) end
+	local list = {}
+	for _, it in ipairs(type(data.queue) == "table" and data.queue or {}) do
+		local t = Spot.track(it)
+		if t then list[#list + 1] = t end
+		if #list >= 20 then break end
+	end
+	return { now = Spot.track(data.currently_playing), list = list }
+end
+
+function Spot.fetchDevices()
+	local code, data = Spot.call("GET", "/me/player/devices")
+	if code ~= 200 or type(data) ~= "table" or type(data.devices) ~= "table" then return nil, Spot.why(code, data) end
+	local out = {}
+	for _, d in ipairs(data.devices) do
+		if type(d) == "table" and type(d.id) == "string" then
+			out[#out + 1] = { id = d.id, name = tostring(d.name or "Device"), kind = tostring(d.type or ""), active = d.is_active == true, volume = tonumber(d.volume_percent) }
+		end
+	end
+	return out
+end
+
+function Spot.contextName(uri)
+	if type(uri) ~= "string" then return nil end
+	local known = Spot.ctxNames[uri]
+	if known ~= nil then return known ~= false and known or nil end
+	Spot.ctxNames[uri] = false
+	local kind, id = string.match(uri, "^spotify:(%a+):([%w]+)$")
+	local path = (kind == "playlist" and ("/playlists/" .. id .. "?fields=name")) or (kind == "album" and ("/albums/" .. id)) or (kind == "artist" and ("/artists/" .. id)) or nil
+	if not path then return nil end
+	task.spawn(function()
+		local code, data = Spot.call("GET", path)
+		if HUB.alive and code == 200 and type(data) == "table" and type(data.name) == "string" then
+			Spot.ctxNames[uri] = data.name
+			Bus.fire("spotify")
+		end
+	end)
+	return nil
+end
+
+function Spot.parseLrc(text)
+	local lines = {}
+	for raw in string.gmatch(tostring(text) .. "\n", "([^\n]*)\n") do
+		local stamps = {}
+		local rest = raw
+		while true do
+			local m, sec, frac, after = string.match(rest, "^%s*%[(%d+):(%d+)%.?(%d*)%](.*)$")
+			if not m then break end
+			local t = tonumber(m) * 60 + tonumber(sec)
+			if frac ~= "" then t += tonumber(frac) / (10 ^ #frac) end
+			stamps[#stamps + 1] = t
+			rest = after
+		end
+		local words = Util.trim(rest)
+		for _, t in ipairs(stamps) do
+			lines[#lines + 1] = { t = t, text = words }
+		end
+	end
+	table.sort(lines, function(a, b) return a.t < b.t end)
+	return lines
+end
+
+function Spot.lrcGet(url)
+	if X.request then
+		local code, body = Net.request("GET", url, { ["User-Agent"] = Spot.UA })
+		return code, body
+	end
+	local ok, body = Net.get(url)
+	return ok and 200 or 404, body
+end
+
+function Spot.lyricsFrom(d)
+	if type(d) ~= "table" then return nil end
+	if type(d.syncedLyrics) == "string" and Util.trim(d.syncedLyrics) ~= "" then
+		local lines = Spot.parseLrc(d.syncedLyrics)
+		if #lines > 0 then return { status = "synced", lines = lines } end
+	end
+	if type(d.plainLyrics) == "string" and Util.trim(d.plainLyrics) ~= "" then
+		local lines = {}
+		for l in string.gmatch(d.plainLyrics .. "\n", "([^\n]*)\n") do
+			lines[#lines + 1] = { text = Util.trim(l) }
+		end
+		return { status = "plain", lines = lines }
+	end
+	if d.instrumental == true then return { status = "instrumental", lines = {} } end
+	return nil
+end
+
+function Spot.lyrics(s)
+	if not (s and s.id and s.title and s.title ~= "") then return nil end
+	local L2 = Spot.lrc
+	local got = L2.cache[s.id]
+	if got then return got end
+	if L2.busy[s.id] then return { status = "loading", lines = {} } end
+	L2.busy[s.id] = true
+	local key = s.id
+	local artist = s.artists and s.artists[1] or (string.match(s.artist or "", "^([^,]+)") or "")
+	task.spawn(function()
+		local res
+		local q = { { "track_name", s.title }, { "artist_name", artist } }
+		if s.album and s.album ~= "" then q[#q + 1] = { "album_name", s.album } end
+		if s.duration > 0 then q[#q + 1] = { "duration", tostring(math.floor(s.duration / 1000 + 0.5)) } end
+		local code, body = Spot.lrcGet("https://lrclib.net/api/get?" .. Util.form(q))
+		if code == 200 then res = Spot.lyricsFrom(jsonDecode(body)) end
+		if not res and code ~= 0 then
+			local c2, b2 = Spot.lrcGet("https://lrclib.net/api/search?" .. Util.form({ { "track_name", s.title }, { "artist_name", artist } }))
+			local list = c2 == 200 and jsonDecode(b2) or nil
+			if type(list) == "table" then
+				local best, bestScore = nil, math.huge
+				for _, d in ipairs(list) do
+					if type(d) == "table" then
+						local diff = math.abs((tonumber(d.duration) or 0) - s.duration / 1000)
+						local score = diff + ((type(d.syncedLyrics) == "string" and d.syncedLyrics ~= "") and 0 or 30)
+						if score < bestScore then best, bestScore = d, score end
+					end
+				end
+				if best and bestScore < 40 then res = Spot.lyricsFrom(best) end
+			end
+		end
+		if not res then res = { status = code == 0 and "error" or "none", lines = {} } end
+		L2.busy[key] = nil
+		if res.status ~= "error" then
+			L2.cache[key] = res
+			L2.order[#L2.order + 1] = key
+			while #L2.order > 25 do
+				L2.cache[table.remove(L2.order, 1)] = nil
+			end
+		end
+		if HUB.alive then Bus.fire("spotifyLyrics", key, res) end
+	end)
+	return { status = "loading", lines = {} }
 end
 
 Spot.load()
@@ -1655,6 +2101,7 @@ local HIDDEN_TOP = { hub = true, testing = true }
 local Repo = {
 	entries = {},
 	byPath = {},
+	remote = {},
 	state = "idle",
 	err = nil,
 	syncedAt = nil,
@@ -1852,6 +2299,11 @@ local function sourceCachePath(path)
 end
 
 function Repo.source(entry, fresh)
+	if entry.remote then
+		local ok, body, from = entry.remote()
+		if ok then Repo.src[entry.path] = body end
+		return ok, body, from
+	end
 	local mem = Repo.src[entry.path]
 	if mem and not fresh then return true, mem, "memory" end
 	Repo.sourceSeq += 1
@@ -2531,7 +2983,7 @@ local function runNow(entry)
 	rec.globals = snapshotGlobals()
 	SHARED.running[entry.path] = rec
 	SHARED.last = rec
-	pushRecent(entry.path)
+	if not entry.remote then pushRecent(entry.path) end
 	Log.add("ok", entry.name, "started" .. (from == "cache" and " (offline copy)" or ""))
 	notify(entry.name, from == "cache" and "Started (offline copy)" or "Started", "ok")
 	Bus.fire("running")
@@ -2683,21 +3135,24 @@ local API = {
 GENV.AtsukoHub = API
 
 local T = {
-	side = Color3.fromRGB(22, 27, 34),
-	panel = Color3.fromRGB(19, 23, 30),
-	card = Color3.fromRGB(30, 35, 44),
-	card2 = Color3.fromRGB(41, 47, 58),
-	tabBg = Color3.fromRGB(35, 40, 50),
-	tabSel = Color3.fromRGB(66, 72, 84),
-	stroke = Color3.fromRGB(56, 62, 75),
-	line = Color3.fromRGB(43, 48, 58),
-	text = Color3.fromRGB(242, 244, 248),
-	sub = Color3.fromRGB(152, 159, 173),
-	dim = Color3.fromRGB(100, 107, 122),
+	side = Color3.fromRGB(18, 19, 23),
+	panel = Color3.fromRGB(16, 17, 21),
+	card = Color3.fromRGB(28, 29, 35),
+	card2 = Color3.fromRGB(40, 42, 49),
+	tabBg = Color3.fromRGB(31, 32, 39),
+	tabSel = Color3.fromRGB(58, 60, 69),
+	stroke = Color3.fromRGB(58, 60, 69),
+	line = Color3.fromRGB(44, 46, 54),
+	text = Color3.fromRGB(244, 245, 248),
+	sub = Color3.fromRGB(158, 162, 173),
+	dim = Color3.fromRGB(104, 108, 120),
 	green = Color3.fromRGB(88, 214, 141),
 	red = Color3.fromRGB(255, 102, 118),
 	yellow = Color3.fromRGB(255, 198, 96),
-	ink = Color3.fromRGB(16, 18, 24),
+	blue = Color3.fromRGB(96, 170, 255),
+	violet = Color3.fromRGB(176, 140, 255),
+	orange = Color3.fromRGB(255, 160, 90),
+	ink = Color3.fromRGB(14, 15, 19),
 }
 local ACCENTS = {
 	{ "Lavender", Color3.fromRGB(200, 168, 255) },
@@ -2912,12 +3367,14 @@ function Z.front(frame)
 	frame.ZIndex = Z.n
 end
 
-local ICON_SET = "v4-dd002031"
+local ICON_SET = "v5-c9b72952"
 local ICON_DATA = {
 	["activity"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAC1klEQVR42u1b63HbMAwGeB2AG9QjaANrg2qDeISO0BGyQZINmA3YCSJPYHmCKBOgf5hrLyUoSqQskDLudNaRkgh+/PDgwwB3uctqQkQNETV77HhLRBf6K5ddAUFEb/S/vO2l8x3x0knTV63wzW5hXTUMuAQYcNmD15+SpmYTaDM9UywAXWkAYGYToKhGEbE6BswJcZLCoVrZ/j/cJdoM1gx/xl1iw6HK1PkDABw8VQYArKf84N6pxgQ4m7YOBLFZoVrR/q+IOCDiAADXqv0Ak/E9/lP/6Kl/r4IBRNQG6O+7/xQdeLeo0feNLs1lSck+4Ogpe40sOxYNgAtlzQT9Q2XN1uEwlQGcDZtIAMqOBkyWNwSeHzzPP5cMwPucDhHRs7RwqBI63wKAjqR/qE5vuUqU4gNOEfE/tq4rjfrc2p+NeNdK2jP49kU5DQAPEyOimdAHABDj0Iwn/jdEpBFxXDggP5xOId0+235h22F2dGJlTGTPaUHHHyaW4SmabW4/L0VOMxQfU8MhET0l6Nrmng6/IOKcDpiUtJiIfgaccJJz62ciOSyk7ill04TJP2KlZ52gS0tP7lcz7fcAMAKARUS7EGsDAE9MWtxPgRfQ7ex088nowrCMzJNh29IwSsWdPyCiX0xHdOAdnXtdQW2IgVkwO2wT8g+RLBgzTKbGFB3UxhjYmeHwOHPuIR4Anxl4N02ckzvMnH0WyQBudtgumH3KBsBtmpwjO+srO7tvlCtbL6srARgYBpjOd5/T/kUAEEin2wn6fySk4uLMIHiGgDt7kKNtJQQDy4XDwNkDWxMAobR4Nfv3TYc3C4dEdAWA7xH5AIA7e1ATA0KrRMe1Rl8aAD6b1sziRzbvj4IA2OSgpSQGAAD8jnjmNWeD0gAwC02lGgDsrQGQmBUOoWX43O0pgRjYW46+RABMoo+owgz6qR2d2gFov/iCYa//QN3nX2/vckP5A4tBUoE6YmnxAAAAAElFTkSuQmCC",
 	["armchair"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACfElEQVR42u1aMW7bQBCcFVIGCIsU6UIDeQDzAvMJKpOOT8gT9APLL7BcJZ2VF0R+gajaAcQgTQwEiAyknxS+AInAo3gij3e0dgAWIkXu7uzd3uyRgEKhUCgUilOFdLmZ5BTAOYAMQD6w7ysAJYBbEVkOaplkQvKG8eCGZDLICCCZAlgDSCIbzTsAb0WkcrlpcoShqwiDh/HpyvWmiWP2ZwHmugtykh+8TQGSWwDp3ukHAAtTlHYDZjsHUAB4sXetEpEzX8WvDkWodJMs6hzyZSwfzJjbalSH3EsNiE7EiHSecqMmoA8oAUqAEtAar2yVOOQq4OJrl6XmoqER+WW6wqGDnxrbNlx0Tg7JjOS2bUcWYSe6Jpl1MbR1bEvnAxAwd/RpfdRIOMKQswrrS432nhiSacPD7kh+J3lvub7ySMDKYvPe+HTX4HfqWmDqMN3732LI/sDi0+IY3w/2/W0y2zBSMg/BZ20zaxkpMxcd0GoeN2w/+dAGiaMP+8hOXQkmKoVr8MzTc78E3ivRZmhIAjYB/d/EQMAyIAHLGAiYA7gOEPy1iMyCF0GzMVkYoZEOFHzl+grM+ypgHKowMugqoAQoASeDnQsBqydIQNn7hkiMcPVdLA9JAWwtNr4CeA7gpzliwEtz/AbwxvKfMyft0GFTNEbMrfqlgYDEzJvXI5/7GwC57VX65IDEnQL4NvLgi6bvCCYH5G2Jx720yxEGf2ky31j9xaEmvAPwsebSbeBAz2vOvReRT303Qz8soyQPvOyxra8qhZWAbgRUePwo8r9dmQhi+Lz3+8FJ9jrOt4xk+fedXMivQ/7VKySXxqfSx2s5hUKhUCgUTxN/AK+jUL3wlY7hAAAAAElFTkSuQmCC",
 	["arrow-down"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABSUlEQVR42u3azbGCMABF4cyrgA4sRUqgBDuQjtKKHWARztiB2/M2vNHhRSU/QELuWbJA74fjIoMxSimllFJKrR5wBI41Dm+AgWcD0NQE0PO/fovv8rORQee41tYE4KqpHcAIQAACEIAABCAAAQhAAAIQgAByBBhPcs6ABbpcRgDd+J3Oi54sTY6xAGzgfS6OE6FL4L3s5D7DUuNb3NmtABzj/2rX/A84hf4SIh+INcac1v7QK++za/0CPjx5gOuSAE0KhBiAb+MXP15PgRAKsPn4VAghANmMT4HgC5Dd+FgEH4Bsx8cgzAXIfnwowhyAYsaHIHwDKG68L8IngGLH+yC8Ayh+vAfCfea18sZ7IMytvPEJEcodnwCh/PERCPsZH4Cwv/EeCPsdP0G4OcbfqnlXEDgAj5fxD+Bgamt8YbI3SimllFJKrd4vypK6jexzykgAAAAASUVORK5CYII=",
 	["arrow-up"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABZElEQVR42u2azW2DMABGP1cdIBukI2QERmGDrAQbsEHYIFxz6yFSrjnl+vViqZUKrf8AG753tEHkPUx+rABCCCGEEEIsDskzyfMexY8kX/zmRfK4F/kDyTt/cyd52IP8ldNcNxvBQX67ETzktxchQH47ESLky4+QQL7cCA7yD8ex2SO8zSEP4ALgNHFIC+A2Mn6zc2OcAFyyXwkOd76xx/Ujc72da4p8HFzl/wtQZAQfeZcARUXwlXcNUESEEHmfAFlHCJX3DZBlhBj5kABZRYiVDw2QRYQU8jEBVo+QQj42gEuEueSrFPIpAjhEqJb8LdAaY+qlP4XsNdul3/2HmDufcgX8sRIGn/PfPa9XAagBfADojTHd2t9EjTE1yc6+tk8ADXIn5QrIbj+gNBRAARRAARRAARRAARRAARRAARRgZZ57CtCNjPW7WXZ2e/3n9tqw+f8IToSofHZwhRBCCCGESMcXdnxa+L0RCowAAAAASUVORK5CYII=",
+	["audio-lines"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACN0lEQVR42u2bMUscURCAvwveCYIIQcGAjRpFCIh6JGAao42NoiZFGskPCEIQ/RE2kRAxVQqtTKWESNRSQW20uSY2BlIJCidJQFAkZ3EjPNd34TjOdW9nBh67MwvLzsd7M/NmdxO5XA7N8gDlYgAMgAG4c6kBpoFvwHugNUoAEiFkgUXgjaNngTY5qpgBIwH9IdCpaQnUeWwNFgQNQFmkQ4Y6AI3AHvBDxh5QrwnAOyDt6GlgMmwAQ8AXGUMhA+j22J6UcqOqEh9gDFh29NfAKPA1JAB/PLbzMGfAiMfWrykL1HhsjywNGoCyVY5pIKURwCxwKnn9CBjUBOCp5PKEs2n6oAlA2mNr1gTA1x+otiwQMoCXwD7wl3wLqzkGPj4GVsWnfeBVoVK4Rer6pFPr1wIvKhzAZ6BPznuAJdlC/wzOgE7H+WvpisEMCPqQxGnJuQBSBYqSShefD0kLggbAABgAA2AADMANAMee679i4ONvj+3EB2BHGhGufIwBgJmAvi2+3toLXAC9wHMBkwUyMQHwnXyD5Z84f+kDgFzYiuFSz1gQrAAAx0UGsNgCyHC7LXbnr9qqIgQgCzwD3gLtwCYwpwkAwCEwZZWgAYg+gB2PbbcSAZQaAz4BTcC46AtiUwPggvznr9P39NxnHtupphjgqw/W4pAGi5UVYDiwBNc1AYD8665VS4MGwAAYgKgD+G9TUgOAjYB+RIR6jWH8M1QNTAADwAEwj3ycoAWABUEDYAAMQGTlChw0XkRbro24AAAAAElFTkSuQmCC",
+	["badge-check"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAFo0lEQVR42uWbbYhWRRTHf6sFphnurpqrlbaFaWVrJiUkWpaWFKSGb4lZqVH2AkUfgvxSBFFB+aE0zdVC0aSCypBSKYqiUqLN0l11szeV1rd8y5TUfx92goenmbnPnXvvs1c9MLie+8w5Z/4zd2bOy62QxJlM7TjD6aw21N0B6Gf+bgKOnu4AVAETgTuAK4FeRc+3Az8CHwArgH3lMKqiDHtAFfA6MC5mv7eBmcCBUxmAgcCHltkulX4zK6bhVARgNLAqJVm3AKvzCkBXM0t1QA1wHtAIzAA6pWTnYaAe6A8cBHYC3wPvJd4rJIW2gZLWKD5tkjRLUp2kc02rk/SIpM0B8lZJGhA6jtDBzwswdL+kmSXIniXpQID8eeUAoFrS1wqjQTH0DAnU8ZWkrlkBUClpa6BhDwfMzuOBupqNrSXpibMJrgFujvjNn8BG4ATQGagF5gJPBW5RzwEPANuAQ0B74AqgMqLfWmBkmpvgix7Ed0uaKKlHgg01bjvf6Nzlsev5tF6Bvh4l78dZbhm0KknvOmw7KalfGgAscihY0YYDL27LHTbOT7oHdAN2WfjbgKuAv3Li1XYye0/vIv5RoKfZm4LiAaMc/GdyNHiMLU87XO6RSQIitRbefuDNHMY2Fjs8x0uSAGDrvCHHAZ4fLLxLkwBgC5i05BiAlrhBnygAdlp43XMMQI2FtyP0IjTNcbQ05uj4K25bHDZPcfVxrYCJwBuOZ3+XcUYvMq1UOuLgLzUxi5JWQG9JBz23qzFlmMl2kl4u0PtCif0me26t+8wVOvIm+I1HyN1lGvxii+4ZJfaf7rH/8ygAxjs6HjARoKwHXyGp3mHDJzHkXCvpsEPOaN8eYAtdy/AbMn7fK4CFwH2O5+tjyFoHTHI8G+vaA86WdMSC2EdlmvmFnqXbIKlDgNwvLbL2uFZAX+AcC2LLAmd0MLDItMERMz8fmO54vgEYEZg6e8vCqwYutK2A4Q70awOQH2ZOjMLTY6rjt/Wemd9gfP7QlTXIIfdq2yZ4p+PYax+g+GOLrBMmilP4u7mewTcmHDwmQGqjkbZX4LhnicalQ45r9zJgjPn/K8CDjv6NwLAUEqQnI/kFaF3jQKtPAPIDPDN73CQzXLRRUreUNtc6h46+thWw3YHW9YFu6TRzhBZTe5M3tFETcAOwO6WjdYSD/5PrKtxsQWtlghmYGiOe35jizP/Xmix6vvVdhJZb0Lqt5Bj7/2kJMNnkCXzUDNyY4swDPAZcZuEv9zlD/T15vSRX4QnmFLDR5gxyCtd5VtoFUc7QEk/nexIYNVbSP0XytmYw+Jke++eW4g12lrTDI2RcAuNuLXC110mqSXnwEzx2/yqpY6mJkVEeQesTGtnJvE7tMvApvvPYPTRORGg1MMWThEgaw2/wXFKSUEeHvrHAF3GDosuAOadBVPg1U0oTFBXuaeH9nmMAbBHgXknC4jb/oEuOAehS4hhKBqDJwhuaYwCGOByrYAA2W3iVwL05HPx0xwrY4o3DRaTHq4E9Fv7PtNb7HsnJ4DubyFEfy7MqEqTH99JaoFhMFzv4bUVLHIOv9w0+KjUW5R/IlKdUqe1SYZWmTMdFqZTIIOklj5KWNiiS6mF0tnjsmpN2mdxa4KaI39jK5F4FZgcu7WeBWWbPOWRS3ZcTXSb3qScYEvsVKKzIag4sXnwyYJafCNT1i6lozaRUtpvx4kLorhh6JgXqWCepezmKpRcEGji7BNmzA2UvCMketUW5fFNBuXwX4x7XGd6mwHL54GhVFh9MdDW5hOEpn/WfmSjzHnLywURUe0jp0aNZ2Zn1eX2/pGMJBn7MvBqZ2ViOz+YG0frlWE3Mfn+YBEqmdQnlAABaS1ZHA+OB280lyUaHgZXAO7R+cZb516TlAsDmoVWbfzEb2V7K9LVoHgDIDZ3xX4//C1dt8OvceS1xAAAAAElFTkSuQmCC",
 	["bookmark-check"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADzklEQVR42u2bS2hdVRSGv9UGwUhNLRURH0Fp2hpExbdOoqUoUlB8pBQFBUETZ4qo4KDiQAQHrQhCQZCWErFgHfjAiIjVSkU7slrro22sRUpbEZ20VaOfA7cQwj33npvknHuSnH+Wc9a+a///WWvvtR+BGjVq1JjHiOk0VlcANwGXACuA00vq90ngO+Ab4KOI+KF05dRH1D/sPE6pD5VNfrPVw+ayyD9rdfFMoWOAeiWwG1hQ0TFtHLgqIvbkbdDVpoMnm5DfDZwoiWg3cE0Gn8eBB4oK/2MNwm5UXdyBQXiJ+n6D/vxclMOVGXl3UafiXV023T61k8uXNhxEIsY6VsRE7M94dUURAlR14JvW2DabSBWCWoD5LkBXVTumngasS3++FhHj80YA9SxgFLg2PRpWV0XEqTmfAupS4OMJ5AFuANbP+QiYQL6/wesb5/QgqJ4DfJJBHmBk1kWAemGq2H5qYXduIr8sw2RLRLwyqyJA3QgcAg6pL6iRYXcesLMJ+a3Ag1UI0bWNVh0ZtsMNTLdMFkE9Xx1rssGxVV3Qol+NMNhpAXZmdGxEXZhsetUfm5AfaUV+JgQoKgW+yHh+LzCi9gG7gN4Mu23A/RHxT5WmqHYioFv9ssnXHW/y7vX/oyRnv6oXARFxArgZ2JdhkkXwDeC+iPh71i+GIuJXYADIe2jxFrCuTPKFF0IRcTyJMJaD/N1lky+lEoyII0mEwy3Ij3dibCulFI6Iw0mEI1UiX+piKCLG1OuAl4Ez01T5dCfJl74aTJFwe5VWoPWeYC1ALUAtQC1ALUDOhVcBK8x+dWURi9ciBIgZJH6XehDYC+xTD6h3zmTJUckUSF98B7AdmHiGfzHwprpD7Z9zKaAuVTelLz7QxHQA2KtuUpfM+hRQu9THgP3AUBtNh4AD6qNqV1VSwDbJr+G/m5wbgJ4pkFgMbEwRcWsVIiAv8T51FHgH6Gthvgv4rIXNcmBUfTttpnYGrTZF1R71RfWvHBcaD6prJ/32WI52f6ob1EUT2pZ2LjCY4Wxhujf8Sw4Cv6lPpLP/Rj6eUn/P8TvH1aGqCPBVzmusL6XT31Z+zk6zQB7syXh+T2kpkAPvqsun4G+l+t4UfQ52fBYAvgZWR8SaiPh+CrtH30bEbcAtaTaZNXXAUeBh4PKI+HAGttE+AC4DhoFjZZft7aTASfU59YwCZ6JF6vPpnyRmJAXacb66icNt6gUlTsm96QwxC6uKcjz5dvan6tUdrE2uVz+f1Kejak9RDrvV9eqrUyhPixTiDnV7KpJ6qVGjRo0a+fAv9SBnnA6o4k8AAAAASUVORK5CYII=",
 	["bookmark-plus"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADQklEQVR42u2bS0hUURjH/6dE0BBFDFchRT6SKOkB7YyQIlxEkW5bleXKiGqXFEQbsWjlqlzWwjYVGRG6iCJcZWkvH6vKRwtzkb3g18K7kOFevTNzz9w7zvnDbO6c833n+9/zPc6cbyQHBweHAobJZjJQL+mgpB2S6iWV5GjdS5I+ShqXNGSM+Zxz5oBzwG/ixy/gdK6N7yd56M+V8VdJLrqtxgBgj6QRSRsSGtP+SdprjBkNO6EoTQWXVjF+RNLPHBlaKml/gD0XJJ2ytf3nfLbdIFARQxCuBJ76rOeLLYUNAX63Na79DmzPdk3p+PJO3yBizHRsRYwxEwFfNdkgIKmBL6vYlk9GWcGGmHy3GOgBZrxPD1CcaKaAdr9ok6GsLh9RXRnK8kNb0l2gKZvAlfcu4BUyqSgpJAIKOwg6AhwB65yAlDzvlzr90lR7QEqzWifY2gGd3rG0OgJZ1Z6sznwioClPZFojYCFPZFoj4K6kxQjlLXoy4zs2pnlOf+PdGTQEDOnW8n3CSgxJuhYwftwYM5c3BHgkzEiaCcgSfgFt3hgz7OoAR4AjwBFQCAR89Xn2rZAISK0TrOX52NJgmnWCtTyfSALWqhNcEHQEOAISSQBRKwcagQYLdmGDABOh4SeAKUljkt4Dk8DxKGNsIl3Ae+PDkgYkrbzD3ybpATAMNK47FwCqgD7vjTevMrRZ0hjQB1TmvQsARcB5SROSOtKY2iFp0rtELUqKC5Cm8a1a7uTslVSegREVkm56O+JIEnZAWMNrgUFJjyTVrjH8paRXa4ypkzQIPARqFRfW6g8AyoFbwN8QDY1TQHuK7OkQ8/4AvUDZirlZ9QekQ0BbgLKNXt/w9xAGLAAXg255gMvAjxBy5oGOpBDwNmQb622gKoSezV4WCIPRgOcnc+YCIfAYqMtAXwPwJEOdbbFnAUnvJLUYY1qNMZ8yOC5/MMYclXTYyyZ5UwfMSjojabcx5nkEvxs8k7RL0llJcxGvNVIXWAKuA5ssZqIy4Ib3J4lIXCAd5S2rKLwPbMlhSq4B7q2ynkO2FKd2Z78A9sVYmxwAXqesaRYot6WwFLgC3MmgPLVJxDFgwCuSauTg4ODgEA7/AcXreJ5nQOuNAAAAAElFTkSuQmCC",
 	["box"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADFUlEQVR42u1bu3EiQRTspwg2A20IyL+q4zJAEUAGRwaSIuAyQBmIDEBVeDKETFkryZLHylSd0ec8qjixB/Ofhdu2gBl23vRO9755A0CH/xuSa2CS3wEU+rYWkfuTZ5tkQfKKZMVdVNpWnOrkhyTXPIw1yeEpTbxP8pH2eCTZP+aJlyTv6I87kuUx6jw02u8PFjqvSV4rWYW+ro/WHyx1ftt0J5WI26PyB0udL0j2DK7Z077t9QdLnb+QHDiMMdDvtssfbHUeYLx2+EMInXuuuDz+oIMH1blHLLb+UIQYcB1L5x5xmfrD2vmGqMN/ptB5ZH/4dHpS/GPHFk3nkf2hcrn7+/DQpvxc4304EHNpu7RMMMm5CvTuTwxjbZTqmWcMYwBVjvyc5E8AlcYQ/OILh91akvzco76w8F0B9YH2HoB5rPx8s+8AMNexfGJ1IuAJwA8Arwf6DVQWQfLzzb5Dl/uhXONVY3yKIYHFVvs4RX5uue8Ym8bvTUDs/NxS57++rrQkBMTYv4eqLyQlwDE//8sfQtcXshDgsH+vVONDg7Tbat+RlQAHfwheX7CJ/wwRICK1iIwAXADwOfO7B3AhIiMRqWPEGoWALSJWItIHcGmQP3x9nl+KSF9EVjFjjErAFhEzzd5uAHzs6foB4EZESv1OdCQhYEsW10rEe0OXdwA97ZMMZ0gMEXkB8NzQ9KxtOGkC2oaOgI6AjoCOgI6AjoCOgB007ZzOj2he54ZzsloBJclJ22dOcgqg9L3IvqOxue8RuHfBovmaPY3N/2hsT5DbmLqWvUMSoMWXqcuhiMkqqE3qe7kI0Dri2qCUVvosK9P63iAVAVqArQwLqD1fPyhIzgxrd0b+4EqAgc63MQt6cq2HFSvDwff6gy0BhjrfYBX1kJbkyOJY7MqXAEOdb7Q+SvWsLSx+RLHjD4ZHb6Y65+Z3xzmSjtLFH/YR4KDzErnh4A/Lhs+XrdF5An/4bfhZPp0n8gcb5NF5In9ov84T+UP7dZ7AH9qv8wD+8NYw8bccOs/519k+gG/6dikiC3TokBx/ANgCwfJAKi2vAAAAAElFTkSuQmCC",
@@ -2927,9 +3384,11 @@ local ICON_DATA = {
 	["chevron-left"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAArUlEQVR42u3asQ2DMBBA0TMTeaOQjdggZKNsdGmgihSlITLc+x0V/t+yC+siAAAAAKAgbdSFZWaPiNv2+WytvcrsSmbO+UmvLJ+ZuRzxv2k0+Yh4lLyMvuz89Y/AD/IzefLkyZMnT548efLkTyHfy8pvAZazyE8BR8AlKIIIIogggggiiCCCCCKMHKFXj7Bc/j2gtbZGxN17wh9HZEYfktovv7XUkBQAAAAAHM0bbMRdO+vVRdUAAAAASUVORK5CYII=",
 	["chevron-right"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAArElEQVR42u3azRGCMBBA4awVpSOxIzoQO7Kj9SInf07CRPZ7Ny4w7w3JDGFbAwAAAICCxFY3zszeWjs/L28RcS9TNTN7vjJVCjDne4aLcNr5edcSb8KHJVBrOWTmJIIIIogggggiiCCCCCKI8IMIvXqE+QjnAbAEbILkyZMnT548efLkyR9ZvvbP0S/zAcPJ730ecImIpcK3/d+MyGw9JLVKL6WGpAAAAABgdB4GJ107nuTLQAAAAABJRU5ErkJggg==",
 	["chevrons-up"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABVUlEQVR42u2Y0W2DMBRF79uAETpCR2CEblA2STYJ3SAjdIN4hG4AG9z+UKlqm2LAbu3neyQ+kJB454BJABBCCCGEEEKIBrH/OjHJRwDPy+6LmYVmqpMc+J2hZfk2IqzI+44QKe8zwkZ5XxF2yvuIECE/xBzjVn7Pse7k3UU4IlJ9hBQC1UZIOXh1EXIMXE0Ekn2uQSMi9CUEuOW8SisRbiUEyH6L/hahhADXv1ifdyKMJQToSI7LQCHnulyeN+FDnmRX83vCieS0bCe0BMnLD7fzpWX5NiKsyPuOECnvM8JGeV8RVuTDp581fxEi5Ltl8xchRv7Lnyk/EbbIu4uwR95NhCPy1UdIIV9thJTy1UUgeU4tvyHCuYQAUw75yAhTCQHmXPIREeYSl0DI8aXmToTDS8ASDfcEoAfwBmA0szlT7A7AAOABwKuZXSGEEEIIIYQQYjvvgE7VdDh6wuYAAAAASUVORK5CYII=",
+	["circle-alert"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAFYElEQVR42uWbXWwVRRTHf73Fgq0BCwgtFSVGg4YXlKgxjYQgaYCoSIhGI/HBYHwwUaTog/FJg0YsyosxEUUFiU+KElE08SMFVL4T44PBxqIoLS0f0mAL1vbvwx3D7Tqzd+/d2Xvv0pNM9na6e+ac/+45M3POmSpJjGbKMMppTBnHngFMMb97gCMXKwC3AUuBZqDRKF3nuPcvA0YXsBPYCuxJUriqBHxABrgdWGYUvzImv6PAh8AHwC7Ar8CSfLWMpOWSOpQcHZb0gKQqX3L7Un6ZpB9VOvpB0pJKAGCRpP0qH+2V1BJHhzg+YAOwIuK9/cDXwG7gD9OOGfsGmA5MA5pMawbmA5dG5P8G8GipfECdpM8jvJ3fJK2TtCDGG2qR9IqkoxHG2y6pNmkTmCzpUB5BTkpqlVTj0cHWSFot6VSesfcZGRMBoD6Ch39B0gSPigfb5ZLWRpgp6n0DMEbStyGDdkqamaDiwTbTmJiLdhmZvQGwJWSw3ebNUOI20Yztos2+AGgNGWSjpOoyKP9fq5b0Xoh8T8QFYIGkIQfzLWVUPNg2O2QckjSv2HVArZmnJ1r+9x0wF/ingna135j1Q5C6zc7zfKHxgNUO5Y8AiytIeYwsd+YsrHKpAWgtdDdYb5jVWbars4EOT4Jfb64/eeJ3A7AXuCzQfwa4CuiLuhJ82WFTj3uy2YbAHmJ/oQuYIpz2S1Gd4BRJAxYGR6POrRHaixb+azzxHiupy8J/QNLU4P02H7ACGGfpf86j3d9o6Zvlifd54HlL/zjg4ShOcJGlrxN4y6PT6nMI7os2OBziwnwAjHdMJW8CwykK9g46Xlizmd6dACwEqiwPfpbCiPenlr7q4FcQBGCx5aETwKEUArAP6M1n4pkIzml7ivMeO/I54Ixl1RSkgykG4KBjZegE4ArLA10pBqDb0jfNBUCTwwEeSzEAtpdXlZOSGwFAQwFM0gzACF1zAWh03PzrRQhAow2A4ZBcn2/qt/SdTmAc5dMpV7njjpunJyDYxyVabDXkc45j8nhMgKnAL54F2wrcBSw3f7/jmLNLCkBPCABJ0CemJUkNDrPospnAIHCqABTTQDbH3hvm4Gx+YE6KAZiTb3EUBOCA5YF7UgzAUkvfgTAAtlkemEy2zidtNNfENwjTMWNxTEOWh5Z4Fq4GaDOfY7f5XeN5DJvMf/9vtrEEFb+wBBRPmGCjr0zOSssYKz3yrzVpelsNQd6gqM0MJhGSXCiCZkfsK5aewp7U2RZlmbuJbCIhSE87bKoY+tPSd84T73oDQJDOAO9HAaAPWGvpnwA840nItxkZGT4LvO6J97PYCzHXYIlGu1JjY8nmAIOLoEGyRZA+qjcbuJAaO+wp7nAz2cRttWV9czW20HuII3nMkWI6LqmxglLjuem2HofMjxSTHs8APwPXOGJtt1I5GeIa4HvsQd1O4FrXdj9srz8M3G8++yDdRLY2r1Jok0P5QeA+wpI6ET6thyq8RGZjiHwP+iqSei2FRVLrfVaJZSTtrKAyuVl5yuS+ilpRXsigkyIUSraVoFCyLY8MHUkUSkb97CSp11SSXOK5VHaVY30fyxyTqM3L3UC9a84S1BVZlH2vKYE7GWG8ohxynHL5VcC6Au7fAbSTLZX/nQvl8tVks1KNZI/XNAHzgJYCeD8JrC9Gibhnhu4ge55nfJnm/z4TXW4vlkHcpMeXwHUG/XMlVHwAeNWM3R6Lk0dH1Wjm3oEEj8j0mwMUU3zJncSxufFkqzDuNtf6mPxOky132WauZ30KmwQAQZpv7PQWCjs4uQf4KPYnXgEAuGiGAUMmWXGkHEKUE4CKoFF/evxfBcAGUwMJ6U8AAAAASUVORK5CYII=",
 	["circle-x"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADkklEQVR42u1b23XbMAwFvUA0gjeoNog2iEZQJog2qDeINnC6gTpB3AnsTmBtYGWC2x+01klFEqRASU6Cc/yTmCBwiRdhkOiLPjeZJTYFkBHRt3d//m2M6T8cAAAeiKgkoi0RFcJlByLqiKg1xvy8KQAAbInogZUtldi2DMqPJaxEbNYAvgO4IB1deI9sbco/JVZ8DIinNSheAjhjOToDKBaJAXwCjfDrb+zHHfsyEVFvjDkxr5yI/pp1wQGzJKI7If9HY8zLnCe/F5xOB6CZckIACubRCfbbzxXojh5BegC7BHvvmLeLXpMFSIHyPQuZJT4AHxDHJDJ4lO/Yj+dywdzjFq9z+vxpibzM1nBKHhMA1I5NXmhhAvDikK/SyPOrVV4IQjGFsa3IOa2wFLe5w1nb9LvV1eLXmGALjHUMs4sl1eW0UuLs0FvuDlkIo50FyR2tnCbLDmDrOP3sBgDIQqxgM8KjHFxMhtSENCPYHJ/5k0eac/B6lnHskpaJGjQA2rHAFyF8dE4GUI2szwNlGAuIrcR8xqgJ3LyJLUwsyqvJ4HOBwtGT06C9CwT+n9a1trUVd6EVVR/pvwgpUR0nH+UCzLMPqmABHLRKXoFCVcx3FUrkg2uBau6XKJZKeVdNEArApKajQEGkus1xS80JwGaYAVIUJtysfIxYmqzROaqrDS2t2j/QEiqlPXOxVUvMZSYQKuU9nQBs6JPTRoDgVuv0hUXOXtMFQm9R6llgQiaoFPa1xbXsKw0GxIA8odk/elLkVHcoQgX+9KXw2ILLDV+GLqGXoVIjDjj6AfBdhx3rGqUAWLpigM08StIhZ3k7oWwWy2yM8XaF2qk/LqykJXYObonxwlrjWswgNPyJbYpGrXe0xivJ4qC28krb4uK2/iawrVzfQHlf09S2vscK8hWffu6YXslCmdWO0bTshkw//MfRAVPbr63HFQJgG+HpUtym5hlLk8u5TzIg4XGFxUFgs98n7y55RlCOWG5I6jjbCI9nIuu8wJicazj7kArx05Kj7IORfCwyticA4R8QCfaWvEU4zOKOnpgwdItnAPcT9rlnHpKR/CifnzIuL+3yEhH19P+4/Nu7cfm7QRtrS/ZJleBrdkpLKISj7Kmo0+haawBRC0bZNamPLm8TR+hdYiCSj+RrAVFZOkux1DJPdcXneDhZ0vXhpDQj/KLrw8k2pXxLPp19XzmeVvso8os+MP0B7GwAGsMMdvoAAAAASUVORK5CYII=",
 	["clock"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADtUlEQVR42u1b63HbMAwGvUC1QbVBtYHVCawR0gniDeoNog3sbqBOEGUCKxNYncDyBOiPIolO5QMUX1IS3OVPzgSBjwAIgBDAJ31sEik2RcQMAL5N/v0shBjeHQCIuAOACgByACiZy1oA6AGgEUL8XhUAiJgDwI6UrTyxbQiUXymshG3WiPgTEa8Yjq60R7Y05e8DKy4D4n4JileIeMF0dEHEMkkMoBOomT+/kR/35MsAAIMQoiNeBQC8mHVJAbMCgC9M/j+EEKeYJ39knE6PiLXLCSFiSTx6xn7HWIHubBBkQMRDgL0PxFtHj8ECJEP5gYTMAh+ACYhzEBkMyvfkx7FcsDC4xWNMn+/mIE5KPNBfMdMauuAxARH3mk1ODic4pWImr5NGvjsf97xX5YlvLeFXO/DTgVC6AKBKcjpHYFsJz9aRp8odLrp1G53pU0IypT8WVV1MKkm2KeWki3WAuSquusJDXPFuAaPYMihqh8zGAvaj1HRM9Uv6usjuzj/ZZLEkI5149bzm9L0kGKEsYGS9bCuQWUClOf0BFk4ko8oKKg6CjSzT85xYBbOA0R6yTLHRWgCZyE7RklobyWTemVygtGC2RgAAESsdADIfuQkh2rVpTzLfFDFOCUD+Tk5fJ3uuA2ArWdCvGACZ7FtWKjyidsUAGGXfTG6AD0FjXccWoMrxYyU/X11b3BayF2wXiJj75wDwSI1NL0BwZN8kssLOUNZ6BcIJAHrs9E2cbpIzEFalO1VRfltK5tq9tXgGswaCHlZklKkWRANgIqQNEAdXAHQLZLSPERQsgSiYPA8mAKYx4El3ZYTO3YUQJQB8V8gxre25NwswdHxFTNZeviZKVlQWwe5MKTpbJ92CKkUcYADR2D7BaQJgNecmqFeY7tZWAdDQErusEICLdUtMU0HlId78Ayp/mN3bsG0rL7HSs2nrbyTX0QCujwtpaQ+ubX2DFRQLPv1CM72S2TLba0bTshWZ/vxsVjOGcl4gAKoRnt41CUk3lsaX8xhkQMLgCslBILM/BhuRMdQIYcfSeMqfQ4zwqDbsDDO7RUTlC8NwdhsK8S7lKPtoJB99j+35AuEViAB7c75FaKO4oyEmjN3iARG3DvtsiQdnJH+Wz7uMy98BAPcWGOD/cfnbZFz+ZTS+hLdxee5pxh2Xn+QJPaajPmWzZporDBEVH2I1a20D5CEwEMFH8n0BcafoLM2lhnh6VzzGh5MVvH04yb0RnuDtw8kmpHwpP52dZo7dGuYQP+m90V/OJl0PUHOXBAAAAABJRU5ErkJggg==",
 	["cloud-fog"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAC2UlEQVR42u1a7ZGbMBB9yqQAdxA6ODo4UkHo4OjA18HRgd2BLxWEVGBSwSkVwFUAV8HLj9PNeBJJ5kMI5OjN+IeNQdqn3cfuSkBERETEfwzh8mEkdwDuAOwApAAS9ZEAegA1gDchhLwZBkkmJA8kOw5HQ/JE8lvIhmckf3A+GpIPoRne0D0aktnWjT9weRyUlmxHBNWEzkrYhuIVQHvx/X7EvRLAVyFEv4VV35F8GbByNcmCZHIlfEqS1YDnvfj0hDnGP5NMJzw7UaRtlwSSZ8vk+imGa8bISbaWcc5rGV9aJiVdr4zyJBOOayQ3RpdfcFxpGTfxSYApwak9aI5cNRSUUptiPvEkvCZNcJ4ofdb8Vhj+Wwoh2sUTEyF6kiWAk+byniT/+v8v1+x7d33DXNqRafSZ5NMscVaJjA75CgQUE1PpjuTT1EFNGdoqyYjSnTnFVT52QF2VV62YiJUOiqtibvw/rpyOH72QYHn9bbZGV4uWKb2oZ5EQIgEGG6RFHP/Rsk831eEVogaQAfitubwD8HjTBHwkUoqEV10idfMEXJBQ6rzAqAWWt0AeKhGGbLLWeoCl/5YH7Ay60v3OxpjuVdIF7AHaN5tNA2pD3ITqBdJEjImA6pbCYFJb3ZBIdC4aoCuFgQ7plDJ0/T79eOPTaxowtiV1DIwA3WLKITfmlqIiD4iAZnJX21JddSGEgqWXMKo/0IdYIVp0rJ4iIv0oFV3f+L0lfLOpbPY+doYcGH+y7V5rc4WBD07wfjag1R1wUte/eLDReMBKzaEx3QcgXWRfQ4VJR38oR3a05KIhO/DwhGukA0X76i62i4bIGoK4s3SCPtph3wFk1+oB4cADKgA+z/u9AUg2cX7owvWePbm+DLUoi4iIiNhm22zJbgyAh4XyhBbATyFEFVQryldaPAZLbY0Vnrjeb5UAn1nhJgnw1TOYPc7SIlgsKILVZkUwIiIiIhT8AYw9+Hk2EspFAAAAAElFTkSuQmCC",
+	["code"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB0ElEQVR42u2asU4CQRRFDyQ0xmhhQ2O14Q8sjb9CYqz8AD+AVisT/kNt7AmVlY0VwcYCEitFExOMz2ZIENkNYd8Cs9yXbLOwb+ae3ZndN3MrZsY2R5UtDwEQAAEQAAEQAAEQAAEQAAFwiQOgBdwATce8pyFnK7ThF2bmdSRmNrC/ce2Qtz2TcxDacul3xakcToAuUJ85/wPsAx9L5t0FRnPOD4FjoL8JQ6CRIh7gC/jO84CGHLNRD2021g0gATop4gEuUwQsGp8hBykQOqEPa5kD5o356bg1s5rDOK2Z2X1GO7nmhE0XXziEGMQXCiEW8YVBiEl8IRBiE+8OIUbxrhBiFe8GIWbxLhBiF58bQhnE54JQFvFLQ5i+eMfMniMWvyiEftD6D8BZCcQvCqE5+e90OTzKKBrfgHFES31j4DXj9/d55XDVzJ5K8hTcZeh41CSo16A+hPQprGJI5bAWRLQkpkVRLYtrY0RbY0V4Aor2B7h6BTz8AUnG9nhR/gA3j4CHP6APnIQOrcofMAxtboRBAqAX7sZwBf6AyZ3veXTcyyIziUOgDewBD8CFU94r4CgMh3PgxavD3gDkExQAARAAARAAARAAARAAARCAKOIXT4em36Mw0yIAAAAASUVORK5CYII=",
 	["command"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACR0lEQVR42u1b0ZGDIBRc0sBZgteBHSQdnCXY0ZUQ04FXQZIO0sHZgV4F7378cDKCPAUeKjvjZMZAFhaEx3MDJCQkJBwYiluBiDIAXwDy4QKAdrh+lFK9zwaL8RNRTkRXmseViPJd8RNRRXxUu+C3VF07GpvmX6i8s5EIwa9MzxyA35k2PofP80y5T6VUy33mJflBRLVG0Z6Iyony5fDdFOoFoy/HT0SZgTw31CsMjci2wm969kqLuuXatSAk/0nzO5MqK6Wa2chKX4azNwfj5wjwZHTg6UEAL/yngGF37qnsKugEmNoyztgOzpZ9YgkAm0VIGobFliWAbiG5ElERcecLAN+cPp00K2kP4DbxVQbgHuNMGNp0H9r4jpvumLw2FH5o7hcTDekBvCz7w61/cR4KOzyMSKNaO7XqDXe+drayHm7kNSmpLcyGmpMSW5oULUdJyVyziH283ftjLoK29dvR1fhOytqK9JgYmUeo+i5C4cMgCZAESAIkAZIASYAkwHHhwh+QC+cDxqFwFP4AaUTjD9jHcXgjox61PyDqmeDKHyCZDwBi8AdI5wOi8AdIJ0SW+AN0gZBuhKtF+fVQQY1SLwAVp0/O/QERiNBw+uTLHyCNKP0BraeyXg5D7YKtZq7sWgG88Dv3B3Dfz0fJb9gGO5M/YNiGOo82uSD8c4FQZzAqdgGMkk75XfkDLq5DUWl+l4ehxcdSaf65qRjk/bw0/5qRcJOQiIB/nBKzGQ3W+3lpfhf+gHFisgn0pykx/oSEhIRd4R8DAm+OOX8m2QAAAABJRU5ErkJggg==",
 	["copy"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACGElEQVR42u2b3XHCMAzH/+J4bzaouwEjMEK6ASO0IzABbACdADZoN4BO0HQCzATqi3uXBodwV9uyg/SWuxBbv0iKPjCgct9Ct9zEzAbAY+K9fRNRI0aGmStm3jDzieXk5PZQpVa+FlbcB6JOqXyuUkeNAc7UvgBUmcYsC+CJiGyoB0461+uMlYfb2zqm+fv8/sjMc4EgPHdrX8SDWAuaHr+bS71uB8EnJtli0jYf+6VMCkjWPnuC4d0AWAA4t66XRHQM9fBp9rk60ZGZZwAMABtS+SIAOAgNgCh1QQkuEFUUwL0DSBIDcu4nTCMqXQFYAail6gtmtgD2AF4HC6iQmWBJ/YRJBOo1gF1mVWUFYOeDMIlg9puMY95Fey20BZTbTwgRA4ruJ/wXQKn9hJAuYHry+A/BGuJjaK+aCisABaAAFIACUAAKQAEoAAXg77tLFjNJAbgG4tlzz2rMELousPfcMwPw7srIgxtTjRbAS48VdGGYUQJwrePFwG+qvtp/FF8BItoDeB6wBDvqz6CDYAC8eUAsQ4+oJaV3MtR2B+fzBhHm89kC6MBoEGk+r5mgAlAACkABKAAFMAoA2fUTrqzdxFrQeiaxB8Hx+MGzHxtz0S3nL9s/WW5gAJUzr4dMXf4MwLT/MRY0CN7YT5CURcjzRtcsoe6JB1Jikx27a7uDiwlWWPHttYOXlAjGbz8hpTSiR29VCpEfqMsaYuL5jZgAAAAASUVORK5CYII=",
 	["download"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB20lEQVR42u2bwVHDMBBF/zIUkA4IHagEl5AOUBccM8ONE0kFgWNOpIR0QHJiOAEd0MHnIk5YttdRLCveP+ND1iPr77O0tuQJYDKZTBOW5OqYpANwF36+iMhhMtRJOv6Xy+HlKhMD3zF2sQBcx9jFAhiNDIABMAAGwAAYAANgAAyAATAABsAAGIAeIjkj+Rp2dd5IVucyS7IKfTD0OctOkOSuZnvLt7TZ17TZt7TxNW12YwAQk08FIJI8SXIMNeAYiW/aRkJHwB7ARtn3oCOgYrN83xHQdOeDKoxBHYx6LQDtNYuC0AaguOS1xpsAFJu8BkIMQPHJKyC8d4yVl7wCgkZlJZ8YQpnJJ4Lgcxp3JJ/C4TJA8Nn8n+P7vRJCiuT7+ye5qrnAaqDpkGL9cJr/PsvVRBB8oj46+x98R0hEngEsa04tw7lBdZ2jwIrIA8kPAPch9Cgi2xxesgAIELYAtsgs2xQ1AAbAABgAAzAN/WgA7C8QwEHzLr2IvKsvCth/UHmXyEXmAD4LHR1VJH4rIl+nLilLVXQpLA0AZmHe3BQ+948AKhFRFUGEBgsA34Un72PJtz4Gw/94HIB1gcmvw51vrP6iqAnzAMM1FJrcz/nD36EqeCaTyTRV/QL3Vk+xREesZwAAAABJRU5ErkJggg==",
@@ -2943,6 +3402,7 @@ local ICON_DATA = {
 	["gauge"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACp0lEQVR42u1a223bMBQ99AQaQSN4g2iDuht4g2aDJBPUG9iZwOoEViaINrA2sDzByQ+Bqi6fepFseQABAixd8lzetwxkZGRkZGRk/K8QayxC8glABaCUFx7uO3kN7xshxEeSCiBZAvgmSVcAipGiegCNvH4JIbqozYlkSfLI5XCUyo2OeLUwcZUitrGQf2E4vASLAdIUzwB8TuJDEfCgCIxPHjJbAN9XjQ8kf5C8OZxQR/JAcjdijZ18t3NY50ZyvxZ5F19v59wQyb2UacPP0ORbktXCwdamiGMo8geSxQoWWMi11lOCZcF+yVO3xIjesK/XOc3ORD5YPia5tSihmsPcrgZ/D16VWZRwneSWJM8G8gUigSzBdcHxPMXHdNgiMkhL0GE3RqDO9J8jbsaeda4wpvBQoQlAqhi44qfN+kg2k62A5EUjpAxA/lNR9paWeKDCZWraO0VA3im9kTyNTouGl8tIyNPBDcrRh6jp8uqIyB8c5TTewdCQSnaRkD95yNp5W48hjRQpkR/I80vjJGtV1Zca+YHc1sudNf5/SJG8oYu9mV6Yv6MKRN4UB4bPbIabWTvPA7gYhqrvQoipY7XesPafCjBspE+UvGnvW+cKcOWmZfaK0+bWm0CN29In74xQCqhjIO+kgCWGH0KIGsAbgLu83pYg75XBDJVThURh6Gz/zgJCCF3ELJAuCo0F9joXuCuerxJWgKqJu/vOAq4Ju8DVlmYfLUA18yuj/FeGnXyJ35/dtRxdFJCqG+hmGI1Nc92/4AYa829d6oCTxg32CZHfa8y/nlIPXBM//d654500Vo63+Dn5CCkX/ea+rAJefcb6G02l1AF4V/zUJeABnabR6nw1WTwMFZuEYkAz26d86VPJ1QGp7jsjIyMjIyMjI2MtfAHvmmcvXQn5pgAAAABJRU5ErkJggg==",
 	["ghost"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAC4klEQVR42u2b/ZHaMBDFn25SgDsIHYQO4hLcAVcCqQA6CB1AB9ABTgWYCvBVYHfw8gdiJkesT0u27k47wwwDSKv9SVpJ5gnI9rVNzOGUZAHgx9PHVyFE/+kIk1yQXJE8kuxotk7+dkVy8ZEDX5G8cLxdSK4+WuA3hrdb0iBILkmeGd/OJJepBf/K6e01iVWA5G8Aa4ufvgE4AagB9ABaIUT7SJQAFgAKACWACsB3izp3Qohfc/b80aKntj5DVk6prUX9x7mC3xsadgixjMll9GDwtZ86+LWmMX2MJCVHRK/xu54q+ErTiCbm5kWOhkbjv5piV9dpgi+m2EZrIHRRd4+auThJ8E8QWlXuieW0nHLOj8wJyxgOz7PMO798dJ6q9+sEdqF19FFAcqdwUiYAQNU5u5BObin2vmEU3EIufdEOI5EPY8Yl8cWiflWSS2YEaNpShQAwlEyuj5NcEg827225DnwVZAQMVdIk+Eymsew8ZwBD1lrMy43cmnYkNx7z2rV8GyvBDO39tx5JqXLw6Vxe8eygCzECCo8pUPokpJHlG8u2B5kCvUfecDml+ZTvfQJ5wRe3WADakUlqbPnZAZwsP4tVPugq4HUIklm5l6+th1+n8qpD0WwAUjkV5iSYAWQAGUAGkAFkABlABpABZAAZQAaQAWQAGUAG8GTfYlVM8qd8630P4N97BUKIP7MQcnkkJnU7F4XSu3LwWSk0CUqh9OzPBOV/eUZZq05NJtVfNvLbTVIALGSzzxcgCkXwLhcs9kkAcAx+EIJH8P9BmBrAdkTw7yCMCP4dBJWQKwSA2qNRjdQWFSRPI4I7yTpMGmFGk/FZava1slkLubtR8mrQCFM3UscCWBhk6laaYUcIB80qYQuhDyacttDqWwmmNYJLa4GjJYTw+mXDzY2dQz2lQunduvznqIHpdFNFeIAocJewLHHX5zU+W11Zz1Juc2vPTnnUUeIukak/5fXbbBHtL7+YiNVqO4FZAAAAAElFTkSuQmCC",
 	["glasses"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEHUlEQVR42u2aS2hdRRjH/5PUVkViMa0WX00JiKZgRWMN4gNB66YLN0Lc2AhF66KlSMW3oPjYigsfRBALIugiimAF7UIprUoWik1rMdBoqDYSXdyaWPL6uZmrl+vMuecx556LzB9C4DDz/b75zjy+78yVoqKioqKioqKiogoLMMBGYBA4J6Dd1dbmxk4cdA+wDxgH5vlXs8C2APbvBn5vsDtnWfuAC6oceDfwMvAnfp0IwJlMsF8DXgS6q3jrn9NatQCsuRScT9s2G4A+4Djp9GUA3uGUrKPAle2Y9hMpnJkHPgY2BWD2A58Af6XgfgeYMgOwJwH+PTBsZ4gpgW2ATcB9wLEEP3aVNfi1wBkPdLTUyP/Xly7gHY8vs8CFZUD3eoAfVJhzjHl82l0G7IQn2usqPIovAf5w+PVDaNA2T6Sf7IBE7GmPb3eGhHzkACwCvR0QgF7rS7PGQgGuAJYdgHc7KB1/z+HfMrAhhPGXPFPs5g4KwC0eH18oaniV3eiaNdGBRdmEZ5NeldSvq4XdYUmudf5KB1bjrzqe9Uq6N6mTaRHVI5KGmh7XJG2QtM7+R9JpSTPGmMV2VaKSLm3i1yRNS+ppan7IGHNrHsiAZ1397NkUl4CDNmFaX8KgLwYesQwff9rj80Ae4FvkVw14Ajg3wMDPA55JSMPT6I089f5ZimsS2FJg8DcAJwP4MQf0ZNkEd0paE2Dm9ksaB0ZyDH5E0teS+gL4cb6kHVny/lOE1RJwR4bB3+VZ50V0KtUpAOyUNJrg3xFJ+yUdl1TPBzZLGrBRvsnT74ykQXs0jUi6xvaRpGP27227m4/btxaSL0k7jDH7W0V/1hPBs8CjQFeLOv2xhP3jpxZvdsmeMmXxZ/KmlCvAYIYpfKMdTMgllJW/4rE1mOfoez3HJvZswAA8lYM/mnksnkRiJmnatZiO3wYY/HgBvms5TyfV1S6NFDjHH0wY2Jj9iDoMHEhoV4T/kMfmWlfjLZ7GQwUcuM1j84Cj7Rdt5A+4EqHLPXaOFkhAfN/mJjJwyuBf5goAnsZFrpx8a3fW8eyXNvK7XQ1+8zS+roAD13ueH/IkOO3in3YFYKaNDkw6nv1YRQCaa4BfHRvGSWB1zjJ2yvU9IaEGaTv/nxlgjEGS65anT9JzOaL/vCTXLzredxYlFfPrUbvKk6svA1szRH/IY2cB6O9Ufr3zmwWLkccTipHXUjhfKb9+CzyVkJkdBnbZJOMiYD1wO/Aw8FVCvylnBtZh/MZqajFgMbMAXJuxmquMX3figUDwFeD+HLt4pfy6E9tT/kgp6WNk7lvaqvmN9wMHc8A/A64O8Fm8Un6jI/fYa/L5FhH/ENhewsVIKXyTw5E1krY2FhRWS5K+McYslHwtVik/KioqKioqKirq/6K/AXFkXNeMp84dAAAAAElFTkSuQmCC",
+	["globe"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAGZElEQVR42u1be2iWVRj/fXPzMmE6521dwCiVCMpheUmKqNSmpA7tDzNKQusPoUTrnxURRRFiJqUklVJ4qYQuiFqWGeZS1HR2Q7B1NZrbzHJOp5vz1x+ewcfL85zL+77fPmU98PKNs/M75zm/95znPOd9npMhie4sBejmkk8ChgF4HcAK83deJNMFS2A8gCoAEwCUAxgMoK9S9zSARgD1AHYB+AjA3suNgAIAtwGYaQZ+VcL2jgL4EMAHAGoApKswybSeApIPkKxj7uQIydkkM2npndbgZ5L8gV0n35GcfikQUEnyG+ZP9pGclGQMSWzAmwDmedY9Y36LPeufNrakj2f9NwA82lXbYF8A2zwGfxTAMgATAexUBn8mi5xoH58DmAzgFQB/Ovp6BMCWAIJjG8GBJGsd0/JvkotJ9jSYhyx1Z5Cssvz/ftNGT5JPkDzh6Hu/0TEnNqDUw8K/SLJfZGf4Q6n7Ula9pUqdnyIWvz/JJR47RWnaBBSS3G3p9FeSIwXcfKX+9sjAMiR3KnXnCu2OtBBLkjVG59QIWG/p7GvzZqKYIkXJcySHCPWvJtku1P+dZA+h/gDTtyZr0yJgsaWTNYpyILlAwbxm6WuVgpmv1O9Bcp1Fv8eTEnA3yQ6l8fUWXBHJ+oC33/kMNXWkWVBkwa1VdOwgeUdcAoqNRZdkt2ONLVRwyz1m3EoFu8Bho2oUXD3JXnEIeMZi8Po7BvGjgGs169ZFgDYLah24/hbDWB1KQCnJFqGhFpLXefgKkrwcsOW+qrQxyIG7nuQpAfcvyRIJo3mC1cqZvRpAncO3mqaUvxXgn2l173HgDgN4VijvB+ApX09wsJmuUTnqube+r2BDvc4GoZ11HrheigFulQywNAPmAegtlD8H4LzH25sslG2Lceb4VCib6IE7B+B5obw3gId9ZsAugb1fjFvrYn+MsnbvizED5ihtVXhgNSdsp2sGlJhvd9KavBDz7TPmDNgc0EdU2gGsFsonRE+MBYKRyQjATzyVvkko2wegOQYBJwHUCuU3euK3CmU9ooY0SsAUAXRcUUSSIULZtwk+WR7y7EOS/QCahPJKGwEVAmBLgMKScscSEHAsAQGaIa2wETBUABy8jAmQdB9qI2CQAKj37KzQGNFcE1CWEH+FFhi5Uvn2VutpxHoBGJcAD8WDGyWU7wHQlgA/xESgUJhVOEJppCJh7CUpXgu3JZERnQRkL4Fx3SgoPF6yARe6EQEZiYB93YiAvdmWu1OOKJXzaQRLFBuS1AgekQ5DRZbgBTwPIJJMSxC7m6G06YufJWAvaIehdgAnXI6D4wByMqHj4oM9EYAvF8qabI5QgwAYHdChhB+cMgENAfjRLucoSsABATAjoMPGLpgBIZ5llVB2wEbAJgEwMMDxkN7OqJSdKN8ZcLvimm+yEbAZQIcAmp7g+HqroojPDjDOsw946twWPSFGCWgFsEMAzjPbXNyPEJUxCLhX+Tiz1QNbDGCuUL4dwFkbAdoyKAOw2PP4KX2EmBqDAAnzF4DvPbBPAhjgNTZh7ywxgQTv4ELkWS1gG2P4AJIOqzzzGFp89ZdmQDOAJYpXVR1zGQwCMDbg7U8w/cWZ/k9DDuq8IHqkgcGFNpJjHW+gmOR5Abs64O2/o0SW+zhwtyh9H9MCpLbGtPh+A8lyhyJfCrh2kwThGvw1Skj+M4+gamNgfgFcmZ8/Kw0ecITJZiu4tz0I0BIeZlkwPUkeVHDWoA48plSbJTtEw2WUEHkHyWtjvP3DDj3fU3RsI3lz0hSZB2OmyMyKkbvzroKZbkmRWWPRb05aSVIrYyRJIXAWjFTaP6S07UqS8slGQUgm+K4YaXLaeX5PZF0WGrsiyVSh3RscaXI7fDPKQxyTMo9EyaWRRElYjNMKj+ywQ0IazFKHDnW5SJT0nXYk2UTysaysrimOVNjZlv9PyrLyiyxJWz7LMbV0eVduXqccNw7NTJIbY6TCbzB5BWs9Bu4yyDm5L7AocECnAuo2B7a9MB/3BQDgLly8z1OC/EizOTZ/FbeBpNfmvgAwHMDy6Dk7x9KKi/cIhicZvO0wFOcpN3tvaw6vyJwhucxksqWidy6uzZWYL0DTzG9pwvb+McfgTea3JdUYWRdcnLzTrNMxCLs4uRfAx4mn+CVAgCbDcDFv7yyADQB+y0uU9P/b491c/gN2mZD/KFoQkAAAAABJRU5ErkJggg==",
 	["hash"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB0UlEQVR42u2YwU3DQBBFZxBHpJgOKMESBZAOSAfQQSghJaQEOiBUQDrAdOBUgCPlPlxyQbEV27P7Z1aaf4z0pPh7PPv3E4VCoVAor0TkRUQ+RGQtIhWat374jfzXN5L3YMCvXGqJ4q/pBuBBZczbGaB9UynftOUEXIiZ95Y80oDamDc3oO/7/QHy5gY89PzWAXmXBrRA3tyAhfIBFqUbUCtHuC79E+hTY8xjDCghBJlMgKcQlNsA9yGIiOh25DiuiOh54FiacoSdROQLwLdE9MnMuxz3+ZK0ufpJjbmP576SZlTHzPfaHcBUrjjFEtwWbMA2yds9L8HVxCX4NBBijgC+JaJdkiU4N8QMLKUlgncbhLyFoJwGFBGCchqgbXK0vLkB2iZHy7s0oAXy5ga4b4IslmAH5F0eg40xjzGglCZoThQe2wdUAyM8NsRo+egDog+IPiD6ANM+4JGI7nqW0mHkn9bytn3AwDJ6Q/Feg5DLEJTcgNJCEGwCPDZBuQyojXlzA7RNjpY3N0Db5Gh5lwa0QN7cgGKaIOQS7IC8y2PQbQhKakCJIQgyAZ5DEMKAozEPvwk2UyuplPysCUtsQEVEr+dtvmfmdyQfCoVCoYn6AzG+CJhsbOiuAAAAAElFTkSuQmCC",
 	["headphones"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAENklEQVR42u2b32tXZRzH3x/ZUstmas2WOWoaDBIiDTSrZV5EV0FUF91EEt4VRERERC2ooMAgKaEff8CwLuwiiYI0y4Jc26Qc09kiQxyzYha2nLlXFzvCGM9z9j3nPOfsnDxvODefc76f9+d5n+fH53nO5yvVqFGjxiUMK4oIWC+pQ1KbpGtnXEganXUNm9nhSisLNAP3AbuAX0mOE8DbwL1Ac5Ua3ga8B5wlHM4C7wLXlbnhy4EdwAT5YQJ4A1hWpoZfDrwInKE4jAPPA1fM6yQIrJK0X9LaFD//Q9KIpGZJ7ZLSvNUhSVvN7FThAgBrJX0haXUDj/8QPbtP0jFJP5vZP7P8LZZ0o6ROSXdL2ippXQO+RyTdY2Yniuz2NwOn5uimvwNPACsy8KwAnox8xeEk0FlU4zsaCOg1oCUg59LIZxxOAx15N74FGIwJohdoz5G/HeiL4R8EluRFbsD+GPI9wMICeuDCiMuHTwHLg3inh3AK6J6H5feVGBHeDE12VwzZS/OYg3THxNUVkuiIh+SjEiRiH3tiOxKKYLuH4DBwWQkEWAT0e2J8LKvzxcCYw/G/wJoSpeM3RTHNxliUYKV2/KpH2Z0l3Izt8sTancXpuMPhGeCqEgqwzLMhG0/r8E6Pok+XeEv+rCfmjWmcuVLPc5nGVDFbc9dc8HIaZwMOR59V4ERqnyPuQ77nF/h2YZJucdzaW4FTuU8cttuAqxsWQNLGBM7LBt9LujWJAK0O23kzGy57681sUNKk49Y1WQU4qergdINt8gqw0mEbq5AAY3n0gKoLkKgHLHLYJiokwF8O29IkAlwyaPLYp1xjCNjisP9mZj/OU9KzTpJrfXfZSOK4J8XXmiHgmYLy/aMp4uvJW4CL+Dr6aJLHnv/bDHH1JJkDspyq3iHpILA8YONbJX0jaVOWHKkoAS4uOR8E7ADve8Z1bgIQIOgHgEcCvP1HJd0foiNlXQZ3mwOaLnl5zvOb7QEC9/l4SlKbJ6bdjTpPMgTMs/kYNbPXJb3juL0qgADXO2w7zOwtMxvNGn+SITDXsOh12FYHEOAGh60/RXdPNAQWpJgY/3bY8jo+m0zRsy3rHPC/RC1ALUAtQC1ALYADFyreLhptk0+AEYdt5RykrjreEMfox1PE4spAf0oiwIDD1gVs8GxYrpT0uOPW9wEEcGV923xlssDtkjY7bvW5nm9KIIAk9QIHHF2s0/NW+gMIMCDp4Vm29ZKOA0cd2Z6vNqgv6TZ0T8aC5tEQhyJAa+QrCz5MQ7wEGE5JeB7YFGxGg83AhZSxDKf+pA+sAQ6lKGV/MPi0Dg95Klbi8F3m8lmgCXgBmGyAcG90fpfP2jY9HD5vII5z0f8J5sxzLAF5i6bL2LskbZixgvwi6aCkA2Y2VMgiP10Z3iVpy4zldyo6k/hS0ldm9qdq1KhRo0Y8/gMnGn2g2JfASQAAAABJRU5ErkJggg==",
 	["heart"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAC50lEQVR42u1b7XGjMBBduQJ1EDoIJdBBKIGr4NLBpQO7A5MK4g7MVWA6CFeBSQV7P7LMcB59f2DJpzfDL8Oy7+1qVxIyQEFBQUFBQcH/Cub6ICJyAHgBgAYAqtW1YACACQAGxti7h/2W7NY3twwAMAPACQB+M8amTRRDxAoRP9AOV0TcI2JlaH9Pz9jgjIh1TOKcHPPFWSQEItb0my+OlD1Byf90iIguI5qV/SaC/V+hyL9iPHR0xcLRqwgiYgcAOiN/qCAtRW9BTQXyxUP/LypyJyp4a7R0PWls/GCM9S6R10VmWKexpnYcHKL3ZjKWqXYMukyzJd8ojE0mxCWOjgbER5dqTj6rhGhsjJ0VznHPTjJqyHPPmtXLuo9v9McQ7YVEGCRDigcq3KNzFkiiP4XurVRjDnR1gW1z8tkuCxTRD+rgRjPWzjoLJONnDj6z2k6EWcDnn5a4u3lGNFfvGWNzpos9Uf+vVAI8Cx4YMl7tinx/VgkgSvU5YwFEvnPbAshzZU/dQFkId9rFQr7j38j3nS7Vo24yxM+ARjc0diu1RsnNVcY1gEsyY5QNgS/B/U3GArSS5bs0ZU6S3RWeYfpzyS7TSdUGe0kadRlGv5MMgV6nnGgR8ZlTFlD0P0WLOlUX0E0f3zKK/l42rTdVb5ZMINoMot9KfDdf1Cl2gpMuiIrCh4j4amtMtr92SVEEIn+RbeC6GKwUQ+GSoAAXRepXrkY7n48OG5I/BtsSN9wlSkYEDfk+1EuSFGET8quXjSmJoCE/xqqySYigIx+tSxmI8BGzRdL7z3chbyFClHmCps9vQ/5eIiRFfmsRkiS/lQhJk79xcggtggH5Pqk1iWayZCWCCflUl6PeItBJkvzIG4pwVX1nIPLXbMn7iPAw5F1EeDjyhiIsx2Z1x2PzJG8hggoHeAQ4Hrft4JFA29WzAfE5h+13VxEqg4OS1ZY+sTsJUcP3YeqlE4zw/c+SCQoKCgoKtsNfvl0SuHTKehUAAAAASUVORK5CYII=",
@@ -2952,9 +3412,11 @@ local ICON_DATA = {
 	["infinity"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACPklEQVR42u2Z4XGDMAyFlUzACGxQNigblBGyQbtB2CBsEDZoN0g3iDtBskHIBK9/3DsuDbZsbHK9vu8ufwj4WUKyZSFCCCGEEEIIIYQQQv4Xq5iHABQi8nRz+Wu1Wg1LTPoh+gBKADsAJ0xzsvfUGfTrAP0yteF7hHMA8JJA/8WOFcp+tiMAVAAumMe7DdngMI80fMwFQBVr/AbpuABoArSbBI4fs4l58znYKrS3mbSrkJx3ed8AaO2iVNhfba99anLToa1Zaz4d+sYThaXGAb1jkE65WptQJyiMN77dxTqjc4zRa97+FE1gGr0BGDRO8Bg/AHgL1G4c45WuB7vYN+9YS86ercpl/Dl2FY+yZaLIMHOrNkVKTIV8kUH36HrgHm2K0jXQCbOMH+m2E+MXU4vXPZKUtQFOSGK81qa1YhyTYjL2oLIRkavjtquINAkPNd65r2V5EPlfFjQOqFKlgIjsRcQV3oWIvKdKAc3c14pwqRMZf1A6sxKRQyIn1EGpMbFnHxNsR8eIbTCXrlm6EHI1MDpP6X1auhBKWQq/eg5VvfL8cQHwukgprJjMzheWdu/1hXwfqPuTEprD0C76MDSKgsEzkS2A59Fx9Nle03Rw+kjnj1ttU/pHz6GqDMndHLQK7fahDZFMLbEhoiU2PKwldhMJcyfyMaMp+pHA8dXcIqZU5ua91lWKIqpWttp+rTU5vg90ngbH2d6T68OIT9/Ye9SGz/k0dhtaZuFPYw/TJ4QQQgghhBBCCCF/mW+iffIUq9Q4UAAAAABJRU5ErkJggg==",
 	["info"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADcUlEQVR42u1b7XniMAyWee5/M0I2uGxANiAbHDdB2eCyQdkAukGYoDABuQnIBqQT6P64Rxr8oSSWHZfqX/NQWXqtT1sG+KbHJhFiUURMAOBn7/NfIUT75QBAxBUAFACQAkBO/LcjADQAUAkhDlEBgIgpAKyksoUjtpUE5TWElZDNGhH/IOIV+egq10jmpvwzs+IqIJ7noHiBiBcMRxdEzIPEALkDW+LP36UfN9KXAQBaIUQteWUA8GHWuQyYBQA8Efn/FkLsfe78jrA7DSJup+wQIuaSR0NYb+cr0J0tgrSIWDKsXUreJnpjC5AE5VspZMK8ATYgziwyWJRvpB/7csHM4hZvPn2+DpGXpTXU7DEBETeGRfYQmBBxb5Bv7SLPz1Z5Igj5FMa6IqeeYSmuc4eLa9NvZleL32KCLjBuxjC7alJd5lDoJSIuHWeHVtM7JEMYlRokS4e7debI3ZNlR8TUsPuuhNxMNlMzuGQrWCh4FJ3GpEtbh4cRKjfKXTCWMqqatIR0QIOIlSrwMbTRbnP2/RqqgFhRzEdFW3BMnZqeq3naqhQZW/jkEBnJVlpFxdCKqoVISRMM96YgmGpOZGMlleypCQBVUdJEDIBK9qUtDfbpGDEAVtl/dDOAZ//MAOCX/PP144DUV99wV9MYombGoXzAdT5lNasLMO3MmvhtalVolX0RyDcz4jd2WhDMKI24DsiGAKAzl2gB0DR1n3Rd9Lqoh6CurouR/hoL5UNjwOmLAaBy35MJAFXpuIoYgJWtPF4Qmock1nZYEwQrEwC62rmIcPcLTQDUAyCj4+GLuIFK5gOlEFJZQcpxbNWj1qH5l6PPNoYeK48UkPtYfNqxvqeLkZrjit2J7BYryByaau4ywxja3+GXOobL0cuML0evTi5HO0x1t63nGQKgG+FppppouLE0upw7lgEJiysEB0Ga/Y5tRKaz0N77WBpN+bO3ER7LRNYlwJicaTj7yIV4HXKUvTOSj0HG9ggg/AeCYW3KW4SjF3e0xISuW7xMmQGSM0QvxJH8UT4/ZVx+DQDULNDC/bj8e29c/qlzjJWCflJFRX7H5Xt1AmWUnYuaWRzWyFqh9ah466p7dB0gS2Yg2EfyXQGx1gxbjaVK8nSuuI+HkwXcHk5SM8IJbg8nK075Qj6d7VeO9SPdTn3TXOgfj8WYhInCpccAAAAASUVORK5CYII=",
 	["key-round"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEiElEQVR42u2ab2hWVRzHv2caJDV1rcY2jWVOimHgIFuj2ZuIxCW+sSCLgl5HEr2pF1Ev7A+LXlSY1CIzLClGKgj2R2iGY4KKkP1xLtfAaCXWLFPXPz+98A4exjn33uc899zdR/eFMZ5zn/P9/b7fc59zfvecK83g8oYpamJAg6R2Sc2SGiX9I2lc0mlJPxtjBi6pkQBuBtYD24BRknEK2AR0VbvwlcCnVIavgNXVJnwVMES2OAjcXg3inwIuEAZ/A2uLKvwK4CPC4wLwZBENSCN+H7AB6AbqSvrWA23APUAPcCQF14tFEv90TKLngF7gpjI5O4GjCSY8XJQJz4UhoLVC/mcSTOicTvGLgDOOxPqB2ozidAInHXFOAo3TZcAeR1L7A8RaCPzoiNc3HeI7HMn8AjQFirkMmHCsDG15G+Cq8O4IHPdBR9wPizD67+cU/xPHXdCalwFvWhL4D1jkwbUGGABOR38DQHdCnzsdA7AhLwNs6/NWD557Y5a3VQl9D1j67MlDfJ0j4ZUeXPtK+o9OmeX3JfRd7yi6TGgD7ncYUOvBdaqkYCo1AuDXhL4rHHncMvmdmkAe3GhpO26MOVPBrpXPqB10tF8f2oBZlrYxT67vov9LJJ2Q9JOklinX7M4Zc17S2bitwDwN8I310pSRay75/LxnLgptwOxyE4kZxV2SVksalPRHtDE6IKnbGLPbMxcTdzEL2Ixt8SWLTNjlMYHWOjQS+g44YWlrBFqUL25ztB8LbcAXjva8n8s7LG2/GWOGQxswJsm25N2aswG2HeLBoJNg9Lv7TJKt6GnO8WGsUdLdlkv7Qwad66i/J/FojgZsdOSwZLrE9+Uo3vUkuDNUwFrgcIz4j4FZOYm/LtpxsqErRMD5KcTX5CTeAIOOPA6EEv91QcTXAZ878pgAluYtfluO4pfH7AYDPJB1wPok8TkJbwM+AP6NyeW1EJNMnPh3PXkfAXYCL8RNVsAN0bnh7hRng3uzFn8t8E1MwM2evO9ZuMajk6N+4EtgpMwT4j5gbpbiGxIOIrd48r6V8dH4X8DjmZeVCeJ7PTjbo1HKEoPA8qzFNyW8ytJbBk8PcCjACxE7gBUhZtkmYDgm8BspedYBZwMI31zpSY+JSXqBpL2SFju+stEY81gK8a2Sjki6MkU+RyXdJWmppC5JDZLqJc2LNkOHJA3r4g7z4ZDr6wLg+xjnXy2Da2vK0dwCzNd0IypyRrIqLIBjCcIPAWtUFET1uwuvePDZ8CywWEUD8FCM+Nc9OW24T0VEzBL1cgWcVWWADZvKqBR7EnaFcnlDxFd8uyPZhQHW+auKaMBaW6Zp1nngfBnie4ukuyZNUZSA51IWOZL0g6QnLjUDOlJ+b4ekZcaYP4tkQOnBIZ4crY67YnIz4ndJo8aY8SJO/LMzuANs+NYY068qQI0uc5TeAWOu2sCDd6xaDDAlQudIOpcR7xxjzERV/QSiF4reyYDz7WoRb7vda4HjFezQjABXV/WkEJ3ybvcQvz3Tbei85wCLEdfo4otN8xI4Cr3Oz2AG8fgfdlGs1EIUa4oAAAAASUVORK5CYII=",
+	["laptop"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB70lEQVR42u2azytEURTHPyMLlkpqFqJECqXUJJQRZWunbFj4AyxZKexYkhUrkbVSFDbKz5LYjFnISkmJhWTzLIyIe817ZvDum++3zub07u2ez7s/znvnxjzPo5BVRIFLAARAAARAAARAAApXxTm2bwTK/zmGW+D8LwGMAUNAXcheZgpYAKaDNIoF+BaoAVaBlpDP6gOgH7jKJ4By4AIoc2Rp3wD1wF2+NsElh4IHqAAW83UKDAK9Dm7wfcBAPgAMW/wjQByI/bPFgdGAY3+X53nZ7NL7qhkf7f7aZg3jTGVr52cGVBt8JyGc8scGX+VvZYLPIQTwaPCVKhUWAAEQAAEQAAEQAAEQAAEQAAEQAAEQAAEQAAEQgI/yUxpz/SJhTDMgBwCJCMSYyAXAVAQATPx0D2gHdiMy09uAvaAAdoCkwT8AXIc00DiwbPBvYqtwW4qGSc+stRAWRT/bumXsCdPztk72LZ00OwCg1TL2bb8AmiwdbDgQ/JttWWJo8FMeT1rW17hDm96kxf8lNtM1uQ6DLw2UfAMnjLoCqgwn21w2AA8GX23mVHBd934SoZUIZ74rfvOAM16vwUZJp0Cz31S4K7Puo6I00BPkW+AW6AbmgSNHg34CDjMxdGZi+tH/AP0REgABEAABEAABiKZeAPaLcu/dx/maAAAAAElFTkSuQmCC",
 	["layers"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAFCUlEQVR42u2be2hWdRjHt7yQL7ZlOlCTNBEWwmQDA0szbC1pJF2UkdXUVAjMgaFkQqTV0v4oKsVuNLuAFHNFRaRZqZmTvF8YUtRWVk5LlnnJe37653lhrPM75/ec3znnPZv7wgsv2/t7Lr/fe57n+zzP783L60Y3cgagFCi9nBzuAzwKfMP/sVH+16crOj4QeA5oIxht8tmBXcHxkcA7wDn0OCdrR3ZGxycC64kO64GJaXe6NzATaCI+NImO3mlyvB/wFHBE4cjvQA0wRF418jdbHBGd/XLp+AjgVeC0wvDdwFSgh4e8HsD9wC6FvNPAa8CIJB0fD3wCXFIY+gVwu0JHObBOIf8S8Clwa1xOZ09nh8KoC8BqlyguWeQ94LxC7075lvWMwvECYD5wUGHAKeBlYEiEBzAYeBE4obDjV2ABUBBW4UvijC3+AJ6MMzDJgSwAWpUHssL6QIDHlampBZiTgyA8C/hBaeuiIKFTFMK2AXenIA3fBWxW2P2AX6BrtYy2t6SQiJUBa4B/A3z4E+hlEuDHy+sSzbfhN2K4BT8Z47XwTsOH3wUGdcJ6ZIBkIy9M9low1vDhf4CVwPBO5PxQYLlPFqswpZggfASMT7HjY4EGCz8GmASssoyku4CqFDk+WbKSDd73E5QBvlSyrcdCsS13p/tKFfmLwt7NwFU2wu+Ryk3Dtl4ArkvA8WuB55W0uAmYGkbZBGCtQtFF4ANgdEx5frUUWbbYCFRG1dvTVmXfAvcC+Q5684FJ4ojmEOqBsji+ftmq7KTCoJ+k3Z1Rts8fAb5XNkdWAkOTCEAFwCLgsMLAv4Clfu1uoAh4BjiqkHsUWJKT9pg0QmcrT+q8sMuSdnKKhWqfVchpTtUgRZ73ncrydLsif2exJ00cxMTGtD1DG3wOTIjb+FLgO+AY8DFQ7tg1fkv5tTY9LsUOdpSLL8eARmCUX+T92dDKrnIwoAhYJgbY4oQQq8EOeqsMZK4FuNJrwaQ4g45Q1/nAbz46DgELw1LrdtPnlgBfKk07pkk7/R1OZ5ykuw8lXjwL3OZY+z+tSJ9TTIIOKL6mZ4A3gGE5DLjDxIYzCrv3BwmtVm4Ewv9LEnS8RHRqcACo1iipUI6nAL6Kc4wtY/evlTat04zlTIXQ28pLDnuBB72GoCH09wQeAvYpL1esivRyhfKaSxYHgXmaQqhDc2aecizXBtQCRXE+fxlgrlR5mkKo1iZzCG+olTW2+DHxukBq9fuArcrM8bpXh1n6+dqIvsW15xDVZoyWqYwG9UClvOqVa9fE0XWKqh+/QjlVtsVJ4JVYGx7ANdJwfNNlh4FCaZi0RuB4lh4XOthzo/i0zLdxAmzooLxRnvP8kIp7ATOA/SEc3wtM8xxk6mJUY0euYlpwc0AhVOMSZYE75K5QENa6EBfJUjViswk3eS18OIlrrEKslsiQ4jjwt7xfDNyQEE+pNuXfUzljWskx1ePA1X5dnDrls/qZ57Q1fscrRLcGdcD1cdHefcD0sEFLEVSnK4NqeHockvYeAp5wSVsRpdXo6LFPSgkamC53IS4WFx2Sp8dCexssLiO1n9U1aIhVSB3J0uOQp2MkVsAVIYqr+Omx5fOpvb3ZDMyRGJOR982K9a2iszAvLQgZoROlx0luhi3ttYUTPc41Swv7o6mzwjaL8zo7hFgttWxzxd/Xy+FGZIScbDLc5+maP5z02ZAyLqefznYjhfgP/jbKRzcZ3WYAAAAASUVORK5CYII=",
 	["layout-grid"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACvklEQVR42u2bv2sUQRTHvy+Kepp4IRpBjZfCYJHG/BAbMQaxFAsxlmJlIULE1sI/xJBShJMEW6ucYCmnFoIaf2HOKyxiolw8iHwt3Epm9mZfZkBy71u+3ZnPzJfd2Zk3O4DJZDJ1saTTDSRPALgM4AyAPgXjM4AagKqI/AgpQLIM4AqAKQDDCuY6gGcAFkTkndodkndIthlHH0lOBjAns3tj6BfJW9rO32Z8tUiO5DCPk9xIwJ0t2vlK1tgUquVwnyZitkg6X6UeT1suASglGnemSPY7On8IwNlEzBKAi64LOz0FTjpi3wC8VsDPOWKnATz5JzbmKV9TMEcBDAb0yWtAvyO2JCJXFWMJHeFyIBMiMq1gVrOvSMf6e7p9HmAGmAFmgBlgBpgBZoAZYAaYAV0q32Ko6YjNeBY2GjUDY0jM9D4B9cTGPw+MxVS9iAELABqJGjInIhuOZW8LwHwiZhNAteia+gLJzcipqQ8ke3OYfSTfR2Zukjyvsi1yhnYxS3d3Ypaze2NouVMmOmRfQAAcBVABsEvh4xqATyKyWtD8AfzdEygrmG0AXwA0RIQwmUwm7SCYDUg7AIwD6FUwVkRkWfkVGgEwpCj6E0BdRH5vyR2SwyQfRtgm+0ryLsndAcw9JO9lZba6HfbAtyUWOhFqR56UvOkwEdpH8m1kZrvwRChrSCPRRuX9HO5cIuZKnvGuhlxnWu11MEuJmdeKLIYmEg++447YqcTMiSIGHHbEqqKQp/4jgUwomY8CmZYRMgPMADPADDADzAAzwAwwA8yALpVvc3TNEZsmuRSJ66r/u2dprmGOhtbvM+ClIzYI93+/Gr0IZCIi81WRhMhBkuuJEhOLOdzHiZirJA8UTYvdTPTf/lAO81iicwo3VM8MydltcGQm97TI/3poaj+Amez9ryiYcQ5NmUwm03bXH01TyTeRORVxAAAAAElFTkSuQmCC",
 	["layout-list"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACN0lEQVR42u1b21HDMBDcy/APHeAOMBVgKiBUQEqgg4ROoAJMBYQKIirAHSRUsPyIGQYkEzs6IpHbmfwoHp200p3uIQEGg8FwwJDfPiBZAbgCUAOoRshw/vckIpui2CE5ZzqsSTYlTX5BHdQlTL6iHlY9cmuSq8Ty1iTnuaz+J6oI6WtFmdPQXI8iHISM3bs3ZkNxEem/C7SdKG7sBkC7CwFORJoR6sQtP9U+IbpQ4ySb81jEAbhT6v4VwP0QFdgXCQuSbWpVEJFl7L+sCPiyE/4MExw4jAAjwAgwAg4aWR2DJE8A3ACYJuzWAXiIHa+5+QHPPvGSOga4JXkeImGS0eo3CpP/itkQGxDaLhdjYtBSjaCqOxryzX3bq6LYYDAkPcaoA3CsMJAHEZn1yJ15vU0VEDkA94NjDJKNQlbG+UmWAZ+jc4km3+Y4edmSiArjagK/xuMGg8FQihE83cEIvhTJTuJS1WNpPsBUoy6YGwl9rvAbdEpVrYhc55IPiK3+TLMy2iN3pSi2HhIN1srq1eSeDwgN5EVGoNR8wN8boz3lA3LLCTZZ5ANILgNGZDlS30NoTAWMACPACDACjID9I7s7Qt5nT1qP6MtH5FYdXgCYK/TrAFyGbqtPMlv5uVL3dSwYiu2ADj+vuJ6RfFbkQDtRUg0hwPnExPcBpnJhu0jbO3TqkQCwHLIdNa/Luz41SFiK+8TG25bhBulgH0wokbDJ8cnMto+mptj90VRb3KMpg8Fg+O/4AJOFg3oMhGPGAAAAAElFTkSuQmCC",
+	["library"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACb0lEQVR42u2bT2sTQRjGfzG0Qi8Vb+LFUg/+ARGqV6tolaTRKsUP4dFv4UGKfgkRL2ItbQXBilYR20PVs7eiEtBD0UsIjwcXrMvMZpvdYGbfeWEO82R2En7svM/M7puaJCzHPoxHBBABRAARQAQQAWTHUWAJ2AE2gfkqAajl2AitAdO7+h3gGPDZyh1wOtUfAU5ZWgLjDm0kJsEIoHC0gIdJa/UYew14ACwAE6X+Ckm9mitu5rguq91wzDnnGXs/Ne59we/+p/2vO2DOoV3w5JpbKe0M0Ax9CYw5tEMOrQP8cuizlpLgi5x30NAAGAemgNGS5lt2aIeB48MIYAH4AWwAX4ArAwIA0Bg2AGeB20At6R8E7pUw7zbwKQQAUw6tLM9e8bjG2DAB+O7Q9g8wD9SBi1a2wq88dti0AqALPHPoVy0dhlYGYYchARiIHYYEYBv4WHYeCO15gGsZnC9ih1UAUAcuWQHgs8OGFQBdYLVMOwzxmaDPDk9YAfCkTDsMEUDbY4dmAPg2RX3ZYagAfHY4YwXA67LsMFQAPjtsWQHgywN7tsOQASx69KYVAG3gQ9E8EPrbYZcbTO/FDkMHsFzUDkMHsE7Bh6WhA+h6lsGsFQBZp8OTVgAsFjkdVgFAG9jqNw9UpUjKtQzO5bHDKgOoA5etAFjv93RYFQBdz6ZoxgoA367wCH8LNvoG8C7V7/CnajwdG8lnu+OlZ843Du1tQQCPgG8p7TmQXQ2eo5hwUtJTST8lbUq6njF2PhmzI2lJ0oRn3Kiku5K+Ju1OohUtfGxI2koKKh9LOtDrmlr836DxiAAigAggAogALMdv2SPzxdnKK8UAAAAASUVORK5CYII=",
 	["link"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADDklEQVR42u1a0ZGbMBBd3aQASqCD0EHo4JwKjg7sDnwdHB0kqcB0AB2YDsxVYK6Cl5+9icOABGZXls7eGWY8HlvSe1pWek8iesQjogoACYDsXsCmALYADpiOI4C3L0UKA7eBnooTgJfY0/sN6+MYXUYw+CPk4gxgEwv4jAesEYWtbxMCeCKqiSix/OydiFp+Gv4uu3i+O7r5aYypYpz5fk4ac9FsHK9DFhv4CkCysM1XW2GMCXyxsm3xdqWr/UlzkJZMOIVAQO5jhiw1IQ8h/dXTkwvjWJQhZMFvH+/mRBYcQymEGwA7AKlHogEA9ySddy4Cnr44B61l93kXBExFdy8EjC55xpj+8/M3TVODiJ5Z5CQsWojFTEtE78aYVpmA1CvdvMvbL9D1ZzZAUqXxjI2j0QK/XanpD0vFz4xldix2ITs5Z4mtKo9pajIySfCZQ9iouDgzxjVlqDbS4OemfMvb0gZAp0kCgMLSZuYLfM+SNLekaMHE2CIXBF/6At8uYZq3q/1a/e4A34oU2BngX1e0218rXBzge5FlVtPGspBQCYDPggc/6Keda4pGAZ4LXi19ZBXNzPNMinr0vsCnEmkvfVDBWkMdvGt7Wyxoq7OQsF2YjUd18DYv7ZqC57DBP+vCy1TBA/DDMevi4HPP29PhBYean7kaQw48D7aeOqtTLFzXRqeh7qZYToSyqxcCL7O9nWMjS9604AJbrQDei5saF4MbO0lplfpKAZQLMqJlhSk662a4Zo/85o8xpiDF4Pc4pX83PhI2Tnt+KmNM58PUFFN4scTTwMYei+YuCPDuoYdGgDGmCeJw4YYZMBWZVue8EuwBPAfBxoRwaZT6Gu4Mf4VAQDmxEqTK4OUPLYSFUO0B/O0vMDn0+04ZfBdKHVA5WfFiYwmSYDux2V8hfg7RgL+QxTaRUs8pjOz0nEMGbyyD3xDRwfH/dvAk9P81dhtJH0SUe7glEpyLE2ba2zJB0MXRcXI81YRGAHwZtXDgV6K7AnileSX2VhlROrKi0r4LHBopaXTv9iMeQX8BLLm8bGKY5nMAAAAASUVORK5CYII=",
 	["list-music"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACS0lEQVR42u2Yv2tUQRDHP3NEIv4ACRaJYmMEEUXQiGkEDWIXOVOIhdoIgpWlf4CFnYWFgiASRMQ0kcAVomirHMGIaCVaCGIi+APRQsF8bZ4gYdf37s54+97NB66ZnTdv9vt253YHHMdxHMdxHMdxehCLDUgaB04Ag4nkugjMAVfM7FWe8x/5A9w0s0bhN0maULp8kDTQRv71kG8tEqOe8KodAHbm+ITyH2tFgLKzKmAbakWAmYQn9w549q+C9QUro9kdSYcTLYKXzezjsgqQidAAGlScGj2OC+ACuAAugAvgArgAvUtfAv2A+Zbv68stgKQJYPo/5nFM0hEzm0llC3SjHzCW1BboAiuLOkraBIwDe4HdwDAwm/0edVzbutQSqxfIyySdlfQ1J9aXgG0q1X7APDBpZndzJr8RuA3sKxBzbaX+qrIvP9vhCpsq8zngHDBS9SIY+/rbgfOBoZ/AVaCZbaMtwFFgf9WW/6XIkh6N+F+M+N8vqwD3ApO58Rf/fkk/As88LmsN2BawPYk5m9l34HNgqL+sAqwJ2D7lPPMmYFsoqwDPA7bhNkRrlFWApwHbcUkrIjVgD7A1MDRX1iJ4KlLVpyUNLvE9IOl1xH91sGak3g+QtA54AWwIDC9m+/33OWB95B3XzOx0aS9Dkg52EPdt7OuXph9gZg+A623GPWlm31oVIMV+wBngQnYELsICcMjMHlamH5DlNiLpZU6sW1ntyCWVIpjbD1iSWw3Ykd0QdwGbs9NhE2ia2Xscx3Ecx3Ecx3GcOL8ArTEhrSbbb9sAAAAASUVORK5CYII=",
 	["list-plus"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABP0lEQVR42u3avUoDQRSG4fekEktBiBdgY+E9pLNYWNJ7V/7UChZqISwIWuklBCzstFUQYqVg47FJFWdB1uwyu+d7IM0k7Ox+CWcmwwEREREREZGArO4Ndy+AfWCcyb1+AzPg2MyeWg3A3afAVaZf2hzYNrP5Ki42qhkvM/7VbgC7q7rYKHoNqAugyvieX4CHyEXwyMyetX5JcO5euPv54lVEe/ip/9Zo6e7rMph62EmkANYTY1vaCCkABaAA+rIV/gDugEMz+2ow/w6wuTT2BjwmPvsKnJnZ9X/X2Tacdjh/meN5QNnh/JPoNWAtx/OAqsP5b3IrgvfAQUdF8MTMbof0Z+gyUeQutA9QAApAAUQJ4DMx9h4pgOqv6/xgLR2K7iHSq/OAJtQfsKD+ANQf0P5GSP0B6g8QEREREREZsB8sQV6BWWwkmgAAAABJRU5ErkJggg==",
@@ -2964,6 +3426,7 @@ local ICON_DATA = {
 	["log-out"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAC7klEQVR42u2bvWsUQRjGf+8lKKJoJQYEEQQFEY0EAoKCimAw0WA+5BARW0u11MZaCwv/AAVJYmISI0ZTCdqIoIilIoJC8MBOoqjk7rG4EQ7ZiXe5zbmzu0+17H3MPr+d95nZ2V3IlStXrgzL6v2ipCNAJ7AT2AoU6vxpCbhlZnNBEpK0TtKkmldvEv0V/mF+G/ASGIihrWNBAZDUBkwBO2Jqqy20HnAV2B1jWw+DCkFJ34E1ER99Bd4AlTrbmAfumNnjkIJvvyfILmVibJR0JcL8izR69WXAroh9H7MEoI2MqBBISRYkdUpamzkAkjrcZOw1MC/paNZ6wAiw121vAGYlDWQCgDv7hyLyaVzSYBZ6wBfgkyekxyUNpRqAmZWBIvDTc+x3JQ2nOgPM7Lm7kvzhOf5RSSdTPQya2ROgF/jlKYeJ5UIIAkANhP64IQQDwEGYqwNCMbUA/oKw6IEw0giE4ADUQBj0QLBGIAQJwEF44CCUm4EQLIAaCMVmILSv4DS2DzgDdLSAxVuq9yuiIIxK6jaziy0D4IajqQR1lguSPpvZtVaVQH8CK+Z86jKgQVVaCWAmgQButCwDzGxa0vEWhuBGTwj+0XUzu9lIiE1ELIuPJ3TRZEjSouc+RkXS2f8yDLbI/AlgjOhVbAGnzWwslRMhZ36yGfPBAqgx396M+SABSOpZwny5EfPBZYAzP7OE+WEzm07leoCkw878qrjMBwPAmZ+N23wQJSBpH/AIWO0xX1yu+VAyYGwJ80Nmdr+ZP29P+NnfDGzxmB80s6avOZJ+Z2geeBphfiAO86GEYBF45bYXgF63FBaLEp8BZlaS1A3sAd6Z2bc4/z+IiZCZVag+IBG7fCVQJiPyAfgQsW9TVqAg6ZRngaErbV7NA2A71bX2KD1zl5z1qgTcDupRWQfhnuJVcO8LnAPex9hWWADMbAHoofqM3oqVWyjlcDmGEugLJgQ9ENYDB4EDQFcD0+jw3hfIlStXrqzoN6rCUoQJfolCAAAAAElFTkSuQmCC",
 	["map-pin"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADgklEQVR42u1b0XHbMAwFs0C4Qb1BvEE0gjewNqg7QbRBvYG1gbOBtYHVCaxMIGWC1x/6mvOJJAiRlOwGd7rzxTJIPIDgI4gQfcv/LWqOQQFoInq5+fMfpdTwcAgDWAHYAjgC6OGX3ry7BbC6Z8O3AM6YLmcA23sz/IL4clk0EADWAE5ILycA66UZXyK/lIvYBQD8JqId49UPInonooaIBiLqlFLdNVES0YqINBEVRLQhoh8MnXul1K85PX9keKqShKxZUhVD/3Eu4w+eidUxtjGzjdaesQ65jd85JjOkSFImIgbHuLtcxm8ck2hTkhcTDa1j/E0OVtc7jNc5aLQDhD4pe3SsxSzG34DQ2XJPqkGLnGt+Yk5YpxjwNHXdGc9dD0aXG5p7PQDpCPnolMv7TYCOt4DT4FuA3iZ5FADYWwYpmF4/CTm/nuCcfUwALhLvG+PPE4/CWhgFl5hbn+gwwqTKmMryHIexVQwAdhLlHsI0mC11Z57aw/IKoZN2MQAY2/tb4bIBgPexsDbLxZbQLozx2iR5wDKpmrFHQwhcK4y4WpKnnoS4dJ7vbSHLKWLY3tlMnJMYgBeB3rHM/aGU8kaAeeeDqXPy3J+ExvgMWU/0UMfU6ZuTjgHAp2AyYwY8BwDwHAn0zxgAtILQG8YmyCQ1mgEwV9oYAJAgAmzZt2LorgJ1+hLv5G2wEtLgIZRBAvhpI06M8cYodxUjAsYGf2WEs42EHAxFfjXkR5vPR8dv9j4maInKIUYEiM4CnqpNiHQ+sKV0PQSEMUPeI1RyfcKqNhl6Hcw6Y9QDdEIQuMbrHPUAG7evAn7fBBjfcCs6jtujdezdoLOUr0JqeKUlXL+eFMsAfdpSZusotjiKDpVAlzalrK+PFuipUt4ch0TBijKLY3fqUg5aZr2MCD//p/O+JwpYFeKIc9hk9z4jCnrkuxvsZ/G+p0yWpVnBUWluciegIfcVtSP0h+yJ2MG/+4QNEv2szREBS+EcMx94bpgamks8S+EccZzzYkI/YFeI0rzkacYqaQniaWerlqY3NzMTecoTWTUtTRjNS0WALmcnGi1VGGWwcqLnO2RsxpqyXw8SEDzGz9KMJQWhCO30ZnScF3RPwjColLx7byAUnuXwZp77D/u5qsKPCsLjGC8A4fGMDwDhcY2/IUu15T9MspMcNWc00L8b3ZbTP/Qt3xJf/gKE05cOPvchFgAAAABJRU5ErkJggg==",
 	["maximize-2"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB60lEQVR42u2bP27CMBSHfw8xdmBBdCtjR/cE7RGyMRJO0ZWVjRuUjr0FB+iQrRyhFUOp1P11wJVQlT+Ok6h+z/5JDKBg831xHo4xQEpKSkrEoVA/GDMbAEsAxrOJKwDXAI4ANkT0IuasMLPh/rMo62sUqIN8gDYfJQkYIlNJAnYDtPlR9uI4yMpMVDDznb0UXIrgDMBtwzHfKsc1M+eORXCvrgYwcw7gqUsbo5jhxQpwgD+oFeAAv6qq+DEUvNwet3ctgurgVQpoA69OQFt4VQJ84NUI8IVXIaALvHgBXeFFC2DmrCu8bWdb8t5t6PBzZv7sCm/bKltSM6ELeOgD/o+ErX0YCcPf9AUveca3vgA/MXM2+OpTiCMBwARAQUQnpKSkpEgvgsw8B3AD4IuIiqgM2+nt5QxvHRN81Y1NMDOzccP38dI+fW47dBtWbycSp6WmhzP/O8MLXoD37aTD/Xwm4dr1WlDoYzFDrAA18D4CVMG3FaAOvo0AlfCuAtTCuwhQDd8kQD18nYAo4GsEvEUBXyNAJXwfe4RWRLSLVYBo+MolMVvx7xveewDw7tBH4bOe8N814HWA/fpG0iUwG6CvXJKAIyJJlYDNAH0FWSyppg4scP6byRTnrae+++0LALvofg9ISUlJkZAffL7O/1TcY9IAAAAASUVORK5CYII=",
+	["mic-vocal"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAFG0lEQVR42uWbbWhXVRzHPzPLObORzWw+rEexXFZI5VPrRSHUQLOaRFARPcxKTMgY0QujB18kJZUhCdUbWUE2LTCrDbLC0Fm0LEXQHDZtD2mOplbW2rcXOyORe8695/+//3vv2g/um/M/5/fwvef/O+f3cIskMZRpGEOchg8CHccCZcAY4ARwBDj0fwagGJgH3AVUAyMt87YD7wHvAp05S5OUledMSUslHZEf/SPpTUnjcpGbFeNvkXRA+dEfkpb7yi5K+RQ4C1gFLI6R59dADdAWZXKaAIwEtgLTC8D7OHCTASOzAHwIzHf8/h2wCfgSaAX2A+OBCmCGMdC1vgu4NvTESOk//6Ljv3xQ0sKIfK6UtMXBa6ekkqw5wascCm+WdE4OPOsk9Vp4rsgaAB9bFG3Kk+8iC99jkkqzAsCFFiV/knRuDPzXWfgvta1JOha40zK+DOiOgf/jQI+H3MQBuMPi7d+PiX83sDJgvMrEFKkDMCNgbH3MMjZYxq9PG4BxluCrMWY5e4D2gPGJaQMw0TL+cwFkBV2DK9IGoNwy3lEAWb8EjI1PG4Aqy/gFBZB1dsDYyTQBmAwsSRCAIJ6daQKw0ZHZmVaAtz8lSwCsBiodv9fELG8hcEbA+DdphMO3AptD5vSZN/ZjTDJ3BQD+q0msJroDJgDvRJg3DFgek8zbLbutIel8QJGkZktgcsIy/lieMqdK6gng2yfpiqSjwRcsRh6VdK8jH/BUjvJmS+qy8Hw76XzAHIN6EFWbOVsdIGySNCmirGJJz4Rki8cnCcB5kjosirx+yryLHG9sgFZKusQiZ7SkRyS1h/CoSTot3gjMDRjfbRKUf54yVgl8BZSG8PzNxAuHB04uE9kVh6x7FHgjycrQMsebsDmhKZLaFC/9Len+pCtD1zkUqg1ZO0bSjpiMPyppVtKlsdGSWi0KbYjIY7ikJaa8lQv9JWm1pLFp1AYbLEq1GXCi8Lha0r4cDO+WtEbSpbnqn295/GFLnq/P3PGPReBRC7zqcGongW1AL//1B3SastonebvtPN78ZY4tG6VKWyKpPuQNN4ed4/k+uS4cIWmXRekvzFU4rKS1N8T4V4xvIIsArHV44bBGhYck/e4wvEfSvKSKNbksWuBQvjrPLf+9uSWSVQAmWCIuGW9sW3d5hC1fb+72ZBmA7RbldzuUr41wvtcqpfYcn8n3OXpzJlsitbAt32ocIoMBgG8tRiwKmFspaU+I8Q059gKkBsDxACM+D5j3QIQt/0RW2vN8Jh+0GFPnseUPmcCJwQjAaw7DnjeO0EWNksqyZLxvQqQMOACM8rxt9wHPmSdzrek+wVAv/r3F3fT3/DaRUfIx6EFghMf8HSZP306GyacwUuUxd5XpBsm08b4AlFgSlqcnP+fQ3/TkQ+cbwMqz/BcI6r5qNmWt2fT372/z4Hc3sAC48bRy9mFgJ9AC/GD8R2fBEPA4MlYEHG37PI+dUklPS+r0TH2tNQmYTMYCcyOsHSvpJdO1mQ81SJqeFgAXOxqSbWsqTEUobtrokXCNNRz+1KJQi6T5Zs40UwBdp8LSy0nfBAFuAz6I0QXtB9bQ/2FDCzCJ/g8orjGnySzH2s+Am9PICjfF8Pa6JC2OkPSc6ZBXl1ZOsNRRCYpSunpW0ihPmTeY0HuAPko7K1zu8AdB1CHpyRgc10zzwUUq0aCtqnOP45q8BXgLqM/qVTiu/oBSc6Obam5tez1vhYMegEFLQ/7r8X8BBMvCrvOgRCAAAAAASUVORK5CYII=",
 	["minus"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAj0lEQVR42u3UQU0EURBF0VsoaCc0DkYCDkAaOEACDhicjINmAQLohEmazDnrWvz36qcKAAAAAAAA4AbMnuFt25bqqXo8aJ636nVmLtcq4KNaD77U88w8/Hb4bkf40z8IX7X+vPVvC3ADvn/Bubo/eKbPmVmvVcBSPVenajlY8Ev1Xr3sOYIAAAAAAAAAN+EL3sMd42H+NtUAAAAASUVORK5CYII=",
 	["mouse-pointer-click"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAC8UlEQVR42u1a25GjMBAcHAEhEAIhkME6A5PBksGSgclgncGSgcnAzsBcBOYi6PsZqnxeIQlJ2JKgq/jxA2mGpmemgWjDhg22AJAD+AFwBnBYW/AZgDv+R72mBFT4jVso+985OMcg+CwDkK0lAd3E5/tVJCBJkp6I/gi+KgxupxTAMTgxBdAIdOBuUEnCFFMAe4hRWAQ/O4nvToIItUXwANCHlIBOEMDFIngAqELvB6C4bWTBh9VMcUf4jKvkystQhtoVlg9BDADyGVXDj+D5Sn4COJh0c/z/wqBsehG8SJQu3Jx8OF7HP9oDaKHGmRmSOUhCw0fucymLT6w0RUwXaWxJqAH0MxJQSM5VPAw3n6GMyI9qXrEuDBPBD1MMkLDpx6WgvjIhBbPjOjY5kjqfKbo8ALgxK+K6hTgBp5k68q07OYakIya4cQP2MlbsFjrvYPi/jIhORHRjVuShMiCTiOZcXIJ81iDpKjODUgsW1aM3pZRb2SMf+QybrH76TWvAiveaphPBiZLQ6zw0eWDFYCCaXy9lhcTGanRdIgB7RTveGbBi+QZL4eGJEpBO/LbVFNLGkBXuGywNAzOf2RRlmuumzIqrASvclFKN4EtFC+3E9OR9nAxYUdsEn5oGrxDDu+WeKldTq2oxawNTIoalA3YWmrNHbbpAZ7t5vmIi2p4tWfDBfchFIwGt6UKlo/vXhRgeWNhuBoJY2tBsbFJ608dVkochjUbgXxr+ggwD+YCJUnaXuEqpZeDgW9ib+aGcQ09DX2HgoGvvxmmJGF4MbbUx4JYrjf/+gaSs5pps6VlQyyANE4lZctKoGn0snmGnEsOJUncKxRNUQRRISkTlqBXsDz6ji8k5HqbMEomblMfCACIiUQM0vlsgGlz+JklyjYkBk2I40du3FBtmGqLVEnvYvTkHc1S9oxihaWosNszsPMiBDguuMSegWS39NcySxeq/bwnIJU5v3FdfMf0NQb1X5IgJ43tJJW3YsGHDhmXxD/ARg9SsUOzOAAAAAElFTkSuQmCC",
 	["move-diagonal-2"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABkUlEQVR42u3ZsXWDMBAG4Ds9BqAkHSMwgjdwOrd4g2wELlMlG3iEJBskld0lG/xpcJOHHwhJgTvd/54ro8P6niSETGSxWCwWi8ViyTPs2wDAgYgqIroOn6X5YuZPUVoAzoiXbwCNpM4fED9va/fLeVz7kOD+jSSAa4L7n3IGOBHR09oARYKaR2bupaxtLkHNDkCbM4AoBJewtgiEGABHLdNhaiO0G9vJDN+1ExueVjVAFghTAOoR5gCoRpgLoBbBB0Algi+AOoQlAKoQlgKoQQBQA/j588N7j/YqEBoA77fOAyg92+vfMf43AoASwMvtjFHEQWtMBACvI6fNdTYId9ruspkOogFiIIgHCEVQARCCoAZgKYIqgCUI6gB8EVQC+CCEAhRbBWDmfnjZ7O5c0s18GVU/EoJGgNs6wPBH6zFVfSdhFKREcFKmQiqEYgNzvBwWusc17r+Fp0BPRPvINStJU2CfoKYogI8ENS+SnvPNyGlzSM5ei+tGEGoiqgOHfEVEF2Z+JovFYrFYLBaLZTK/D15RDAfisNMAAAAASUVORK5CYII=",
@@ -2989,7 +3452,9 @@ local ICON_DATA = {
 	["shuffle"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAC20lEQVR42u1bvXnbMBB95y6pWKazuqQzU6cwM0G0gZUNOII3iDOBtEG0gbgB6QliF6lFNU75UgT6ok8xAALmD2DiNfokk8C9B+DuAJyBhIRoQfKa5PUciWcka/5DTTKbkwAl/4eXCBeRapBrftvNYiaQXFKPei4ibJIISYQkQhIhifBCEeQ8wwJwA2Cp6aNSnw2ARxFphsz2AFwBKE7ifJdR/ADgneZvvwB8EpFHXac13VCTvOmZeEFyTXLPYfBk6tgXe5J5D/n9N46Dsu9UOANQk1x5ks8B7ACUUzuRpgd1Vx4jX3M8PNmc4Eo5Hp3DWQC4tPD62MVBqv52ms3NEQfldLvivbcTdBi1hS3kdGznztBGQ3LpaNfa0l6GATx2q+nw1rbuDcZuPGwZl3yH6FFZ3qujJ2+ZylvD87c6Y6Mjf+LJTyNIS7Iw+A9dklNER/5MhFKN7sLw3E5j8F205B2MXmkMfnAx2NBO0OQzw9R3DXebqMgro39ojN56tFXGRl4XKlsfo59xukGTz0j+tO3KXiBsgZBhiPnVHI6oTOnuYg4C1D77hNdCvtTF/DmQ7y3dtfQTZn1AX+muwylSOOf+hpvbti8j+6wPCDbd9UyFpxXBYNh2pFk2nQiWdHdheGet7gOynsSeRgTXdPeZUdxHK4LPERfJyvc0OSgRLOsxdxSAJNfRiKDI7z2PxU3ChS2C2uSYzuQ6HXF1MPrL0CK41gcAf6/GTDu5A4Cia+2A8hNXhkdauF2NOdUHnAtQw3xP1wWfRaRyGLVMEbzEOPgtIm+PXy5OY/ILyR8AfHUhDwAi0qoZdz+SAG+GqA+4B5CLyMbnZbVcCgDfp87lXesDKt+iCIuD3RguXSetDzhO7wZAIyIPAw5GppZkrmzJ0a1Iavj6gIAPYuK7LkvkE/lEPpFP5N3Jr2ZL3rLrcyYf63+NNZp0vFB7C7z2GRBPfcDAQoRfH5AQOP4A8FX/rvyNFS8AAAAASUVORK5CYII=",
 	["skip-back"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAClklEQVR42u2avWsUQRiHn7ms0UaiqKAQkFSKgYgJikIUA4IfoIWfjfoHiFiIiKClnRBBQSurCKKFhQkiWKTwIyLmFPGjlGChqBGDpDDG/CxuxFM28XLczuw685TD3b78Hnbe3ffmIBKJRCKRSNGR1C5pYYjBV0ga0m+2hhR+u6Qx/cnXTO8ESS2SuiQ1ew5/RtOzLauivZKmbJFRH7ebpHmS+jUz+7IovDal0GvH4dskvdC/2VvrNUuzqN+VstbmMHwPUAbaa/i4yULA55S1uY7CnwDuAgsafe0k512+GbgG7M6qRpLj8K3ALWBNPV/PYgu4DN8NPKszfGY9wFX4o8AgsMhFvSRHwecAV4BDLusmOQm/FBiY5lH7fwuQ1AncAZb4qF/yHP4gMOQrvDcBkhJJl4A+wOtQlXgIvxjoB9bnof8kjsN32P2+LC9Pn5LD8PuBx3kK70SApCZJvcB1V8NTbraApBa73zfmdeZIMgy/CrgNLM/zxFnKKHw38MhjeO/T4ClgPgUgKwFNFISsBJwFxoMVYIx5AKwDRjzl8v+DiDHmFbAauBfiFvglYQzoAc4HKcBK+GGMOQ4cAL4FJ6BKxA3bF94FKcBKeA502Jek8ARYCZ/sbHA5SAFWwqQx5giVX4AnghNQJeIqsAH4GKQAK6Fs+8JwkAKshPf2TugLUoCV8N0Ycxg4BkwGJ6BKxEX79jgapAAr4T6Vk+GndV6i2MfjVsJbKmcHNws5DTZIwoQxZg9wEpgKZgukiDgHbAG++BTwIWVtxKGEQaATeOmrBzwEnvy1dsHxnfDGTpQDjeoBs2utlVPdTZI223M+b0g6PcMfJXcQApJ2ShpPEdBKKEhaKWnYBi9L2kUkEolEIpFIDfwEzZWtBA4JSyQAAAAASUVORK5CYII=",
 	["skip-forward"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAChUlEQVR42u2azYtNYRjAf8/MGDYiZqOmhsiCGh+TmShCKcxskI8Fs7HDimzwB0hNFvIPoHwsbNgpFsKQzyGWKGWB8VEUMj+bOyXGfJi555zrPb/l7Z77vM/vvO/z3Od0oKSkpKSkpKRkFKhb1Pvqe/WsOi+l5Fv8k0/qhlQEdPl3Due8tka1TZ1WzSDbHJ5L6pQckt+o9lfWMKAer1agrY7ME3V2xgKeDbGOZaO9vm4MsWIU31kIPFDXZOhgzl/WMeECRst04Iq6PyMBk4f47HOeAgDqgR71nNpY5OI+FgH+w+9vB26qzf+DgH+lDXiodqQqAGAmcF3dU8sCYpyxJgEn1VPqpNR2wK/sAm6pTakKGKwLferSVAUAzKrshJ2pCgBoBE6rJ9T6FAUMsg+4ps5IVQDASuCR2pqqAIBm4I66KVUBg8PNRfWYWpeigEEOVqbKaakKAFhbqQvza3UanAhagLtqe6oCAKYCR2p9GBovAynvAICjeQvIq2C+BBZGRG+KXeAqsCginqbYBnuAdRHxsZpBGgqY+FegOyIuZBGsaAJeAZ0R0ZfiLNBbOe99WQYtioCTwMqI6M86cN5H4BuwOyLO5LWAPAW8Broi4n6edyAvAfeA9RHxNu+zl0cNOA0sL0LyWQv4DuyNiO6I+F6U1jOWIzCeYehdpb/fLtq/riymwXvA4iImn8U0eB5YERGvijpwVKsG/AAORMSOiPhW5HGzGm3wA7A5Iq5RA0x0DXgMLMk4+aHG5TfVEDDSM8HLQHtEvMj4Jv7+qOwGcHPCo6idw7wgeSjPbay2qqvVVWpDtYI0qV+GeFl6PamgdqjPK8nfUOeSIuoCSkpKSkpKSmqdn2outFVqghs9AAAAAElFTkSuQmCC",
+	["smartphone"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB8UlEQVR42u2bPS8EURSGnxGRZQvxGYJKQ61RiU6wPhuNQqJViNqvoBMFsoXKZlmlUMh2IlEoRGgkhJigENGsYqcQmZGdZWbu7rwnmWLemblz7nPvOWeKOVahUCDOVkPMrfafxmkE+oFESH5/AJfAW5QA2oA1YBjoiGgB74EjYAV4KmcAq8wcMAFsAc2G7GQbWAAOwgAwCWQNDelpv775BdAKXAFNhgKwgT4/4eC3CqQNnjxOSG4HVQY7gBEX/RYYB5KAFdKRdELx1sWfUaAliCrQ46HPA/mQV/rdSXg2cOpyvRt4/u8d0Omh5yPc8uceelcQIZAwMObfPfSkPoUFQAAEQAAEQAAEQAAEQAAEQAAEQAAEQAAEQAAEQAAEQAAEQAAEQAAEQAAEQAAEQAAMAJACdp0jFZUTtRG9dwbY+3Y+B8wCmbjsgKkSNeWAagWQLVGr2hyQofjH+bxzngZycQKAM+FcXEOgInPAi4H+13vor0EAuPDQByMEMOChnwUB4AF4dNHTwNgvqxGENThJdMfl2h0l/ileThLcAFZ/aL3AoUFhsennZr8tM3XANd69A1HbDcX2vc+gqsAnsGRwUl/0M/lyy+A+xXYV26CJ245PJ34ftP7QO9wOrANDRNs4eQwsE3Lj5E+r2NZZS93jMbcv1/Jbo+tar5MAAAAASUVORK5CYII=",
 	["sparkles"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEQklEQVR42u1b0XHbMAwFc/6PNog6gbmBlQmqDeINmg2sThBvYHeCeAPTE1SeoMoEViZAPwr1VJoUQYmi5DS4013iI0ECIh4fQArgU/5vEVMNjIgpADzQv29CiCqQXgkA9yF1hjY8Q8QjXssREbOBuouWvgs5Y1bGS5qYTXpPmnTr8nNuDjigWw4DVtaVzMn4BPmSxHLAXUQfZCO1HSQxHWCK7TcAeGe21d/4po0nAHC0tPsHEyYDRkRUhhWqbL87dK2xv1xoC46+ApaG3xQ9nLahQiQBgLgOIFAzAVtJz9UkHUBYDpxSHXsFyA5DKs8+AAB7ADj3nMt3IcRfBy6m3AEaqmrZrTJLeIAQogYAqTFHCQAvhuaP7TffNn5qAqQcAHnwHGPWPODBEccls8/N8gDZwwEh9uv3yR3QkeFVlr85fU24oAzAuJ1DDvDMiU0LaXnukW88I+IWEfO5JEF7g2GloV1paLf9CBiQMonMWDgwuQNWTGMrZt/bcQAirj2orPLUMW9BxCdL+avu6FNbsrenseYpAhm7oniVFPNd29cPIcTaBpgA0GWsolApAaAUQpyiOoAytCUZ2BjrC1SPtGfb9v2jp76y5RQFAGfKFYansIj4lSovR0c1lysFY9wiwDgXmvOGbEh8DJeI+IrhpfCYQzHC+K/OchhlVJeAg9ZEhLIeKzCjvnXA+VydOwht0OPActO5VeUpbbHeM5+QrWc5QJ0SQjxeOYAKhb88FJ1axlahjPV0Stpyig9p+tIUYxYOytqklA3CNm+2mppnmBxOL7FxSLNq7i30vOIyQdSeBOYriWG+PB7QIwSUFgKnyCGw0kIg6xMCOgiqgQlI2SImKpRTyFg95vvKSQiRdXGA0NvObsA2uBthW3ZyAck8xvaVjYfxmxHGP3idCxIVzomVqUArIxYVrmnOBdmQhEyGpJYM+ZKS0MnQWUuGSp9kKFQ6nGnp8GqkdPikpcNRyZd3NchW4Ojoc7Es55utCtnO8TML6pvkNo1vGcaq99vA7yNUhU/McnfK7HtzDjAlTkvmb+XYk1swa4ANwjcIfPbICEsDskvmqqimjN3cQUNfOLW2DnDLfNrENDzxqAmyrp250N22W8Sw14QBBQDkzP4SAHaMlXB2LHnJ7DOuA2jJffPUIclpvkAoZxf/lrs6iIhVx6XGRlLfBMcRIsUUDjDJ3gCOJsl7AGFqueYeDQDv2nUAS5tCK0YePMiNaz+XHcXYMoYDFlpB0VR95cZi0lHBrRHx3VChtTntLcj5nicIVh2pri4PPUDL9EYzSzEzGgDeaW/adK3spXECxewO+Nde2qIs9HfJbBsFBPcDSlAJg1lyJZ/KAUnP2l/O1D3aJzOhcwCvaquH7tE+mhrDCZyVsPXU6zp3qHEu3/rRkrWdz6u+RIVIke3zmejGC+akU0L+YPftWzoB/pwtVvApnxJdfgPTtYHSTEZ5lgAAAABJRU5ErkJggg==",
+	["speaker"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEGUlEQVR42u2bW2xMQRjHf+vWboIEjVRCoq4tWnVLJXjhgbgEdWmIO28ixINLIhGCiMuDW5+QiBJeiEvwgBRNtNGgqF4SGglJQ0NJQ1zHw5nEWjO7c7pnd+fY/SeTdL8533dm/p3zzfd9c05ACEEqowMpjk4x6o8AspI8hxbgWSIJ2AqsAIZY9s9sAE4A+90oBVz4gIHAeWCM5au6CigBXnlJQBbQCPTwyaP9FsgFPnjlBMt8NHmA3sBJr3aB5cBUHzr4OcBiLwhYo5FvAPoAgSS3PsAWl2P/AyFEtNYk/sUBA71Et6OKcTZE0zNZAf0VskcWLvlqhaxfvCLBbxYS8FkhC6ZDYYsJmAmck22mX3OB9mIucCHkdwlQDFxMlRUw21CWTof/VwIuGcr+Wx9wEZgFLAnJNa6mEgHICV9N1UcgHQekCUgTYAcS7QRHAzOAKTJTywYE0Ay8AW4CV4DHCRuRQZ6twgKXufoEIcQjYY4HQogil/dYqLEVcz0gFnQBTgEVQKELvbFAJXAc6OxXH5AF3AWWxWBjNXCbOBZk40VAELgFFHlga6IkIegXJxgAzgAFmv6PwA2gDqiVsuHAMGAa0F2hUwicBub7wQmuiuDcngghciLo5gghnkfQX2q7EwwCuzV9ZcA4oCmCfhPO0dtZTf9uIMNmH7BQ7u3heAKsBL4a2PiCcxhTo+jrB8yzmYBiheybLHn9cGHnB7BIo1NsKwFB6cTCcQWo1+jkyqZCHXBNIZ/u5Y7gJQEFMvAJR7lClo1zkFEnW7Xm0SnXEJ1nIwG9NHLVJNbz93sGY6TMRDfSvZJKgC6mUL2oMMpQ9lJjM8NGAt5p5CMVshuGspEam29tjAR1gyqUyVAoSoG+/F0ULTVcFcj02bpIMCCEaFVcWyP73B53dxRC1CvstWjsJT0SFMBlze6wth321gFDFfJL8l5WBkKlGvke3L1PmA3s1PQdtjkSrASuK+TdgPuG6XERcE/qhOOyJkS2qh6wTSMfJEnYK6O/jmHOOA/YJ68Z5NK2dTXBHQZ1v+8yPa6Vf0fDtnjUBONVFd4ODAjZ5nRbcL6hvVPALr/VBJfh8r1dDfbJVBq/ESCATTgvVre2Q/89sBTY7OW2l0gCQpdvDnDIkIhW4KB8hMriPbhEnQy14rxZuhGYBEyWoXDoydBrnOpvBfArQeNK+NHYL+CObFYgfTpscM0nhSzTwrlkGo7dNQE1mhTXNoxVyB57QYDKyEZZwuptwcT7yu12naLvYTRlk09m8uUqCPjs8f6Jc9zWGOsKeAoc86F/OxJt8qYrAKArzrFVlk8m3wwMBtq82gbbgPE4n6TZjiqcI/U2k4vdxAEvJAlbTJZWEtAgneF4OVYjBGL8eLoA6Jnkicf06Wwg/fV4iuM3T1LdmtN5x2MAAAAASUVORK5CYII=",
 	["square-fill"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABKklEQVR42u3bzVHDMBCG4VepwB0QKsAlmA4oATpJB5lUQgvpAKUCoAN3sFx04JA4aMghkt/v6p+ZfSytL1owxpgVJ/31xojYAk/ACEx3Ws8RyMAppfR1kzdGxBAR+2gv+4gY/rUCImIE3oFtoys8A28ppVwNUPQ+Gi7+N8JzSmk+d3Gz8OCug+IpPWtXtQJKw/vsrOE/nmuMmwW13jLWbIHVA0xrB+gxw9oBEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAgL4z1wAcOwTINQBZgDUDlDO1h46KP1waoLh2XD4DD40XfwKm6uPy5YEX4Lvx4l8vFX/1N1gmLcZGt8OhfPnFflY7NDVyv0NTc9myGcg3G5oyxpie8wP2I/WfPpTeyQAAAABJRU5ErkJggg==",
 	["square-terminal"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACF0lEQVR42u2b0VHDMBBE9xgKcAeECnAHOBWQEkwHdECoIFBBQgWBCggV4FRAqIB0sHxEH54BGSlRwCfffspRxvsknU83EmAymUwDloT+kOQIwAWAEkDVUz8rAA2AtYhskvwjyYLkjPo0I1kcNANIlgCWAEZKZ3gD4FpEmmgAjt6bYvNtCGMR2f708KSj4zQD83Axaxo1A1zAe/f0ee254UtP+3lwYCQ58QSWSd+HO/bdTzqmzbeRF5Gn3n/Xd+/4GujJC6BCfooCkKOKoQPAUQC4THHpAs0byWpQAAAsAExa6+yFZD0kAFc/tM21QEgBYO1pVwEhBYCbjme9h3AwABFZAbjWCiHJZ1BEFgEQymwBBEKoswYw2ESolRDVAOa/5At5Aggw31mW0p4KVwHmFzkvgZlW86kAlFrNpwLwrNV8KgA1gMfWvmCsxXyqVHgrIrXsVLrU2BcwS1cziNEnyVv1iZArtb90xAyfCgDTY1Wk/zITHMFTlwtUpR3A9sD+G9UAXCZ4t2f39bFS6dO/jLgiMiX5FLsUugKrKgCtmWDbYQNgAAyAATAABsAAGAADYAAMwL9ux30AVhkCCN+EDemg5D5HZfs+OypP+3nUHQKS98xH9976RAeAwq2bM+Vrfw2gij4u7zpMAHwoN1/7zP/6GXTlqxLAg0LzD27kO6N/7KWpEv29NLV1S7YB0CS7NGUymUw56wvpysZ9NRJtDwAAAABJRU5ErkJggg==",
 	["sun"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADB0lEQVR42u1b7ZGbMBBdPPkfOggdHKng6CDuIFwFcQl0YKcCcx24BDqAq+CuA5QKXv4sE0KEjD6RA2/G47HHknafVk/SsibasWM1AHgG8LxFx1MALf6gBZBuiYAT/sVpDVsOK3FwlHxXbIkAGdKtE0A7ATsB4fFJd/siou+8Xl+TJPlwaIuw2FUytkuwXcI5U5K9uwdQrr0NAijZFr9nihmjYUICk9mN+uhMjGbnndi0ZLAK8zCNhAJAYTHzc6h8EJABEK5J8OC8YE0IPnDvbeC/bcgnaz7sRAQPPc9LUfsckCRJTUQvEW7pL2xb0HUoJmsvXdg2HXIBo5dO2+m45SqUszBW/EoX/PYM4F0Rwu/8m2wBCcO4GcUMdvwKfVyjd86BYt9DDyB/VOdLuEP5iDPvGl4iIfGx5omoVWR43ojoRkQNEXX8Xc4psSMRPSlui18d30C9zH6tmMXLAnW/KNrXsTufKYw/avRzVPSTxUzAxWTmffcVkgDZIaezSMB0kv5abymxUcprLlxvcyknbpvNtNFX5yQRAG4SUcwBpAobjOwfOmgXbEetIrkhQ2ERUVp9mth/GA/G29E95JpOdRYR2umQZWL//lxgtOYaPqTcwxv/dilsTnC5hmYY2T99LlAQUcnvqeQk1hBRrRmuBbczQWEwlqn9TrbBD5noGKa80xlR67wsAUe4zYSxSa6wmlkCTbSCsvmj8ILL0Fm1HDjszyEvQ76uwx0RfVYI2HAdHlT7aXQdnlP+X0SUR38dfrSEyJ4SCxAJwsJx8bBJ0cnOUBs4X4dQ/MR2honoG3/8qarMYGdOLHRfFPnChoguKrHjneQHf3xdRRgllRm95uOtYvLSadu7qFTxIXBVgLErl0J5MHGeiK4Rys117doAgTAFEutUqvDAfQx79SqVKp6KpIz/L7BGkZTrMrnWQc4gaJncNE8vEE+hpLCtOdQhobStzADQSAi4WepTxbalFDtmCFgl07OnxXcCdgKigdgSATLFbzYTdq7+L/A/EFHYPD7fscMevwG2QHDL0dL5QQAAAABJRU5ErkJggg==",
@@ -2998,7 +3463,6 @@ local ICON_DATA = {
 	["trash-2"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACOklEQVR42u2bS07DMBCGfyMWLJAaCSTYEW5gTkCOkBuQo/QG9AaEI3ACxAmaGxB2IIGaSCxYIA2LuiIyTqhbO3HaGSlSH8nE82X8+xUDbPttoo+bEFEM4MLyshchRDlaskQUEdEdES1oc1soH9HYgk+3DNwEIh1T8L4sDVoDVKo+A/CVshWASyFE5crhgeMCzjwGD+V7FnL6m+p9QUTJBr4Sde0fPQg1+Lil3iZb+ExafMYhAjAW1oFfp1B9a8DobO8BHHakngRwA0Bq558DOAbwro6mQpv8PHoo9y0RNZvCU3V8AngF8N34rwBwL4Qo1u4HqODnO/awr0wQ2qpAtoPZnrEGWADIdzDW3GosoHQga4jgRBPElT1pInkG4Ej12z8cFf5EiewXgDdN5K4N5xcA6sbnvE0EB+/oDN1RYg1gAAyAATAAHgz1MFmC5bpA/V97rPofE4S2LrBpP4CIpDZVNu04d6pNhcuhJ0xcAJgbLpMtoHSb+wbQhwaYnmK05m/Sd+G4FWAADIABMAAGwAAYAANgAAyAATAABsAAGIAPe9C+11iu1+lW4nc9b2X3wZDaYkosIqK88cqc7DhXNl6Ny9d5Rzj4OcEeHgwvjrIIMgAGwAD6AFC2tQ5DNs02ZXVxw8q0fDUEBNUsm5bdKp83zSl8y21iEpYAIpVek0CrdA0gttlSYyWCynEWsKZlLvcTdWVC2qIHQ1nV+7a6xiCnGjjwtQZNTjSgA0YMIO453ctRb61lC8R+AKBiUUhBnFVAAAAAAElFTkSuQmCC",
 	["triangle-alert"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACuklEQVR42u2b0ZGbMBCGd6nAJdBB6OAowakglEAHoYNwFdjXgVPB4QqODkwHRyrYPETJeBitjMRKZgn/DC8YCetntZ9W2AC7du3a9R8Ln3FTIvoGADkAFOZUDwA9Iv7ctNtEVBHRJ/G6EVG11cGfaL6aLT55Xx23Mvj8Qdhz+iSiwxYMODsG2ZmDU6t98CUzsJGIirvrCnPOplyzAe/MoCrLtTVz7fvWEl/naDMwbUptgz8YpnsNxjFlbtoMaJiBnGe05ZJirR1745yEZtrrxaIDe41HH61KLDrm8ODz9EwO0YdFH+zN6EsXFkOwN6NPHVgMwZ5Z/f0wR6Eai77YM4OfqlCJxRDsMVm+VYnFEOwxT7VTh8VQ7AUYEA2L2UIPvjPnG0QcpYw2fXERdVKHPd8IWB0WQ6s9AQPEsRg6BWr4s68/1RsidrGMN31fLR/lybC4tNpbEgExsBgSAQ0A2G7UIuIQ+wGYe7xaPjo4EuXqqr1uSc0giUXfCEiCvVViUbLaYyLgstpqcSn2Ztb6teCUvEkbELzJ6TC0v+unDy1soleLEth78ARLge8Xr1qU2ORMsDaJUy1KYS/R0ly+WpTc5ExgguwmaoxNzgQmyGBRGnuO+7wQ0UuClerNtyNR7DEGf9z1+yGVUxZjMSb2pBdCEljMnlTtFZZzIlNrUbWYCntEdIxJlmAsOhY94tgzeWY0RxOh/9orjznmzmqxtwCLB1sO4EKjBb2qH+Wg7FESQsSLYgO46M1tBvRMGBWKDeCierAZwCHupPEnq+Y7c9tj/7bvcNKoB4AvTINemQcFs565ImLJGVDBs961pdPX+7yWTRLeGQC2/K+Nt2lSR2budMxU0KwrAByn2/eZBXsjIhbMelqjfgHAKyKWtncXOCOTViaZcElljfqbtAcAuKR8abNr165dqvQb4fcLk/XSLKwAAAAASUVORK5CYII=",
 	["upload"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABvUlEQVR42u2ZwVHDQAxFJSYFpAOgA9OBS8gtR1wCFaSGpAPTASWkAmJOHIEO6OBz2cxkhqwtGRJb9v8zPlhje/SfV/IqEaEoiqKuLwBrAK/pWM/N/Aa/tZmL+Qp5VXM2P20IRvPThOA0Py0IPc1PA8IfzceG8E/mY0IwmH83xuJBMJivAOzPxPeWe8ObT9edBeB5RljzXQBCQvAm3AUgFAQApTdRCwAjhHIMAA7et2QFYIBwGAMA9xL1AOiCMAYAL9769AJogVCPAcASQJ0Saix12QfASb9pjuYBLKNuk3sBuIRu5v7bJAEQAAEQAAEQAAEQAAEQwEy1aBlYChF5TKfPqtoEG7j65w+gODOtFVGmQU/+uRKojLGxypx/DkBhjPVVY4z1lTn/oZpgbYwN1wQvKVVtADycLMt6qCa7GKpIk+En7gMIgAAIgAAIgACuoW8PgP0EAbimwVXm3+hVgDHYlbtmHnInIh9BV0eZid+r6qeH5BbT0Ta7JW8BsEx1cxu89t9EpFRVVxOUdMNKRL6Cm69y5js/g2liK0RkF9D8Lr351u6vjp5wl2AULY1m6O98czxcDY+iKGqu+gFrm38z7iAleAAAAABJRU5ErkJggg==",
-	["user"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACcElEQVR42u1a23XiMBC9QwUuwR2sOwglUAIlZCsIHZAOvCW4g5gOvBXAVgBbwc0H+uDkSLGFBj2I7jn+Ab1mNCNdzQxQUVFR8YMhsSck2QF4AdAAaM3PJwAXAAcRmZ5OyyQbkm8kj5zH0bRtnkX4Dckz/XEkuSld+D3DsS9V+J566EsTfrdQsNF8S/BaivDrGUF2JFtLv5bk+0zfdQkK+HAs/rREAKPAk2OMj9yF3zoWfvG51sy1eXGMtdVc80pZB64d3orIZTE7u7bdes6RhQXY7vshYLzBMt45SwswFNdm5mPAsLa+je0QzcEFXD4ewu1dfdtczwCbP48p+majAOMa0ftmo4BAcy1HAd+Y61pbATFc416TtfH68z2ntqHGqtdqDBcYHLfDPa+5/gHXapTIj4vC9kvosBmj16DUqZTwOhPl6WYeQseYT2J51FmAa+DzO4Iz3RCd7uZz4SAi+T+Hb8x4UowITcUFSc0pPikJ36JEGEsYAoQfniI8bg63yXPXo/i7RFZEB2Bj2GED4Jf56y+umaERwPCU2aGKioqKHKF+C1jy/6Ek5oTc6wc88/+hyKt+ICD/r6GITWrh90yPfSrhe+aDPuohSHIH4G1B04OSvl8WtPktIu+xHjbe+X+l53X6+oHQ/L/SBqSpH9DK/ytduyr1A75hcdcOe+X/g9lbqvqBGIkKz/UE1w+sPCbrkF+iwja3V/2Ajwu4fDwlN3fN3T7qDLD5YzIL0Jh7hR+OqoCqgKqAqoAQ/MtAhv8xmdfX9NYug4jU19J8L14inpM1hoO3AEYRGXIwYxMaW+MaPP0T811SUVFRUTQ+AfUcrDLven9kAAAAAElFTkSuQmCC",
 	["users"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADF0lEQVR42u1abZHbMBB9GwSGYAY1g5jBmUEDIUVwKYI7Bg6DmkEcBHURJEEQF8H2R3UzmYxkfa1st6c3c39uslrtk+T9BDIyMjI+MUh6QWauAGwBFABK9e8rgBHAmYiGgDULAF8A3IjoujoWmblg5ldmvrAdF/XbwpVQZr4/yJ+Y+WVNxjdPG3TFhZkbh/UvMfKpjX/jeLxZdNiwW8r4luXQTujpVkcCMx8cDevVnwv2E9+XLlQ+hfG1ZSMHZi41ciUzv1tk6wm9H/KjQfau05uCgJNhA9cpA54IvBrWODl6nMEgf0xt/M6geHR1aw9GjDHveeJZlCkJOBqUNgFrNTGnqJ6EDl1KAu6SCg2neI88kN5nDxvPEFd3zfsITnWyhcc11t2WbRICDMYDwBBBgEnWlYDR9DxSEKDPpoj6JWSVfCyB8QSopzG7rOWkx9kI8GFbgyqFbp+UeyNwXWtpAjyehk7+ltIN9lIhqPLjUW7VkCqncYMKncE7tAF8tjFuVSU/paNrFK38mELY1iUcVmu0MSH1REjeIzWYeW+p8lSWROgSmtKq8tiPkGxStCiqmN5aApzhIdCpHv5MOBNRbdD3FcA+VD7VUxgEK0KD6eo7Fl8Gn2xUioRSiIRhyos4FFyPsxsfUK4yobNtfuKjm74A4lkmGzxPvXZc+2A4dZHCBwkTUQFoVHRY4G83BwB+qfi8B9D5dodUlahR8kciGpGRkZGRsYAX0PT/Y93RFWufH/Ds/8dCYn6gljQ+tP8vQUQTWBSRmR8Q6v//m/MDwv3/1c4PkCn+BvDqwNNZ6KW5dHO+EdG74QN4BGCbG/pORAfXxMa7/y+UXi8/PxDb/xfKLGPnB/qg9Fmq/5+4+LpzXMN/fkCy/y/kfuedH5Du/wuQEDs/oPum/Hz8zeYpxNVd837BUF2n22d+QHd4lZYApOn/x8Kk25WA0fQ8dAToA4XIHn5UpjbD/MAGnxyZgExAJiATMIXbCvb4ezZ5TXvrsLT1mtbYIClPmtx6p/xkT0TdGq6pykVqVTz1bo3FymdkZGT8t/gD8rWEDBNBk6EAAAAASUVORK5CYII=",
 	["volume-1"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACr0lEQVR42u2aO2sVQRiG38/EcGKiggoB8RKTKGh+gZI/oRBL/QFaCEmhHjEQFBHv2IgglhYBtVAQG7UStbBUEG9gQrSw8EIsTB6LTCSEObt7LpucMztPc9id3dn53nn3OzsXKRKJRCKRSCQngG7gBvAZmAHeAuWiBL8D+ISfO0Ap5OC3AV9I5miRgwd4EGLw/cAk2fgVWvB9GXv+P6H1fFLwr4IVwGX7pODHgOEgBXDBTycEP+KuOxicAFmDb2YB2lMCHJC0pUJxj6Sr7tdH2cwuLTqea5VeLbl3doraOeGpd7jpHQB0SXotaWcddR43s/Ot8hqvWnJ8rc7gRxOCtxod2QYcBiaAK0B3ntavlZ/AcEr9viQ4l6Fdd5fc8yQvAYZqCPwFcB3ozVB/1f8CwMYKzz2QRw7Y7PWtmeWZc1PKf0uakdS55Pw54L6ZzTU6BzQVZvZH0hlP0S5Jh/JIgs3IZUnTnvPjQEfwAjgXjHuKtkraVwQHSNJNSR885wcLIYCZzUp66CnaUxQHqEIeGCy6AC3vgGoGQ6VGfV63qgN8vf2mSALsLqwAwCZJQ0V2wKikjkIK4Mb/RzxF3yQ9K4IDjknyTYKU3WdyuAIAnZJOeoreSbrd6NHgVIVGJPEy64RIjR3Q5ZkLkObnHWcbrvYKTInNZmjXvWWZEnMPu0V9jFQpwN8MbVoNnAae5jop6h62FnhfpwjlCnW3xtogsM5ju7qdUKsD8qbdM/b+IWk/sEHSdknrK9zbo/l1BN/S2EWgZGZnUwY+bWplMiyOjjW7A5ZDhAtBC+CC60sTIdgNEotEGEhZUX4etABOhP5ql9UVGs4JXwu5Ta6KxLjAo5Vuay6jQTP7KGmvpMmUSx8rZIDehM3SE8AahY77tF7YLg/wHTilSCQSiUQikRXmH+KIvjLLRygbAAAAAElFTkSuQmCC",
 	["volume-2"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADyUlEQVR42u2ayYsWRxjGn3KMmVHHiOMe4zaD4EIY8OTyF4wgqIwKEcVjiAdBIcYvKEg8RU1EBFc8SQ5CxF08uJzcGBNPbiQazAxqgmAWR8SZXy5tGIaqru6er7vtz34uH19Vv/XW+9TT1W8tUokSJUqUKFGiREoAhgP7gN+AbuAuUHlfgp8GPMKOH4D6Wg5+MvA74Vj3PgcPcLoWg28GOomGf6rodxlwAtgM1OUV/PSII/8/quT38/7KAgblMfJhwd9MgwBgGPDK0vSurGf7sOC3Au0pEfBxiN+1WQX/JKQTG4Lnlqf4Chxy+H4NLMg9+AwIaAB+cvShE/jQZTvY03CLpEmO6nGSvg9+bagYY3b2+d+b1kAYY7qBNkkdkib0q54oaaOk7VHZrA/e2S6S4ytLu+1pKaCPj1bHhPgvMCbqjHqfgeFLR9upExD42eTo18GBTCZRsSGk7URzAFAHrAGOAd8BwyMo2PZF6gVm+QyT4m+g3dMxGwG9EQj4sZ/NpQg2Kx393B9mtDBB4NeBPcDUCJ2KrQCgyeF3aQR/HRa7x6q2RGO8m7EVEKjypcXuni/VBT5zkPdp3+eyzZfjf95eSfrGUjVD0mqP+WlJtgFsKwwBAXZJemIp3wYMCSHvhaRrhScgUME2S9UnkuZ7zM9aylqLpgBJOiDpV0v5bI/dbUtZY1/lFIIAY0yPpDOWqlke0z8c5eOLpgA55oHZCQkYUysEJFXA2HeFgDh5hm0L3Xhsenx+i6QA22jf8diM96mpSATMTEDAuJogABgtaWGVFICkp0VTwEZJQxIQ0Gope2aMKc4cEKz/v7AFIumKx7zNUvZz0TLB9ZJsmyCVIE0Oe23mWqrOFYYAoEHSZkvVA0lHPOaLHOXnXQR0OToRhhtRN0Qc8A3AMEkNlvJNQXocBtvJc5cx5p6T7Ry2xHoiqOB4gi2xxY5+7vUZHs54U/RNhGA+ALYAlyNuig4KbqHYMMfnrBH4ZYAkVBxtZ7UtvsrRr6NRGxhhkd2AlZBUATGDbwb+tPlxzVODLWvvvyQtAUZJmiLpo5A0c7cj3dwB1BtjtnsWPnVVDL5J0kVJTZbq/caYR2l8pnyHo1uzUECwe3zL0YduYGya32ofCd9mQEDYidaKLBKW6T4SUrwg0RTnkDZNElo8J8pXUyJgpONE+EAeqWtz3GP1Kvntf0nqVJ43xVqApzldkzsJVHILPsbE+Bbn815wpbIaNMY8lDRPUqfn0QuqZQBTQy5LHwOGqtYRpNZvr8sDPAe+VokSJUqUKFGiRM74Dx08Kg8MKaOPAAAAAElFTkSuQmCC",
@@ -3041,6 +3505,11 @@ local GLYPHS = {
 	plus = "+",
 	["list-plus"] = "+",
 	["list-start"] = "^",
+	code = "</>",
+	globe = "@",
+	["badge-check"] = "v",
+	["circle-alert"] = "!",
+	["audio-lines"] = "~",
 }
 
 local function setupIcons()
@@ -3188,16 +3657,17 @@ pcall(function() Gui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets end)
 local Root = UI.new("Frame", { Name = "Root", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1) }, Gui)
 local RootScale = UI.new("UIScale", {}, Root)
 
-local SIDE_W, ITEM, SIDE_H, PANEL_W = 56, 40, 396, 292
+local PANEL_W = 292
 local L = { scale = 1, W = 1280, H = 720, panelH = 380 }
 local NAV = {
-	{ id = "home", title = "Home", icon = "house", logo = true },
-	{ id = "scripts", title = "Scripts", icon = "layout-list" },
+	{ id = "home", title = "Home", icon = "house" },
+	{ id = "explore", title = "Scripts", icon = "code" },
+	{ id = "scripts", title = "My Scripts", short = "Mine", icon = "layout-list" },
 	{ id = "running", title = "Running", icon = "activity" },
 	{ id = "commands", title = "Commands", icon = "command" },
-	{ id = "player", title = "Music Player", icon = "headphones" },
-	{ id = "music", title = "Spotify", icon = "music" },
 	{ id = "players", title = "Players", icon = "users" },
+	{ id = "player", title = "Music Player", short = "Music", icon = "headphones" },
+	{ id = "music", title = "Spotify", icon = "music" },
 	{ id = "console", title = "Console", icon = "square-terminal" },
 	{ id = "settings", title = "Settings", icon = "settings" },
 }
@@ -3352,180 +3822,247 @@ UI.onHover(Edge, function(on)
 	UI.tween(edgeStroke, 0.15, { Transparency = on and 0 or 0.3 })
 end)
 
-local Side = UI.new("Frame", {
-	Name = "Sidebar",
-	AnchorPoint = Vector2.new(1, 0.5),
-	Size = UDim2.fromOffset(SIDE_W, SIDE_H),
-	Position = UDim2.new(1, SIDE_W + 24, 0.5, 0),
-	BackgroundColor3 = T.side,
-	BackgroundTransparency = S.opacity,
-	Visible = false,
-	Active = true,
-	ZIndex = 3000,
-}, Root)
-UI.corner(Side, SIDE_W // 2)
-UI.stroke(Side, T.stroke, 1, 0.25)
-
-local SideRefs = { nav = {}, pitch = 46, item = ITEM, order = {} }
-
+local Dock = { items = {}, order = {}, sel = nil, shown = false, token = 0, vertical = false, item = 40, thick = 52, w = 400, h = 52 }
 do
-	local logoBtn = UI.new("ImageButton", {
-		Name = "Logo",
-		AutoButtonColor = false,
-		BackgroundColor3 = T.card,
-		Size = UDim2.fromOffset(ITEM, ITEM),
-		Position = UDim2.fromOffset((SIDE_W - ITEM) / 2, 8),
-		Image = "",
-		ScaleType = Enum.ScaleType.Crop,
-	}, Side)
-	UI.corner(logoBtn, ITEM // 2)
-	local ring = UI.stroke(logoBtn, T.text, 1.5, 0.7)
-	local letter = UI.label(logoBtn, {
-		Text = "A",
-		Font = FONT_B,
-		TextSize = 17,
-		TextXAlignment = Enum.TextXAlignment.Center,
-		Size = UDim2.fromScale(1, 1),
-	})
-	UI.accent(letter, "TextColor3")
-	Logo.attach(logoBtn, letter)
-	local logoScale = UI.pressable(logoBtn, 0.9)
-	local homeRef = { btn = logoBtn, ring = ring, scale = logoScale, hover = false, selected = false, logo = true }
-	UI.onHover(logoBtn, function(on)
-		homeRef.hover = on
-		if not homeRef.selected then UI.tween(ring, 0.15, { Transparency = on and 0.2 or 0.7 }) end
-	end)
-	SideRefs.logo = logoBtn
-	SideRefs.logoScale = logoScale
-	SideRefs.nav.home = homeRef
-
-	SideRefs.sep1 = UI.new("Frame", { Name = "Sep1", BackgroundColor3 = T.line, BorderSizePixel = 0, Size = UDim2.fromOffset(SIDE_W - 24, 1), Position = UDim2.fromOffset(12, 55) }, Side)
-	SideRefs.sep2 = UI.new("Frame", { Name = "Sep2", BackgroundColor3 = T.line, BorderSizePixel = 0, Size = UDim2.fromOffset(SIDE_W - 24, 1), Position = UDim2.fromOffset(12, 340) }, Side)
-
-	local ind = UI.new("Frame", {
-		Name = "Indicator",
-		BackgroundColor3 = T.text,
-		BorderSizePixel = 0,
-		AnchorPoint = Vector2.new(0, 0.5),
-		Size = UDim2.fromOffset(3, 18),
-		Position = UDim2.fromOffset(1, 28),
-		BackgroundTransparency = 1,
-	}, Side)
-	UI.corner(ind, 2)
-	SideRefs.indicator = ind
-
-	for _, def in ipairs(NAV) do
-		if not def.logo then
-			local b = UI.button(Side, {
-				Name = def.id,
-				BackgroundColor3 = T.card2,
-				BackgroundTransparency = 1,
-				Size = UDim2.fromOffset(ITEM, ITEM),
-				Position = UDim2.fromOffset((SIDE_W - ITEM) / 2, 63),
-			})
-			UI.corner(b, 12)
-			local st = UI.stroke(b, T.stroke, 1, 1)
-			local ic = UI.icon(def.icon, 19, T.sub, b, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
-			local sc = UI.pressable(b, 0.88)
-			local ref = { btn = b, stroke = st, icon = ic, scale = sc, hover = false, selected = false, def = def }
-			SideRefs.nav[def.id] = ref
-			UI.onHover(b, function(on)
-				ref.hover = on
-				if not ref.selected then UI.tween(b, 0.15, { BackgroundTransparency = on and 0.55 or 1 }) end
-			end)
-		end
-	end
-
-	local runRef = SideRefs.nav.running
-	local badge = UI.new("Frame", {
-		Name = "Badge",
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Size = UDim2.fromOffset(16, 16),
-		Position = UDim2.new(1, -4, 0, 5),
+	local f = UI.new("Frame", {
+		Name = "Dock",
+		BackgroundColor3 = T.side,
+		BackgroundTransparency = S.opacity,
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, 90),
+		Size = UDim2.fromOffset(400, 52),
 		Visible = false,
-	}, runRef.btn)
+		Active = true,
+		ZIndex = 3000,
+	}, Root)
+	Dock.corner = UI.corner(f, 26)
+	UI.stroke(f, T.stroke, 1, 0.3)
+	Dock.frame = f
+	Dock.scroll = UI.new("ScrollingFrame", {
+		Name = "Items",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 0,
+		Size = UDim2.fromScale(1, 1),
+		CanvasSize = UDim2.fromOffset(0, 0),
+		ScrollingDirection = Enum.ScrollingDirection.X,
+		ScrollingEnabled = false,
+	}, f)
+	Dock.pill = UI.new("Frame", { Name = "Pill", BackgroundColor3 = T.card2, BackgroundTransparency = 1, Size = UDim2.fromOffset(40, 40) }, Dock.scroll)
+	Dock.pillCorner = UI.corner(Dock.pill, 20)
+	for _, def in ipairs(NAV) do
+		local b = UI.button(Dock.scroll, { Name = def.id, BackgroundTransparency = 1, Size = UDim2.fromOffset(40, 40), ClipsDescendants = true })
+		local ic = UI.icon(def.icon, 18, T.sub, b, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(20, 20) })
+		local lab = UI.label(b, { Name = "Label", Text = def.short or def.title, Font = FONT_B, TextSize = 12, TextColor3 = T.text, TextTransparency = 1, Position = UDim2.fromOffset(36, 0), Size = UDim2.new(1, -40, 1, 0), TextTruncate = Enum.TextTruncate.AtEnd })
+		local ref = { btn = b, icon = ic, label = lab, def = def, hover = false }
+		ref.scale = UI.pressable(b, 0.86)
+		Dock.items[def.id] = ref
+		Dock.order[#Dock.order + 1] = def.id
+		UI.onHover(b, function(on)
+			ref.hover = on
+			if Dock.sel ~= def.id then UI.tint(ic, on and T.text or T.sub, 0.15) end
+		end)
+	end
+	Dock.sep = UI.new("Frame", { Name = "Sep", BackgroundColor3 = T.line, BorderSizePixel = 0, Size = UDim2.fromOffset(1, 22) }, Dock.scroll)
+	Dock.close = UI.button(Dock.scroll, { Name = "Close", BackgroundTransparency = 1, Size = UDim2.fromOffset(40, 40) })
+	Dock.closeIcon = UI.icon("chevron-down", 18, T.sub, Dock.close, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+	UI.pressable(Dock.close, 0.86)
+	UI.onHover(Dock.close, function(on)
+		UI.tint(Dock.closeIcon, on and T.text or T.sub, 0.15)
+	end)
+	local badge = UI.new("Frame", { Name = "Badge", AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(15, 15), Position = UDim2.fromOffset(30, 10), Visible = false, ZIndex = 3 }, Dock.items.running.btn)
 	UI.corner(badge, 8)
 	UI.accent(badge, "BackgroundColor3")
 	UI.stroke(badge, T.side, 2, 0)
-	local badgeText = UI.label(badge, {
-		Font = FONT_B,
-		TextSize = 10,
-		TextColor3 = T.ink,
-		TextXAlignment = Enum.TextXAlignment.Center,
-		Size = UDim2.fromScale(1, 1),
-		Text = "0",
-	})
-	local badgeScale = UI.new("UIScale", {}, badge)
-	SideRefs.badge, SideRefs.badgeText, SideRefs.badgeScale = badge, badgeText, badgeScale
-
-	local dot = UI.new("Frame", {
-		Name = "Dot",
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Size = UDim2.fromOffset(8, 8),
-		Position = UDim2.new(1, -6, 0, 6),
-		Visible = false,
-	}, SideRefs.nav.commands.btn)
+	Dock.badgeText = UI.label(badge, { Font = FONT_B, TextSize = 9, TextColor3 = T.ink, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromScale(1, 1), Text = "0" })
+	Dock.badge = badge
+	Dock.badgeScale = UI.new("UIScale", {}, badge)
+	local dot = UI.new("Frame", { Name = "Dot", AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(7, 7), Position = UDim2.fromOffset(29, 11), Visible = false, ZIndex = 3 }, Dock.items.commands.btn)
 	UI.corner(dot, 4)
 	UI.accent(dot, "BackgroundColor3")
 	UI.stroke(dot, T.side, 1.5, 0)
-	SideRefs.cmdDot = dot
-
-	local col = UI.button(Side, {
-		Name = "Collapse",
-		BackgroundColor3 = T.card2,
-		BackgroundTransparency = 1,
-		Size = UDim2.fromOffset(ITEM, ITEM),
-		Position = UDim2.fromOffset((SIDE_W - ITEM) / 2, 348),
-	})
-	UI.corner(col, 12)
-	SideRefs.collapseIcon = UI.icon("chevron-right", 18, T.sub, col, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
-	UI.pressable(col, 0.88)
-	UI.onHover(col, function(on)
-		UI.tween(col, 0.15, { BackgroundTransparency = on and 0.55 or 1 })
-	end)
-	SideRefs.collapse = col
+	Dock.cmdDot = dot
 end
 
-function SideRefs.relayout()
-	local order = {}
-	for _, def in ipairs(NAV) do
-		if not def.logo then order[#order + 1] = def.id end
+function Dock.layout(anim)
+	local vertical = S.dockPos ~= "bottom"
+	Dock.vertical = vertical
+	local ids = Dock.order
+	local n = #ids
+	local pad, gap = 6, 2
+	local avail = vertical and (L.H - 24) or (L.W - 24)
+	local sel = Dock.sel
+	local item = Dock.compact and 36 or 40
+	local selW = 0
+	if not vertical and S.dockLabels and sel and Dock.items[sel] then
+		selW = math.ceil(textWidth(Dock.items[sel].label.Text, 12, FONT_B)) + 10
 	end
-	SideRefs.order = order
-	local n = #order
-	local avail = math.max(200, L.H - 16)
-	local pitch = 46
-	if (n - 1) * pitch + 166 > avail then
-		pitch = math.max(34, math.floor((avail - 74) / (n + 1)))
+	local function total(it, sw)
+		return pad * 2 + (n + 1) * it + n * gap + sw + 11
 	end
-	local item = math.min(ITEM, pitch - 6)
-	SideRefs.pitch, SideRefs.item = pitch, item
-	for _, def in ipairs(NAV) do
-		local ref = SideRefs.nav[def.id]
-		if ref and not def.logo then ref.btn.Visible = false end
+	if total(item, selW) > avail then selW = 0 end
+	if total(item, selW) > avail then item = math.max(30, math.floor((avail - pad * 2 - n * gap - 11) / (n + 1))) end
+	local full = total(item, selW)
+	local len = math.min(full, avail)
+	local thick = item + 12
+	Dock.item, Dock.thick = item, thick
+	local t = anim and 0.35 or 0
+	local iconSz = item >= 36 and 18 or 16
+	local across = (thick - item) / 2
+	local pos = pad
+	local pillP, pillS = nil, nil
+	for _, id in ipairs(ids) do
+		local ref = Dock.items[id]
+		local on = id == sel
+		local w = item + (on and selW or 0)
+		local p = vertical and UDim2.fromOffset(across, pos) or UDim2.fromOffset(pos, across)
+		local sz = UDim2.fromOffset(w, item)
+		UI.tween(ref.btn, t, { Position = p, Size = sz })
+		ref.icon.Size = UDim2.fromOffset(iconSz, iconSz)
+		ref.icon.Position = UDim2.fromOffset(item / 2, item / 2)
+		ref.label.Position = UDim2.fromOffset(item - 6, 0)
+		ref.label.Size = UDim2.new(1, -(item - 6) - 6, 1, 0)
+		UI.tween(ref.label, t, { TextTransparency = (on and selW > 0) and 0 or 1 })
+		if on then pillP, pillS = p, sz end
+		pos += w + gap
 	end
-	local y = 63
-	for i, id in ipairs(order) do
-		local ref = SideRefs.nav[id]
-		ref.btn.Visible = true
-		ref.btn.Size = UDim2.fromOffset(item, item)
-		ref.btn.Position = UDim2.fromOffset((SIDE_W - item) / 2, 63 + (i - 1) * pitch)
-		ref.icon.Size = UDim2.fromOffset(item >= 38 and 19 or 17, item >= 38 and 19 or 17)
-		y = 63 + (i - 1) * pitch + item
+	Dock.pillCorner.CornerRadius = UDim.new(0, item // 2)
+	if pillP then
+		if Dock.pill.BackgroundTransparency > 0.9 then
+			Dock.pill.Position, Dock.pill.Size = pillP, pillS
+			UI.tween(Dock.pill, t, { BackgroundTransparency = 0 })
+		else
+			UI.tween(Dock.pill, t, { Position = pillP, Size = pillS, BackgroundTransparency = 0 })
+		end
+	else
+		UI.tween(Dock.pill, t, { BackgroundTransparency = 1 })
 	end
-	SideRefs.sep2.Position = UDim2.fromOffset(12, y + 7)
-	SideRefs.collapse.Size = UDim2.fromOffset(item, item)
-	SideRefs.collapse.Position = UDim2.fromOffset((SIDE_W - item) / 2, y + 15)
-	SIDE_H = y + 15 + item + 8
-	Side.Size = UDim2.fromOffset(SIDE_W, SIDE_H)
+	pos += 3
+	Dock.sep.Size = vertical and UDim2.fromOffset(22, 1) or UDim2.fromOffset(1, 22)
+	Dock.sep.Position = vertical and UDim2.fromOffset((thick - 22) / 2, pos) or UDim2.fromOffset(pos, (thick - 22) / 2)
+	pos += 8
+	Dock.close.Position = vertical and UDim2.fromOffset(across, pos) or UDim2.fromOffset(pos, across)
+	Dock.close.Size = UDim2.fromOffset(item, item)
+	Dock.closeIcon.Size = UDim2.fromOffset(iconSz, iconSz)
+	UI.setIcon(Dock.closeIcon, (S.dockPos == "left" and "chevron-left") or (S.dockPos == "right" and "chevron-right") or "chevron-down")
+	Dock.badge.Position = UDim2.fromOffset(item / 2 + 10, 10)
+	Dock.cmdDot.Position = UDim2.fromOffset(item / 2 + 9, 11)
+	Dock.w = vertical and thick or len
+	Dock.h = vertical and len or thick
+	UI.tween(Dock.frame, t, { Size = UDim2.fromOffset(Dock.w, Dock.h) })
+	Dock.corner.CornerRadius = UDim.new(0, thick // 2)
+	Dock.scroll.CanvasSize = vertical and UDim2.fromOffset(0, full) or UDim2.fromOffset(full, 0)
+	Dock.scroll.ScrollingDirection = vertical and Enum.ScrollingDirection.Y or Enum.ScrollingDirection.X
+	Dock.scroll.ScrollingEnabled = full > avail + 0.5
 end
 
-function SideRefs.centerY(id)
-	if id == "home" then return 28 end
-	for i, oid in ipairs(SideRefs.order) do
-		if oid == id then return 63 + (i - 1) * SideRefs.pitch + SideRefs.item / 2 end
+function Dock.select(id)
+	Dock.sel = id
+	for nid, ref in pairs(Dock.items) do
+		UI.tint(ref.icon, (nid == id or ref.hover) and T.text or T.sub, 0.2)
 	end
-	return nil
+	Dock.layout(true)
+end
+
+function Dock.show(on)
+	Dock.token += 1
+	local tk = Dock.token
+	Dock.shown = on
+	Dock.moving = true
+	if on then
+		local was = Dock.frame.Visible
+		Dock.frame.Visible = true
+		if not was then Dock.frame.Position = Dock.posOff or Dock.frame.Position end
+		local tw = UI.tween(Dock.frame, 0.5, { Position = Dock.posOn or Dock.frame.Position }, Enum.EasingStyle.Back)
+		UI.done(tw, function()
+			if Dock.token == tk then Dock.moving = false end
+		end)
+		if not was and S.animations then
+			local list = {}
+			for _, id in ipairs(Dock.order) do
+				list[#list + 1] = Dock.items[id].scale
+			end
+			for i, sc in ipairs(list) do
+				UI.tween(sc, 0, { Scale = 0.4 })
+				task.delay(0.05 + i * 0.03, function()
+					if Dock.token == tk then UI.tween(sc, 0.4, { Scale = 1 }, Enum.EasingStyle.Back) end
+				end)
+			end
+		end
+	else
+		local tw = UI.tween(Dock.frame, 0.3, { Position = Dock.posOff or Dock.frame.Position }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+		UI.done(tw, function()
+			if Dock.token == tk then
+				Dock.moving = false
+				Dock.frame.Visible = false
+				for _, ref in pairs(Dock.items) do
+					ref.scale.Scale = 1
+				end
+			end
+		end)
+	end
+end
+
+local Head = { maxW = 400, x = 12, y = 12, h = 60, compact = false }
+do
+	local f = UI.new("Frame", { Name = "Header", BackgroundColor3 = Color3.fromRGB(8, 8, 10), BackgroundTransparency = 0.3, Size = UDim2.fromOffset(220, 60), Position = UDim2.fromOffset(12, 12), Visible = false, ZIndex = 2900 }, Root)
+	Head.corner = UI.corner(f, 22)
+	UI.stroke(f, T.stroke, 1, 0.6)
+	Head.frame = f
+	Head.title = UI.label(f, { Name = "Title", Font = FONT_B, TextSize = 22, Position = UDim2.fromOffset(16, 9), Size = UDim2.new(1, -28, 0, 26), TextTruncate = Enum.TextTruncate.AtEnd })
+	Head.sub = UI.label(f, { Name = "Sub", TextSize = 11, TextColor3 = T.sub, Position = UDim2.fromOffset(16, 36), Size = UDim2.new(1, -28, 0, 15), TextTruncate = Enum.TextTruncate.AtEnd })
+end
+
+function Head.fit()
+	local c = Head.compact
+	local big = c and 18 or 22
+	local maxW = math.max(150, Head.maxW)
+	local size = big
+	local tw = textWidth(Head.title.Text, size, FONT_B)
+	while size > big - 4 and tw + 36 > maxW do
+		size -= 1
+		tw = textWidth(Head.title.Text, size, FONT_B)
+	end
+	Head.title.TextSize = size
+	local hasSub = Head.sub.Text ~= ""
+	Head.sub.Visible = hasSub
+	local subSize = c and 10 or 11
+	Head.sub.TextSize = subSize
+	local lineH = size + 4
+	local block = lineH + (hasSub and (subSize + 6) or 0)
+	local top = math.floor((Head.h - block) / 2 + 0.5)
+	Head.title.Position = UDim2.fromOffset(16, top)
+	Head.title.Size = UDim2.new(1, -28, 0, lineH)
+	Head.sub.Position = UDim2.fromOffset(16, top + lineH + 1)
+	Head.sub.Size = UDim2.new(1, -28, 0, subSize + 4)
+	local w = math.max(tw, hasSub and textWidth(Head.sub.Text, subSize, FONT_M) or 0) + 36
+	Head.frame.Size = UDim2.fromOffset(math.clamp(math.ceil(w), 120, maxW), Head.h)
+	Head.corner.CornerRadius = UDim.new(0, c and 17 or 22)
+end
+
+function Head.set(title, sub)
+	Head.title.Text = tostring(title or "")
+	Head.sub.Text = tostring(sub or "")
+	Head.fit()
+end
+
+local Tools = {}
+Tools.frame = UI.new("Frame", { Name = "Tools", BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0), Size = UDim2.fromOffset(360, 36), Visible = false, ZIndex = 2900 }, Root)
+Tools.list = UI.list(Tools.frame, 8, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Right)
+Tools.list.VerticalAlignment = Enum.VerticalAlignment.Center
+
+function Tools.chip(parent, icon, text, order)
+	local f = UI.new("Frame", { Name = "Chip", BackgroundColor3 = T.side, BackgroundTransparency = S.opacity, Size = UDim2.fromOffset(90, 36), LayoutOrder = order or 0 }, parent)
+	UI.corner(f, 18)
+	UI.stroke(f, T.stroke, 1, 0.35)
+	local ic = UI.icon(icon, 14, T.sub, f, { AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 13, 0.5, 0) })
+	local l = UI.label(f, { Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(34, 0), Size = UDim2.new(1, -44, 1, 0), Text = text })
+	local function set(txt, extra)
+		l.Text = txt
+		f.Size = UDim2.fromOffset(math.ceil(textWidth(txt, 12, FONT_B)) + 48 + (extra or 0), 36)
+	end
+	set(text)
+	return set, f, l, ic
 end
 
 local Pill = {}
@@ -3643,7 +4180,6 @@ local P = {}
 P.holder = UI.new("Frame", {
 	Name = "Panel",
 	BackgroundTransparency = 1,
-	AnchorPoint = Vector2.new(0.5, 0.5),
 	ClipsDescendants = true,
 	Visible = false,
 	Size = UDim2.fromOffset(PANEL_W + 8, 388),
@@ -3651,60 +4187,41 @@ P.holder = UI.new("Frame", {
 }, Root)
 P.card = UI.new("Frame", {
 	Name = "Card",
+	BackgroundTransparency = 1,
+	Size = UDim2.fromOffset(PANEL_W, 380),
+	Position = UDim2.fromOffset(4, 4),
+}, P.holder)
+P.bg = UI.new("Frame", {
+	Name = "Bg",
 	BackgroundColor3 = T.panel,
 	BackgroundTransparency = S.opacity,
-	Size = UDim2.fromOffset(PANEL_W, 380),
-	Position = UDim2.fromOffset(PANEL_W + 12, 4),
+	Size = UDim2.fromScale(1, 1),
 	Active = true,
-}, P.holder)
-UI.corner(P.card, 22)
-UI.stroke(P.card, T.stroke, 1, 0.3)
-
-P.handle = UI.button(P.card, {
-	Name = "Handle",
-	BackgroundTransparency = 1,
-	Size = UDim2.new(1, -96, 0, 50),
-	Position = UDim2.fromOffset(48, 0),
-})
-P.grip = UI.new("Frame", {
-	Name = "Grip",
-	BackgroundColor3 = T.dim,
-	BorderSizePixel = 0,
-	AnchorPoint = Vector2.new(0.5, 0),
-	Size = UDim2.fromOffset(36, 4),
-	Position = UDim2.new(0.5, 0, 0, 9),
 }, P.card)
-UI.corner(P.grip, 2)
+UI.corner(P.bg, 22)
+P.bgStroke = UI.stroke(P.bg, T.stroke, 1, 0.3)
 
-P.titleIcon = UI.icon("house", 16, T.text, P.card, { Position = UDim2.fromOffset(120, 27) })
-P.title = UI.label(P.card, {
-	Name = "Title",
-	Font = FONT_B,
-	TextSize = 14,
-	Text = "HOME",
-	Position = UDim2.fromOffset(142, 22),
-	Size = UDim2.fromOffset(100, 26),
-})
-
-local function headerButton(x, name)
-	local b = UI.button(P.card, {
+local function headerButton(name, order)
+	local b = UI.button(Tools.frame, {
 		Name = name,
-		BackgroundColor3 = T.card,
-		Size = UDim2.fromOffset(28, 28),
-		Position = UDim2.fromOffset(x, 21),
+		BackgroundColor3 = T.side,
+		BackgroundTransparency = S.opacity,
+		Size = UDim2.fromOffset(36, 36),
 		Visible = false,
+		LayoutOrder = order,
 	})
-	UI.corner(b, 9)
-	local ic = UI.icon("refresh-cw", 14, T.sub, b, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+	UI.corner(b, 18)
+	UI.stroke(b, T.stroke, 1, 0.35)
+	local ic = UI.icon("refresh-cw", 15, T.sub, b, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
 	UI.pressable(b, 0.88)
 	UI.onHover(b, function(on)
-		UI.tween(b, 0.15, { BackgroundColor3 = on and T.card2 or T.card })
+		UI.tween(b, 0.15, { BackgroundColor3 = on and T.card2 or T.side })
 		UI.tint(ic, on and T.text or T.sub, 0.15)
 	end)
 	return { btn = b, icon = ic, fn = nil }
 end
-P.left = headerButton(12, "HeaderLeft")
-P.right = headerButton(PANEL_W - 40, "HeaderRight")
+P.left = headerButton("HeaderLeft", 10)
+P.right = headerButton("HeaderRight", 11)
 P.left.btn.Activated:Connect(function()
 	if P.left.fn then P.left.fn() end
 end)
@@ -3716,7 +4233,7 @@ P.tabs = UI.new("Frame", {
 	Name = "Tabs",
 	BackgroundColor3 = T.tabBg,
 	Size = UDim2.fromOffset(PANEL_W - 24, 30),
-	Position = UDim2.fromOffset(12, 56),
+	Position = UDim2.fromOffset(12, 12),
 	Visible = false,
 }, P.card)
 UI.corner(P.tabs, 10)
@@ -3728,17 +4245,51 @@ P.pill = UI.new("Frame", {
 }, P.tabs)
 UI.corner(P.pill, 8)
 P.tabButtons = {}
+P.tabsW = 0
 
 P.content = UI.new("Frame", {
 	Name = "Content",
 	BackgroundTransparency = 1,
 	ClipsDescendants = true,
-	Position = UDim2.fromOffset(10, 58),
+	Position = UDim2.fromOffset(10, 12),
 	Size = UDim2.fromOffset(PANEL_W - 20, 300),
 }, P.card)
 
 function P.contentTop(hasTabs)
-	return hasTabs and 94 or 58
+	return hasTabs and 52 or 12
+end
+
+local Aside = { open = false, key = nil, page = nil, token = 0 }
+Aside.holder = UI.new("Frame", { Name = "Aside", BackgroundTransparency = 1, ClipsDescendants = true, Visible = false, Size = UDim2.fromOffset(308, 308), ZIndex = 100 }, Root)
+Aside.card = UI.new("Frame", { Name = "Card", BackgroundTransparency = 1, Size = UDim2.fromOffset(300, 300), Position = UDim2.fromOffset(4, 4) }, Aside.holder)
+Aside.bg = UI.new("Frame", { Name = "Bg", BackgroundColor3 = T.panel, BackgroundTransparency = S.opacity, Size = UDim2.fromScale(1, 1), Active = true }, Aside.card)
+UI.corner(Aside.bg, 22)
+UI.stroke(Aside.bg, T.stroke, 1, 0.3)
+Aside.content = UI.new("Frame", { Name = "Content", BackgroundTransparency = 1, ClipsDescendants = true, Position = UDim2.fromOffset(0, 8), Size = UDim2.new(1, 0, 1, -8) }, Aside.card)
+
+function Aside.header(parent, title, onBack)
+	local back = UI.button(parent, { Name = "Back", BackgroundColor3 = T.card, Size = UDim2.fromOffset(28, 28), Position = UDim2.fromOffset(12, 4) })
+	UI.corner(back, 14)
+	local ic = UI.icon("chevron-left", 15, T.text, back, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+	UI.pressable(back, 0.88)
+	UI.onHover(back, function(on)
+		UI.tween(back, 0.15, { BackgroundColor3 = on and T.card2 or T.card })
+	end)
+	back.Activated:Connect(function()
+		if onBack then onBack() else Aside.hide() end
+	end)
+	local cap = UI.label(parent, {
+		Name = "Caption",
+		Font = FONT_B,
+		TextSize = 10,
+		TextColor3 = T.sub,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		Position = UDim2.fromOffset(48, 4),
+		Size = UDim2.new(1, -96, 0, 28),
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Text = title or "",
+	})
+	return back, ic, cap
 end
 
 local Win = { open = {}, count = 0, anchor = function() return false, 0 end }
@@ -3999,10 +4550,7 @@ do
 			w.x, w.y = saved.x * L.W, saved.y * L.H
 		else
 			local step = ((Win.count - 1) % 5) * 22
-			local panelOpen, panelX = Win.anchor()
-			local px = panelOpen and (panelX - PANEL_W / 2 - w.w - 14) or ((L.W - w.w) / 2 - 60)
-			if px < 8 then px = (L.W - w.w) / 2 - 60 end
-			w.x = px - step
+			w.x = Win.anchor() - w.w / 2 - 40 + step
 			w.y = math.max(8, (L.H - w.h) / 2 - 30) + step
 		end
 		applySize(w, true)
@@ -4055,6 +4603,7 @@ do
 end
 
 local CHANGELOG = {
+	{ version = "1.0.4", notes = { "new look: big title at the top, see-through cards on the left and right, and a dock at the bottom that shows the page you're on", "new scripts tab: scripts from scriptblox with trending, this game, universal and saved, a search bar, a keyless filter and run with one tap", "tap a script to see its views, likes, tags and what it does, then run it, copy it, grab the key link or save it", "spotify got way bigger: your playlists, liked songs, recently played, search, the queue, a like button and picking which device plays", "lyrics on the spotify tab that follow the song, tap a line to jump there", "players tab: everyone, friends and nearby, with a big avatar card and go to, spectate, follow, mark, hide and copy", "home is a dashboard now: your profile, friends online, the game you're in, this server, now playing, quick switches and quick actions", "layout settings: put the top bar at the top, left, right or bottom, the dock at the bottom, left or right, and show or hide page names in the dock", "phones in landscape get a smaller header so there's more room, phones held upright get one card at a time", "your own scripts tab is called my scripts now", "after updating, log in to spotify once more so the hub can see your library" } },
 	{ version = "1.0.3", notes = { "music player tab: play roblox audio ids, direct mp3/ogg links or your own files from the AtsukoHub/music folder, only you can hear it", "library with search and favorites, a queue (play next or add to queue), shuffle, repeat one or all, seeking and volume", "sound presets (normal, nightcore, slowed, bass) plus speed, bass boost, reverb and echo", "visualizer, sleep timer, pick up where you left off, quiet the game's own music, play/pause and next song keys", "music player mini window and home card, and the song shows on the top bar", "the old music tab is called spotify now", "new commands: float, gravity, follow, save spot, load spot, esp, x-ray, instant prompts, play and skip", "follow button in player windows", "new settings: font, open the panel when the hub loads, open on home or last page, clock on the top bar, click and notification sounds, panic key, and pick your own quick switches on home", "tapping the top bar while only the side bar is out opens the panel now instead of closing everything" } },
 	{ version = "1.0.2", notes = { "music tab: connect your own spotify app and see what's playing, with play/pause, skip, seek, shuffle, repeat and volume", "now playing card on home, a mini player you can pop out, and the song can show on the top bar", "simpler: no more extra setup pages, the hub just loads your scripts", "cleaner home: one row of stats, one row of buttons, server hop sits in the server card", "fixed long descriptions getting cut off, the go button in player windows forgetting the name, notifications sliding in from the wrong side at the bottom, the top/bottom picker sitting crooked and switches snapping when rainbow is on", "lighter: noclip doesn't rescan your character every frame, rainbow accent does less work and the scripts list only rebuilds when something changed" } },
 	{ version = "1.0.1", notes = { "new look like ak admin: little windows you can drag, resize, minimize and close", "fps and ping bar at the top, tap it to open or hide the hub", "the logo on the bar is home now, and the bar squeezes itself on small screens", "commands tab: fly, noclip, speed, jump power, infinite jump, click tp, spin, go to player, sit, refresh, reset", "visual commands: fullbright, no fog, time of day, fov, max zoom out, see through walls, spectate, boost fps", "utility commands: anti afk, allow shift lock, rejoin, server hop, copy join script", "command bar (press ; on pc) and chat commands with your own prefix", "players tab: go to, spectate, copy name and id", "home got quick switches, more stats and a server card", "more settings: rainbow accent, blur, animation speed, notification time and spot, lock panel, fps cap, copy and load your settings", "checks for updates by itself and shows this window when something changed" } },
@@ -4184,156 +4733,264 @@ local Pages = {}
 local Panel = { open = false, page = nil, token = 0, cx = 0, cy = 0, mode = "closed" }
 local Detail = { isOpen = false, entry = nil, token = 0 }
 
+local Shell = { narrow = false, bare = false, stage = { x = 12, y = 84, w = 700, h = 300 }, leftW = 340, rightW = 300, edgeShown = false }
+
+function Aside.backIcon()
+	return Shell.narrow and "chevron-left" or "x"
+end
+
+function Aside.show(key, frame, page, onClose)
+	if Aside.open and Aside.key ~= key and Aside.onClose then
+		local f = Aside.onClose
+		Aside.onClose = nil
+		pcall(f)
+	end
+	Aside.key, Aside.page, Aside.onClose = key, page or Panel.page, onClose
+	frame.Parent = Aside.content
+	for _, c in ipairs(Aside.content:GetChildren()) do
+		if c:IsA("GuiObject") then c.Visible = c == frame end
+	end
+	Aside.holder.Visible = true
+	if not Aside.open then
+		Aside.open = true
+		Aside.token += 1
+		local w = Aside.card.Size.X.Offset
+		Aside.card.Position = UDim2.fromOffset(w + 12, 4)
+		UI.tween(Aside.card, 0.45, { Position = UDim2.fromOffset(4, 4) })
+		if Shell.narrow then UI.tween(P.card, 0.45, { Position = UDim2.fromOffset(-(P.card.Size.X.Offset + 12), 4) }) end
+	end
+	Z.front(Aside.holder)
+end
+
+function Aside.hide(instant)
+	if not Aside.open then return end
+	Aside.open = false
+	Aside.token += 1
+	local tk = Aside.token
+	local f = Aside.onClose
+	Aside.onClose, Aside.key, Aside.page = nil, nil, nil
+	if f then pcall(f) end
+	local t = instant and 0 or 0.4
+	local w = Aside.card.Size.X.Offset
+	local tw = UI.tween(Aside.card, t, { Position = UDim2.fromOffset(w + 12, 4) })
+	UI.done(tw, function()
+		if Aside.token == tk then Aside.holder.Visible = false end
+	end)
+	if Shell.narrow and Panel.open then UI.tween(P.card, t, { Position = UDim2.fromOffset(4, 4) }) end
+end
+
 local function applyLayout()
 	local sz = Gui.AbsoluteSize
 	if sz.X < 50 or sz.Y < 50 then
 		local cam = workspace.CurrentCamera
 		sz = cam and cam.ViewportSize or Vector2.new(1280, 720)
 	end
-	local fit = math.min((sz.Y - 12) / 300, (sz.X - 12) / (PANEL_W + SIDE_W + 40))
-	local auto = math.clamp(math.min((sz.Y - 20) / 400, (sz.X - 16) / (PANEL_W + SIDE_W + 40)), 0.6, 1.25)
+	local fit = math.min(sz.Y / 330, sz.X / 340)
+	local auto = math.clamp(math.min((sz.Y - 10) / 410, (sz.X - 10) / 380), 0.6, 1.25)
 	local s = math.max(0.45, math.min(auto * S.uiScale, fit))
 	L.scale = s
 	L.W, L.H = sz.X / s, sz.Y / s
-	L.panelH = math.floor(math.clamp(L.H - 24, 240, 420))
-	SideRefs.relayout()
 	RootScale.Scale = s
 	Root.Size = UDim2.fromScale(1 / s, 1 / s)
-	P.holder.Size = UDim2.fromOffset(PANEL_W + 8, L.panelH + 8)
-	P.card.Size = UDim2.fromOffset(PANEL_W, L.panelH)
-	local pg = Panel.page and Pages[Panel.page]
-	local top = P.contentTop(pg ~= nil and pg.tabs ~= nil)
-	P.content.Size = UDim2.fromOffset(PANEL_W - 20, L.panelH - top - 10)
-	Detail.resize()
-	Panel.place()
+	Shell.layout()
 	Win.relayout()
-	Panel.indicate()
 end
 
-function Panel.clamp(cx, cy)
-	local hw, hh = (PANEL_W + 8) / 2, (L.panelH + 8) / 2
-	if L.W <= hw * 2 then cx = L.W / 2 else cx = math.clamp(cx, hw, L.W - hw) end
-	if L.H <= hh * 2 then cy = L.H / 2 else cy = math.clamp(cy, hh, L.H - hh) end
-	return cx, cy
-end
-
-function Panel.place()
-	local cx, cy
-	if type(S.panelPos) == "table" then
-		cx, cy = S.panelPos.x * L.W, S.panelPos.y * L.H
+function Shell.layout()
+	local M = 12
+	local W, H = L.W, L.H
+	local barOn = S.statsBar and not HUB.hidden
+	local bp, dp = S.barPos, S.dockPos
+	Shell.compact = H < 470
+	Dock.compact = Shell.compact
+	Head.compact = Shell.compact
+	Head.h = Shell.compact and 46 or 60
+	local pf = Pill.frame
+	if bp == "left" then
+		pf.AnchorPoint, pf.Position = Vector2.new(0, 0), UDim2.fromOffset(M, 6)
+	elseif bp == "right" then
+		pf.AnchorPoint, pf.Position = Vector2.new(1, 0), UDim2.new(1, -M, 0, 6)
+	elseif bp == "bottom" then
+		pf.AnchorPoint, pf.Position = Vector2.new(0.5, 1), UDim2.new(0.5, 0, 1, -6)
 	else
-		cx, cy = L.W - 10 - SIDE_W - 10 - PANEL_W / 2, L.H / 2
+		pf.AnchorPoint, pf.Position = Vector2.new(0.5, 0), UDim2.new(0.5, 0, 0, 6)
 	end
-	Panel.cx, Panel.cy = Panel.clamp(cx, cy)
-	P.holder.Position = UDim2.fromOffset(Panel.cx, Panel.cy)
-	Toast.place()
+	Dock.layout(false)
+	local bottomIn = M + ((barOn and bp == "bottom") and 30 or 0)
+	local x1, x2, yBottom = M, W - M, H - bottomIn
+	local thick = Dock.thick
+	if dp == "left" then
+		Dock.frame.AnchorPoint = Vector2.new(0, 0.5)
+		Dock.posOn, Dock.posOff = UDim2.new(0, M, 0.5, 0), UDim2.new(0, -thick - 40, 0.5, 0)
+		x1 = M + thick + 10
+	elseif dp == "right" then
+		Dock.frame.AnchorPoint = Vector2.new(1, 0.5)
+		Dock.posOn, Dock.posOff = UDim2.new(1, -M, 0.5, 0), UDim2.new(1, thick + 40, 0.5, 0)
+		x2 = W - M - thick - 10
+	else
+		Dock.frame.AnchorPoint = Vector2.new(0.5, 1)
+		Dock.posOn, Dock.posOff = UDim2.new(0.5, 0, 1, -bottomIn), UDim2.new(0.5, 0, 1, thick + 40)
+		yBottom = H - bottomIn - thick - 10
+	end
+	if not Dock.moving then Dock.frame.Position = Dock.shown and Dock.posOn or Dock.posOff end
+	local narrow = (x2 - x1) < 610
+	Shell.narrow = narrow
+	Shell.x1, Shell.x2, Shell.barOn = x1, x2, barOn
+	local headY, toolsY = M, M
+	if barOn then
+		if bp == "left" then
+			headY += 32
+		elseif bp == "right" then
+			toolsY += 32
+		elseif bp == "top" and narrow then
+			headY += 32
+			toolsY += 32
+		end
+	end
+	Head.x, Head.y = x1, headY
+	Head.frame.Position = UDim2.fromOffset(x1, headY)
+	Shell.fitHead()
+	Tools.frame.Position = UDim2.fromOffset(x2, toolsY + (Head.h - 36) / 2)
+	Tools.frame.Size = UDim2.fromOffset(math.floor((x2 - x1) * 0.6), 36)
+	local top = math.max(headY + Head.h, toolsY + Head.h) + (Shell.compact and 8 or 10)
+	local st = Shell.stage
+	st.x, st.y, st.w, st.h = x1, top, x2 - x1, math.max(170, yBottom - top)
+	if narrow then
+		Shell.leftW, Shell.rightW = st.w, st.w
+	else
+		Shell.leftW = math.clamp(math.floor(st.w * 0.4), 300, 390)
+		Shell.rightW = math.clamp(math.floor(st.w * 0.33), 270, 340)
+	end
+	PANEL_W = Shell.leftW
+	L.panelH = st.h
+	local aw = narrow and Shell.leftW or Shell.rightW
+	Aside.holder.Position = UDim2.fromOffset((narrow and st.x or (st.x + st.w - aw)) - 4, st.y - 4)
+	Aside.holder.Size = UDim2.fromOffset(aw + 8, st.h + 8)
+	Aside.card.Size = UDim2.fromOffset(aw, st.h)
+	Aside.card.Position = Aside.open and UDim2.fromOffset(4, 4) or UDim2.fromOffset(aw + 12, 4)
+	if dp == "left" then
+		Edge.AnchorPoint = Vector2.new(0, 0.5)
+		Shell.edgeOn, Shell.edgeOff = UDim2.new(0, -12, 0.5, 0), UDim2.new(0, -50, 0.5, 0)
+		UI.setIcon(edgeIcon, "chevron-right")
+		edgeIcon.Position = UDim2.fromOffset(25, 33)
+	else
+		Edge.AnchorPoint = Vector2.new(1, 0.5)
+		Shell.edgeOn, Shell.edgeOff = UDim2.new(1, 12, 0.5, 0), UDim2.new(1, 50, 0.5, 0)
+		UI.setIcon(edgeIcon, "chevron-left")
+		edgeIcon.Position = UDim2.fromOffset(13, 33)
+	end
+	Edge.Position = Shell.edgeShown and Shell.edgeOn or Shell.edgeOff
+	Shell.applyPage(Panel.page and Pages[Panel.page], true)
+	Toast.place(true)
+end
+
+function Shell.fitHead()
+	local x1, x2 = Shell.x1 or 12, Shell.x2 or (L.W - 12)
+	local cur = Panel.page and Pages[Panel.page]
+	for _, other in pairs(Pages) do
+		if other.tools then other.tools.Visible = other == cur and not Shell.narrow end
+	end
+	local toolsW = 0
+	for _, c in ipairs(Tools.frame:GetChildren()) do
+		if c:IsA("GuiObject") and c.Visible then
+			if c.AutomaticSize == Enum.AutomaticSize.None then
+				toolsW += c.Size.X.Offset + 8
+			else
+				for _, k in ipairs(c:GetChildren()) do
+					if k:IsA("GuiObject") and k.Visible then toolsW += k.Size.X.Offset + 8 end
+				end
+			end
+		end
+	end
+	if Shell.narrow then
+		Head.maxW = math.max(150, (x2 - x1) - toolsW - 6)
+	elseif Shell.barOn and S.barPos == "top" then
+		Head.maxW = math.max(150, math.min((x2 - x1) * 0.55, L.W / 2 - Pill.frame.Size.X.Offset / 2 - 10 - x1))
+	else
+		Head.maxW = math.floor((x2 - x1) * 0.55)
+	end
+	Head.fit()
+end
+
+function Shell.applyPage(pg, instant)
+	local st = Shell.stage
+	local bare = pg ~= nil and pg.bare == true
+	local w = bare and st.w or Shell.leftW
+	P.holder.Position = UDim2.fromOffset(st.x - 4, st.y - 4)
+	P.holder.Size = UDim2.fromOffset(w + 8, st.h + 8)
+	P.card.Size = UDim2.fromOffset(w, st.h)
+	if Panel.open then
+		local hidden = Aside.open and Shell.narrow
+		P.card.Position = hidden and UDim2.fromOffset(-(w + 12), 4) or UDim2.fromOffset(4, 4)
+	end
+	local hasTabs = pg ~= nil and pg.tabs ~= nil and not bare
+	local top = bare and 0 or P.contentTop(hasTabs)
+	local inset = bare and 0 or 10
+	P.content.Position = UDim2.fromOffset(inset, top)
+	P.content.Size = UDim2.fromOffset(w - inset * 2, st.h - top - (bare and 0 or 10))
+	P.tabs.Size = UDim2.fromOffset(w - 24, 30)
+	if pg and pg.tabs and math.abs(P.tabsW - w) > 0.5 and Panel.page == pg.id then Panel.buildTabs(pg) end
+	if bare ~= Shell.bare then
+		Shell.bare = bare
+		local t = instant and 0 or 0.25
+		if bare then
+			local tw = UI.tween(P.bg, t, { BackgroundTransparency = 1 })
+			UI.tween(P.bgStroke, t, { Transparency = 1 })
+			UI.done(tw, function()
+				if Shell.bare then P.bg.Visible = false end
+			end)
+		else
+			P.bg.Visible = true
+			UI.tween(P.bg, t, { BackgroundTransparency = S.opacity })
+			UI.tween(P.bgStroke, t, { Transparency = 0.3 })
+		end
+	end
+	if pg and pg.layout then pg.layout(w, st.h) end
 end
 
 local toastSpot = nil
 function Toast.place(instant)
 	local w, h = 260, 180
-	local top = (S.statsBar and Pill.frame.Visible) and 38 or 8
-	local bottomY = L.H - 8 - h
-	local want = S.toastPos == "bottom"
-	local y1, y2 = want and bottomY or top, want and top or bottomY
-	local spots = { { x = L.W / 2 - w / 2, y = y1, bottom = want } }
-	local px1, py1 = Panel.cx - PANEL_W / 2, Panel.cy - L.panelH / 2
-	local px2, py2 = px1 + PANEL_W, py1 + L.panelH
-	if Panel.open then
-		spots[#spots + 1] = { x = px1 - 12 - w, y = y1, bottom = want }
-		spots[#spots + 1] = { x = px2 + 12, y = y1, bottom = want }
-		spots[#spots + 1] = { x = L.W / 2 - w / 2, y = y2, bottom = not want }
-		spots[#spots + 1] = { x = px1 - 12 - w, y = y2, bottom = not want }
+	local barOn = S.statsBar and Pill.frame.Visible
+	local x = L.W / 2 - w / 2
+	local bottom = S.toastPos == "bottom"
+	local y
+	if bottom then
+		y = L.H - 8 - h
+		if barOn and S.barPos == "bottom" then y -= 30 end
+		if Dock.shown and S.dockPos == "bottom" then y -= Dock.thick + 10 end
+	else
+		y = (barOn and S.barPos == "top") and 38 or 8
 	end
-	local pick = spots[1]
-	for _, s in ipairs(spots) do
-		local fits = s.x >= 4 and s.x + w <= L.W - 4 and s.y >= 0 and s.y + h <= L.H
-		local covers = Panel.open and s.x < px2 and s.x + w > px1 and s.y < py2 and s.y + h > py1
-		if fits and not covers then
-			pick = s
-			break
-		end
-	end
-	toastList.VerticalAlignment = pick.bottom and Enum.VerticalAlignment.Bottom or Enum.VerticalAlignment.Top
-	local key = math.floor(pick.x) .. "," .. math.floor(pick.y)
+	toastList.VerticalAlignment = bottom and Enum.VerticalAlignment.Bottom or Enum.VerticalAlignment.Top
+	local key = math.floor(x) .. "," .. math.floor(y)
 	if key == toastSpot then return end
 	local first = toastSpot == nil
 	toastSpot = key
-	UI.tween(ToastBox, (first or instant or #Toast.list == 0) and 0 or 0.35, { Position = UDim2.fromOffset(pick.x, pick.y) })
+	UI.tween(ToastBox, (first or instant or #Toast.list == 0) and 0 or 0.35, { Position = UDim2.fromOffset(x, y) })
 end
 
-local navSelected = nil
 local function setNavSelected(id)
-	navSelected = id
-	for nid, ref in pairs(SideRefs.nav) do
-		local sel = (nid == id)
-		ref.selected = sel
-		if ref.logo then
-			UI.tween(ref.ring, 0.2, { Transparency = sel and 0 or (ref.hover and 0.2 or 0.7), Color = sel and accentColor() or T.text })
-		else
-			UI.tween(ref.btn, 0.2, { BackgroundTransparency = sel and 0 or (ref.hover and 0.55 or 1) })
-			UI.tween(ref.stroke, 0.2, { Transparency = sel and 0.55 or 1 })
-			UI.tint(ref.icon, sel and T.text or T.sub, 0.2)
-		end
-	end
-	local ind = SideRefs.indicator
-	local y = id and SideRefs.centerY(id)
-	if y then
-		if ind.BackgroundTransparency > 0.9 then
-			UI.tween(ind, 0, { Position = UDim2.fromOffset(1, y), Size = UDim2.fromOffset(3, 4) })
-			UI.tween(ind, 0.3, { BackgroundTransparency = 0, Size = UDim2.fromOffset(3, 18) })
-		else
-			UI.tween(ind, 0.4, { Position = UDim2.fromOffset(1, y), BackgroundTransparency = 0, Size = UDim2.fromOffset(3, 18) })
-		end
-	else
-		UI.tween(ind, 0.2, { BackgroundTransparency = 1, Size = UDim2.fromOffset(3, 4) })
-	end
+	Dock.select(id)
 end
 
-function Panel.indicate()
-	local y = navSelected and SideRefs.centerY(navSelected)
-	if y then UI.tween(SideRefs.indicator, 0, { Position = UDim2.fromOffset(1, y) }) end
+function Panel.indicate() end
+function Panel.place()
+	Shell.layout()
 end
 
 local function showEdge(on)
+	Shell.edgeShown = on
 	if on then
-		UI.tween(Edge, 0.45, { Position = UDim2.new(1, 12, 0.5, 0) }, Enum.EasingStyle.Back)
+		UI.tween(Edge, 0.45, { Position = Shell.edgeOn or Edge.Position }, Enum.EasingStyle.Back)
 	else
-		UI.tween(Edge, 0.25, { Position = UDim2.new(1, 50, 0.5, 0) }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+		UI.tween(Edge, 0.25, { Position = Shell.edgeOff or Edge.Position }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
 	end
 end
 
-local sideToken = 0
 local function showSide(on)
-	sideToken += 1
-	local tk = sideToken
-	if on then
-		local wasHidden = not Side.Visible
-		Side.Visible = true
-		UI.tween(Side, 0.5, { Position = UDim2.new(1, -10, 0.5, 0) }, Enum.EasingStyle.Back)
-		if wasHidden and S.animations then
-			local all = { SideRefs.logoScale }
-			for _, nid in ipairs(SideRefs.order) do
-				all[#all + 1] = SideRefs.nav[nid].scale
-			end
-			for i, sc in ipairs(all) do
-				UI.tween(sc, 0, { Scale = 0.4 })
-				task.delay(0.05 + i * 0.035, function()
-					if sideToken == tk then UI.tween(sc, 0.4, { Scale = 1 }, Enum.EasingStyle.Back) end
-				end)
-			end
-		end
-	else
-		local tw = UI.tween(Side, 0.3, { Position = UDim2.new(1, SIDE_W + 24, 0.5, 0) }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
-		UI.done(tw, function()
-			if sideToken == tk then
-				Side.Visible = false
-				for _, ref in pairs(SideRefs.nav) do
-					ref.scale.Scale = 1
-				end
-			end
-		end)
-	end
+	Dock.show(on)
+	Toast.place()
 end
 
 local spinTween = nil
@@ -4359,27 +5016,38 @@ local function updateSpin()
 	setSpin(pg ~= nil and pg.spinWhileLoading == true and Repo.state == "loading")
 end
 
+function Panel.headText(pg)
+	if pg.head then
+		local ok, t, s = pcall(pg.head)
+		if ok and t then return t, s end
+	end
+	return pg.title, pg.subtitle or ""
+end
+
 function Panel.header(pg)
-	local text = string.upper(pg.title)
-	local w = math.ceil(textWidth(text, 14, FONT_B))
-	local total = 16 + 7 + w
-	local x0 = math.floor((PANEL_W - total) / 2)
-	UI.setIcon(P.titleIcon, pg.icon)
-	P.titleIcon.Position = UDim2.fromOffset(x0, 27)
-	P.title.Position = UDim2.fromOffset(x0 + 23, 22)
-	P.title.Size = UDim2.fromOffset(w + 6, 26)
-	P.title.Text = text
-	P.title.TextTransparency = 1
-	UI.tween(P.title, 0.3, { TextTransparency = 0 }, Enum.EasingStyle.Quad)
-	P.titleIcon.ImageTransparency = 1
-	UI.tween(P.titleIcon, 0.3, { ImageTransparency = 0 }, Enum.EasingStyle.Quad)
+	local t, s = Panel.headText(pg)
+	Head.set(t, s)
+	Head.title.TextTransparency = 1
+	UI.tween(Head.title, 0.3, { TextTransparency = 0 }, Enum.EasingStyle.Quad)
+	Head.sub.TextTransparency = 1
+	UI.tween(Head.sub, 0.35, { TextTransparency = 0 }, Enum.EasingStyle.Quad)
 	for _, side in ipairs({ "left", "right" }) do
 		local def, ref = pg[side], P[side]
 		ref.fn = def and def.fn or nil
 		ref.btn.Visible = def ~= nil
 		if def then UI.setIcon(ref.icon, def.icon) end
 	end
+	for _, other in pairs(Pages) do
+		if other.tools then other.tools.Visible = other == pg and not Shell.narrow end
+	end
 	updateSpin()
+end
+
+function Panel.refreshHead()
+	local pg = Panel.open and Panel.page and Pages[Panel.page]
+	if not pg or not pg.head then return end
+	local t, s = Panel.headText(pg)
+	if t ~= Head.title.Text or (s or "") ~= Head.sub.Text then Head.set(t, s) end
 end
 
 function Panel.buildTabs(pg)
@@ -4387,13 +5055,15 @@ function Panel.buildTabs(pg)
 		b:Destroy()
 	end
 	P.tabButtons = {}
-	if not pg.tabs then
+	if not pg.tabs or pg.bare then
 		P.tabs.Visible = false
 		return
 	end
 	P.tabs.Visible = true
+	local cw = P.card.Size.X.Offset
+	P.tabsW = cw
 	local n = #pg.tabs
-	local w = (PANEL_W - 30) / n
+	local w = (cw - 30) / n
 	UI.tween(P.pill, 0, { Size = UDim2.fromOffset(w, 24), Position = UDim2.fromOffset(3 + (pg.tab - 1) * w, 3) })
 	for i, name in ipairs(pg.tabs) do
 		local b = UI.button(P.tabs, {
@@ -4403,8 +5073,9 @@ function Panel.buildTabs(pg)
 			Position = UDim2.fromOffset(3 + (i - 1) * w, 3),
 			Text = name,
 			Font = FONT_M,
-			TextSize = n >= 4 and 11 or 12,
+			TextSize = (n >= 4 or w < 70) and 11 or 12,
 			TextColor3 = (i == pg.tab) and T.text or T.sub,
+			TextTruncate = Enum.TextTruncate.AtEnd,
 		})
 		b.Activated:Connect(function() Panel.setTab(pg, i) end)
 		UI.onHover(b, function(on)
@@ -4415,10 +5086,10 @@ function Panel.buildTabs(pg)
 end
 
 function Panel.setTab(pg, i)
-	if pg.tab == i or Panel.page ~= pg.id then return end
+	if pg.tab == i or Panel.page ~= pg.id or not pg.tabs then return end
 	local old = pg.tab
 	pg.tab = i
-	local w = (PANEL_W - 30) / #pg.tabs
+	local w = (P.tabsW - 30) / #pg.tabs
 	UI.tween(P.pill, 0.35, { Position = UDim2.fromOffset(3 + (i - 1) * w, 3) })
 	for j, b in ipairs(P.tabButtons) do
 		UI.tween(b, 0.2, { TextColor3 = (j == i) and T.text or T.sub })
@@ -4430,13 +5101,17 @@ function Panel.setTab(pg, i)
 	pg.viewTk[i] = (pg.viewTk[i] or 0) + 1
 	pg.viewTk[old] = (pg.viewTk[old] or 0) + 1
 	local tk = pg.viewTk[old]
-	nv.Visible = true
-	nv.Position = UDim2.new(dir, 0, 0, y)
-	UI.tween(nv, 0.4, { Position = UDim2.new(0, 0, 0, y) })
-	local tw = UI.tween(ov, 0.4, { Position = UDim2.new(-dir, 0, 0, y) })
-	UI.done(tw, function()
-		if pg.tab ~= old and pg.viewTk[old] == tk then ov.Visible = false end
-	end)
+	if nv then
+		nv.Visible = true
+		nv.Position = UDim2.new(dir, 0, 0, y)
+		UI.tween(nv, 0.4, { Position = UDim2.new(0, 0, 0, y) })
+	end
+	if ov then
+		local tw = UI.tween(ov, 0.4, { Position = UDim2.new(-dir, 0, 0, y) })
+		UI.done(tw, function()
+			if pg.tab ~= old and pg.viewTk[old] == tk then ov.Visible = false end
+		end)
+	end
 	if pg.onTab then pg.onTab(i) end
 end
 
@@ -4444,7 +5119,7 @@ function Panel.switch(id, instant)
 	local newP = Pages[id]
 	if not newP then return end
 	local oldP = Panel.page and Pages[Panel.page]
-	if Detail.isOpen then Detail.close(true) end
+	if Aside.open and Aside.page ~= id then Aside.hide(true) end
 	if oldP == newP then
 		if newP.onShow then newP.onShow() end
 		return
@@ -4454,13 +5129,9 @@ function Panel.switch(id, instant)
 		S.lastPage = id
 		saveSettings()
 	end
+	Shell.applyPage(newP, instant)
 	Panel.header(newP)
 	Panel.buildTabs(newP)
-	local top = P.contentTop(newP.tabs ~= nil)
-	UI.tween(P.content, instant and 0 or 0.35, {
-		Position = UDim2.fromOffset(10, top),
-		Size = UDim2.fromOffset(PANEL_W - 20, L.panelH - top - 10),
-	})
 	newP.frame.Visible = true
 	newP.tk = (newP.tk or 0) + 1
 	if instant or not oldP then
@@ -4480,6 +5151,7 @@ function Panel.switch(id, instant)
 		end)
 	end
 	if newP.onShow then newP.onShow() end
+	Shell.fitHead()
 end
 
 local Blur = { fx = nil }
@@ -4512,9 +5184,15 @@ function Panel.show(id)
 	local wasVisible = P.holder.Visible
 	Panel.open = true
 	P.holder.Visible = true
-	if not wasVisible then P.card.Position = UDim2.fromOffset(PANEL_W + 12, 4) end
+	Tools.frame.Visible = true
 	Panel.switch(id, not wasVisible)
+	if not wasVisible then
+		P.card.Position = UDim2.fromOffset(-(P.card.Size.X.Offset + 12), 4)
+		Head.frame.Visible = true
+		Head.frame.Position = UDim2.fromOffset(Head.x - 24, Head.y)
+	end
 	UI.tween(P.card, 0.5, { Position = UDim2.fromOffset(4, 4) })
+	UI.tween(Head.frame, 0.45, { Position = UDim2.fromOffset(Head.x, Head.y) })
 	setNavSelected(id)
 	Toast.place()
 	Z.front(P.holder)
@@ -4526,10 +5204,13 @@ function Panel.hide()
 	Panel.open = false
 	Panel.token += 1
 	local tk = Panel.token
-	local tw = UI.tween(P.card, 0.32, { Position = UDim2.fromOffset(PANEL_W + 12, 4) }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+	Aside.hide()
+	local tw = UI.tween(P.card, 0.32, { Position = UDim2.fromOffset(-(P.card.Size.X.Offset + 12), 4) }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
 	UI.done(tw, function()
 		if Panel.token == tk then P.holder.Visible = false end
 	end)
+	Head.frame.Visible = false
+	Tools.frame.Visible = false
 	setNavSelected(nil)
 	Toast.place()
 	Blur.set(false)
@@ -4539,6 +5220,7 @@ function Panel.unhide()
 	if not HUB.hidden then return end
 	HUB.hidden = false
 	Pill.frame.Visible = S.statsBar
+	Shell.layout()
 end
 
 function Panel.openBar()
@@ -4558,8 +5240,8 @@ end
 function Panel.nav(id)
 	if Panel.mode ~= "bar" then Panel.openBar() end
 	if Panel.open and Panel.page == id then
-		if Detail.isOpen then
-			Detail.close()
+		if Aside.open then
+			Aside.hide()
 		else
 			Panel.hide()
 		end
@@ -4586,31 +5268,21 @@ function Panel.toggleAll()
 	end
 end
 
-P.card.InputBegan:Connect(function(input)
+P.bg.InputBegan:Connect(function(input)
 	if input.UserInputType == MOUSE1 or input.UserInputType == TOUCH then Z.front(P.holder) end
 end)
-Win.anchor = function()
-	return Panel.open, Panel.cx
-end
-
-P.handle.InputBegan:Connect(function(input)
-	if input.UserInputType ~= MOUSE1 and input.UserInputType ~= TOUCH then return end
-	if Drag.cur then return end
-	if S.lockPanel then return end
-	local sx, sy = Panel.cx, Panel.cy
-	UI.tween(P.grip, 0.15, { BackgroundColor3 = T.text, Size = UDim2.fromOffset(44, 4) })
-	Drag.start(input, function(_, delta)
-		Panel.cx, Panel.cy = Panel.clamp(sx + delta.X / L.scale, sy + delta.Y / L.scale)
-		P.holder.Position = UDim2.fromOffset(Panel.cx, Panel.cy)
-	end, function()
-		UI.tween(P.grip, 0.25, { BackgroundColor3 = T.dim, Size = UDim2.fromOffset(36, 4) })
-		if math.abs(Panel.cx - sx) > 1 or math.abs(Panel.cy - sy) > 1 then
-			S.panelPos = { x = Panel.cx / L.W, y = Panel.cy / L.H }
-			saveSettings()
-		end
-		Toast.place()
-	end)
+Aside.bg.InputBegan:Connect(function(input)
+	if input.UserInputType == MOUSE1 or input.UserInputType == TOUCH then Z.front(Aside.holder) end
 end)
+Win.anchor = function()
+	local st = Shell.stage
+	if Panel.open and not Shell.narrow then
+		local left = st.x + Shell.leftW
+		local right = st.x + st.w - ((Aside.open or Shell.bare) and Shell.rightW or 0)
+		return (left + right) / 2
+	end
+	return L.W / 2
+end
 
 local function newPage(def)
 	local page = {
@@ -4618,6 +5290,8 @@ local function newPage(def)
 		title = def.title,
 		icon = def.icon,
 		tabs = def.tabs,
+		bare = def.bare,
+		subtitle = def.subtitle,
 		tab = 1,
 		views = {},
 		viewY = def.viewY or 0,
@@ -4812,7 +5486,7 @@ local function copyText(text, what)
 end
 
 local function pseudoEntry(path, name)
-	return Repo.byPath[path] or { path = path, name = name or Util.prettyName(path), category = "Not in repo", size = 0, ext = "" }
+	return Repo.byPath[path] or Repo.remote[path] or { path = path, name = name or Util.prettyName(path), category = "Not in repo", size = 0, ext = "" }
 end
 
 local Ctl = {}
@@ -5135,13 +5809,12 @@ local D = {}
 D.frame = UI.new("Frame", {
 	Name = "Detail",
 	BackgroundTransparency = 1,
-	Position = UDim2.fromOffset(PANEL_W + 10, 50),
-	Size = UDim2.fromOffset(PANEL_W, 330),
+	Size = UDim2.fromScale(1, 1),
 	Visible = false,
-}, P.card)
+}, Aside.content)
 D.back = UI.button(D.frame, { Name = "Back", BackgroundColor3 = T.card, Size = UDim2.fromOffset(28, 28), Position = UDim2.fromOffset(12, 4) })
 UI.corner(D.back, 9)
-UI.icon("chevron-left", 15, T.text, D.back, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+D.backIcon = UI.icon("chevron-left", 15, T.text, D.back, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
 UI.pressable(D.back, 0.88)
 UI.onHover(D.back, function(on)
 	UI.tween(D.back, 0.15, { BackgroundColor3 = on and T.card2 or T.card })
@@ -5515,9 +6188,7 @@ function Detail.fill(e)
 	loadAbout(e, false)
 end
 
-function Detail.resize()
-	D.frame.Size = UDim2.fromOffset(PANEL_W, L.panelH - 50)
-end
+function Detail.resize() end
 
 function Detail.open(e)
 	if not e then return end
@@ -5527,37 +6198,25 @@ function Detail.open(e)
 	end
 	Detail.entry = e
 	Detail.fill(e)
-	if Detail.isOpen then return end
+	UI.setIcon(D.backIcon, Aside.backIcon())
+	if Detail.isOpen and Aside.key == "detail" then return end
 	Detail.isOpen = true
 	Detail.token += 1
-	D.frame.Visible = true
 	D.scroll.CanvasPosition = Vector2.new(0, 0)
-	D.frame.Position = UDim2.fromOffset(PANEL_W + 10, 50)
-	UI.tween(D.frame, 0.45, { Position = UDim2.fromOffset(0, 50) })
-	local pg = Pages[Panel.page]
-	local top = P.contentTop(pg ~= nil and pg.tabs ~= nil)
-	UI.tween(P.content, 0.45, { Position = UDim2.fromOffset(10 - PANEL_W, top) })
-	UI.tween(P.tabs, 0.45, { Position = UDim2.fromOffset(12 - PANEL_W, 56) })
+	Aside.show("detail", D.frame, Panel.page, function()
+		Detail.isOpen = false
+		setRunSpin(false)
+	end)
 	Detail.tick()
 end
 
 function Detail.close(instant)
 	if not Detail.isOpen then return end
-	Detail.isOpen = false
-	Detail.token += 1
-	local tk = Detail.token
-	local t = instant and 0 or 0.4
-	local tw = UI.tween(D.frame, t, { Position = UDim2.fromOffset(PANEL_W + 10, 50) })
-	UI.done(tw, function()
-		if Detail.token == tk then
-			D.frame.Visible = false
-			setRunSpin(false)
-		end
-	end)
-	local pg = Panel.page and Pages[Panel.page]
-	local top = P.contentTop(pg ~= nil and pg.tabs ~= nil)
-	UI.tween(P.content, t, { Position = UDim2.fromOffset(10, top) })
-	UI.tween(P.tabs, t, { Position = UDim2.fromOffset(12, 56) })
+	if Aside.key == "detail" then
+		Aside.hide(instant)
+	else
+		Detail.isOpen = false
+	end
 end
 
 Bus.on("logo", function()
@@ -5570,87 +6229,244 @@ Bus.on("logo", function()
 	end
 end)
 
-local Home = newPage({ id = "home", title = "Home", icon = "house" })
-Home.view = newScroll(Home.frame, 0)
-Home.views = { Home.view }
+local Home = newPage({ id = "home", title = "Home", icon = "house", bare = true })
+Home.views = {}
 Home.stats = {}
 Home.recentRows = {}
+Home.widgets = {}
+Home.bItems = {}
+Home.tiles = {}
+Home.friendsAt = -1000
 Home.activeCount = function() return 0 end
+Home.colA = newScroll(Home.frame, 0)
+Home.colA.Name = "ColA"
+Home.colB = newScroll(Home.frame, 0)
+Home.colB.Name = "ColB"
+for _, c in ipairs({ Home.colA, Home.colB }) do
+	c:FindFirstChildOfClass("UIListLayout").Padding = UDim.new(0, 10)
+	local pad = c:FindFirstChildOfClass("UIPadding")
+	pad.PaddingLeft, pad.PaddingRight, pad.PaddingTop, pad.PaddingBottom = UDim.new(0, 1), UDim.new(0, 1), UDim.new(0, 1), UDim.new(0, 6)
+end
+
+function Home.greeting()
+	local h = tonumber(os.date("%H")) or 12
+	if h < 5 then return "Still up? Don't stay up too late" end
+	if h < 12 then return "Good morning, have a lovely day" end
+	if h < 18 then return "Good afternoon, what are we playing?" end
+	if h < 22 then return "Good evening, enjoy your games" end
+	return "It's getting late, play safe"
+end
+
+Home.head = function()
+	return "Welcome back, " .. LP.DisplayName, Home.greeting()
+end
+
+function Home.widget(parent, h, order, title, icon)
+	local f = UI.new("Frame", { Name = "Widget", BackgroundColor3 = T.panel, BackgroundTransparency = S.opacity, Size = UDim2.new(1, 0, 0, h), LayoutOrder = order }, parent)
+	UI.corner(f, 20)
+	UI.stroke(f, T.stroke, 1, 0.3)
+	if title then
+		UI.label(f, { Name = "Title", Text = title, Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(14, 10), Size = UDim2.new(1, -60, 0, 18), TextTruncate = Enum.TextTruncate.AtEnd })
+		if icon then UI.icon(icon, 13, T.dim, f, { Name = "TitleIcon", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 13) }) end
+	end
+	Home.widgets[#Home.widgets + 1] = f
+	if parent == Home.colB then Home.bItems[#Home.bItems + 1] = f end
+	return f
+end
+
+function Home.restyle()
+	for _, f in ipairs(Home.widgets) do
+		f.BackgroundTransparency = S.opacity
+	end
+end
+
+function Home.pill(parent, icon, text, pos, size)
+	local b = UI.button(parent, { Name = text, BackgroundColor3 = T.card, Size = size, Position = pos })
+	UI.corner(b, 13)
+	local set = iconText(b, icon, text, T.text, 11)
+	UI.pressable(b, 0.94)
+	UI.onHover(b, function(on)
+		UI.tween(b, 0.15, { BackgroundColor3 = on and T.card2 or T.card })
+	end)
+	return b, set
+end
+
 do
-	local hv = Home.view
-	local prof = card(hv, 68, 1)
-	prof.Name = "Profile"
+	local A = Home.colA
+	local w = Home.widget(A, 146, 1)
+	w.Name = "Profile"
+	local ring = UI.new("Frame", { Name = "Ring", Size = UDim2.fromOffset(62, 62), Position = UDim2.fromOffset(14, 14) }, w)
+	UI.corner(ring, 31)
+	UI.accent(ring, "BackgroundColor3")
 	local av = UI.new("ImageLabel", {
+		Name = "Avatar",
 		BackgroundColor3 = T.card2,
-		Size = UDim2.fromOffset(44, 44),
-		Position = UDim2.fromOffset(12, 12),
+		Size = UDim2.fromOffset(56, 56),
+		Position = UDim2.fromOffset(3, 3),
 		Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(LP.UserId) .. "&w=150&h=150",
-	}, prof)
-	UI.corner(av, 22)
-	UI.stroke(av, T.text, 1, 0.8)
-	UI.label(prof, { Text = "Welcome back,", TextSize = 11, TextColor3 = T.sub, Position = UDim2.fromOffset(66, 12), Size = UDim2.new(1, -140, 0, 14) })
-	UI.label(prof, { Text = LP.DisplayName, Font = FONT_B, TextSize = 15, Position = UDim2.fromOffset(66, 26), Size = UDim2.new(1, -140, 0, 19), TextTruncate = Enum.TextTruncate.AtEnd })
-	UI.label(prof, { Text = "@" .. LP.Name, TextSize = 10, TextColor3 = T.dim, Position = UDim2.fromOffset(66, 45), Size = UDim2.new(1, -140, 0, 13), TextTruncate = Enum.TextTruncate.AtEnd })
-	local chip = UI.new("Frame", { Name = "Version", BackgroundColor3 = T.card2, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 12), Size = UDim2.fromOffset(56, 20) }, prof)
+	}, ring)
+	UI.corner(av, 28)
+	UI.label(w, { Name = "Name", Text = LP.DisplayName, Font = FONT_B, TextSize = 16, Position = UDim2.fromOffset(88, 22), Size = UDim2.new(1, -160, 0, 20), TextTruncate = Enum.TextTruncate.AtEnd })
+	UI.label(w, { Name = "User", Text = "@" .. LP.Name, TextSize = 11, TextColor3 = T.sub, Position = UDim2.fromOffset(88, 44), Size = UDim2.new(1, -100, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+	local chip = UI.new("Frame", { Name = "Version", BackgroundColor3 = T.card2, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 16), Size = UDim2.fromOffset(56, 20) }, w)
 	UI.corner(chip, 10)
 	local ver = UI.label(chip, { Text = "v" .. HUB_VERSION, Font = FONT_B, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromScale(1, 1) })
 	UI.accent(ver, "TextColor3")
 	chip.Size = UDim2.fromOffset(math.ceil(textWidth(ver.Text, 10, FONT_B)) + 18, 20)
-	chip.Position = UDim2.new(1, -12, 0.5, -10)
+	local cells = { { "friends", "Friends" }, { "online", "Online" }, { "days", "Days old" } }
+	for i, c in ipairs(cells) do
+		local cell = UI.new("Frame", { Name = "Stat_" .. c[1], BackgroundTransparency = 1, Size = UDim2.new(1 / 3, -10, 0, 34), Position = UDim2.new((i - 1) / 3, 14 - (i - 1) * 4, 0, 86) }, w)
+		Home.stats[c[1]] = UI.label(cell, { Name = "Value", Text = "-", Font = FONT_B, TextSize = 17, Size = UDim2.new(1, 0, 0, 20) })
+		UI.label(cell, { Text = string.upper(c[2]), Font = FONT_B, TextSize = 8, TextColor3 = T.dim, Position = UDim2.fromOffset(0, 21), Size = UDim2.new(1, 0, 0, 11) })
+	end
+	local age = 0
+	pcall(function() age = LP.AccountAge end)
+	Home.stats.days.Text = tostring(age)
+	local joined = os.date("%B %Y", os.time() - age * 86400)
+	Home.joined = UI.label(w, { Name = "Joined", Text = "On Roblox since " .. tostring(joined), TextSize = 10, TextColor3 = T.dim, Position = UDim2.fromOffset(14, 124), Size = UDim2.new(1, -28, 0, 13), TextTruncate = Enum.TextTruncate.AtEnd })
 
-	Home.banner = UI.button(hv, { Name = "Update", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 50), LayoutOrder = 2, Visible = false })
-	UI.corner(Home.banner, 12)
+	Home.banner = UI.button(A, { Name = "Update", BackgroundColor3 = T.panel, BackgroundTransparency = S.opacity, Size = UDim2.new(1, 0, 0, 52), LayoutOrder = 2, Visible = false })
+	UI.corner(Home.banner, 18)
 	local bstroke = UI.stroke(Home.banner, T.text, 1, 0.5)
 	UI.accent(bstroke, "Color")
-	local bic = UI.new("Frame", { BackgroundTransparency = 0.82, Size = UDim2.fromOffset(30, 30), Position = UDim2.fromOffset(10, 10) }, Home.banner)
+	local bic = UI.new("Frame", { BackgroundTransparency = 0.82, Size = UDim2.fromOffset(30, 30), Position = UDim2.fromOffset(11, 11) }, Home.banner)
 	UI.corner(bic, 15)
 	UI.accent(bic, "BackgroundColor3")
 	UI.accent(UI.icon("download", 15, T.text, bic, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) }), "ImageColor3")
-	Home.bannerTitle = UI.label(Home.banner, { Text = "Update ready", Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(50, 9), Size = UDim2.new(1, -130, 0, 16) })
-	UI.label(Home.banner, { Text = "Tap to update, your scripts keep running", TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(50, 25), Size = UDim2.new(1, -60, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+	Home.bannerTitle = UI.label(Home.banner, { Text = "Update ready", Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(51, 10), Size = UDim2.new(1, -130, 0, 16) })
+	UI.label(Home.banner, { Text = "Tap to update, your scripts keep running", TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(51, 26), Size = UDim2.new(1, -60, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
 	Ctl.hoverable(Home.banner)
+	Home.widgets[#Home.widgets + 1] = Home.banner
 
-	Home.music = UI.new("Frame", { Name = "Music", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 64), LayoutOrder = 3, Visible = false }, hv)
-	Home.player = UI.new("Frame", { Name = "PlayerCard", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 64), LayoutOrder = 3, Visible = false }, hv)
+	local np = Home.widget(A, 104, 3, "Now playing", "music")
+	np.Name = "NowPlaying"
+	Home.music = UI.new("Frame", { Name = "Music", BackgroundTransparency = 1, Position = UDim2.fromOffset(4, 34), Size = UDim2.new(1, -8, 0, 64), Visible = false }, np)
+	Home.player = UI.new("Frame", { Name = "PlayerCard", BackgroundTransparency = 1, Position = UDim2.fromOffset(4, 34), Size = UDim2.new(1, -8, 0, 64), Visible = false }, np)
+	Home.idle = UI.button(np, { Name = "Idle", BackgroundTransparency = 1, Position = UDim2.fromOffset(4, 34), Size = UDim2.new(1, -8, 0, 64) })
+	local ib = UI.new("Frame", { Name = "Art", BackgroundColor3 = T.card2, Size = UDim2.fromOffset(44, 44), Position = UDim2.fromOffset(10, 9) }, Home.idle)
+	UI.corner(ib, 10)
+	UI.icon("music", 18, T.dim, ib, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+	UI.label(Home.idle, { Text = "Nothing playing", Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(64, 12), Size = UDim2.new(1, -110, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+	UI.label(Home.idle, { Text = "Pick a song from your library", TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(64, 30), Size = UDim2.new(1, -110, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+	local ip = UI.button(Home.idle, { Name = "Open", BackgroundColor3 = T.text, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(1, -30, 0.5, -2), Size = UDim2.fromOffset(34, 34) })
+	UI.corner(ip, 17)
+	UI.icon("play-fill", 14, T.ink, ip, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 1, 0.5, 0) })
+	UI.pressable(ip, 0.88)
+	ip.Activated:Connect(function() Panel.nav("player") end)
+	Home.idle.Activated:Connect(function() Panel.nav("player") end)
 
-	local grid = UI.new("Frame", { Name = "Stats", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 51), LayoutOrder = 4 }, hv)
+	Home.quickW = Home.widget(A, 130, 4, "Quick switches")
+	Home.quickW.Name = "QuickSwitches"
+	local edit = UI.button(Home.quickW, { Name = "Edit", BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 6), Size = UDim2.fromOffset(28, 28) })
+	UI.icon("layout-grid", 13, T.dim, edit, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+	UI.pressable(edit, 0.85)
+	Home.quickEdit = edit
+	Home.quick = UI.new("Frame", { Name = "Quick", BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 38), Size = UDim2.new(1, -24, 0, 76) }, Home.quickW)
+
+	local qa = Home.widget(A, 108, 5, "Quick actions")
+	qa.Name = "QuickActions"
 	local tiles = {
-		{ key = "running", label = "Running", icon = "activity", accent = true },
-		{ key = "fps", label = "FPS", icon = "gauge" },
-		{ key = "ping", label = "Ping", icon = "wifi" },
+		{ "stop", "Stop all", "square-fill", T.red },
+		{ "respawn", "Respawn", "refresh-cw", T.blue },
+		{ "cmdbar", "Cmd bar", "command", T.violet },
+		{ "explore", "Scripts", "code", T.green },
 	}
 	for i, t in ipairs(tiles) do
-		local col = i - 1
-		local tile = UI.new("Frame", {
-			Name = "Tile_" .. t.key,
-			BackgroundColor3 = T.card,
-			Size = UDim2.new(1 / 3, -4, 0, 51),
-			Position = UDim2.new(col / 3, col * 2, 0, 0),
-		}, grid)
-		UI.corner(tile, 12)
-		UI.label(tile, { Text = string.upper(t.label), Font = FONT_B, TextSize = 8, TextColor3 = T.dim, Position = UDim2.fromOffset(10, 8), Size = UDim2.new(1, -30, 0, 11), TextTruncate = Enum.TextTruncate.AtEnd })
-		Home.stats[t.key] = UI.label(tile, { Name = "Value", Text = "-", Font = FONT_B, TextSize = 16, Position = UDim2.fromOffset(10, 22), Size = UDim2.new(1, -14, 0, 20), TextTruncate = Enum.TextTruncate.AtEnd })
-		local ic = UI.icon(t.icon, 12, T.dim, tile, { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 7) })
-		if t.accent then UI.accent(ic, "ImageColor3") end
+		local b = UI.button(qa, {
+			Name = "Tile_" .. t[1],
+			BackgroundColor3 = t[4],
+			BackgroundTransparency = 0.84,
+			Size = UDim2.new(0.25, -8, 0, 58),
+			Position = UDim2.new((i - 1) * 0.25, 12 - (i - 1) * 2.67, 0, 38),
+		})
+		UI.corner(b, 14)
+		UI.stroke(b, t[4], 1, 0.7)
+		UI.icon(t[3], 16, t[4], b, { Position = UDim2.fromOffset(10, 10) })
+		UI.label(b, { Text = t[2], Font = FONT_B, TextSize = 11, Position = UDim2.fromOffset(10, 34), Size = UDim2.new(1, -14, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+		UI.pressable(b, 0.93)
+		UI.onHover(b, function(on)
+			UI.tween(b, 0.15, { BackgroundTransparency = on and 0.74 or 0.84 })
+		end)
+		Home.tiles[t[1]] = b
 	end
+	Home.tiles.stop.Activated:Connect(function()
+		if Runner.count() == 0 then
+			notify("Nothing to stop", "No scripts are running", "info", 2)
+		else
+			Runner.stopAll()
+		end
+	end)
+	Home.tiles.explore.Activated:Connect(function() Panel.nav("explore") end)
 
-	section(hv, "Quick", 5)
-	Home.quick = UI.new("Frame", { Name = "Quick", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 76), LayoutOrder = 6 }, hv)
+	local rw = Home.widget(A, 60, 6, "Recent scripts", "history")
+	rw.Name = "Recent"
+	rw.AutomaticSize = Enum.AutomaticSize.Y
+	rw.Size = UDim2.new(1, 0, 0, 0)
+	UI.pad(rw, 0, 0, 0, 10)
+	local box = UI.new("Frame", { Name = "Rows", BackgroundTransparency = 1, Position = UDim2.fromOffset(10, 36), Size = UDim2.new(1, -20, 0, 0), AutomaticSize = Enum.AutomaticSize.Y }, rw)
+	UI.list(box, 6)
+	Home.recentBox = box
+end
 
-	Home.acts = Ctl.buttons(hv, 7, {
-		{ "square-fill", "Stop all", function()
-			if Runner.count() == 0 then
-				notify("Nothing to stop", "No scripts are running", "info", 2)
-			else
-				Runner.stopAll()
-			end
-		end, T.red },
-		{ "refresh-cw", "Respawn", nil },
-		{ "rotate-ccw", "Rejoin", nil },
-	})
-	local acts = Home.acts
-	acts[3].btn.Activated:Connect(confirmTap(function(text, armed)
-		acts[3].set(armed and "check" or "rotate-ccw", armed and "Sure?" or text, armed and T.yellow or T.text)
+do
+	local B = Home.colB
+	local g = Home.widget(B, 200, 101)
+	g.Name = "Game"
+	local banner = UI.new("ImageLabel", { Name = "Banner", BackgroundColor3 = T.card2, Position = UDim2.fromOffset(6, 6), Size = UDim2.new(1, -12, 0, 96), ScaleType = Enum.ScaleType.Crop, Image = "rbxthumb://type=GameIcon&id=" .. tostring(game.GameId) .. "&w=512&h=512", ImageTransparency = 0.35 }, g)
+	UI.corner(banner, 16)
+	local fade = UI.new("Frame", { Name = "Fade", BackgroundColor3 = T.panel, BorderSizePixel = 0, Size = UDim2.fromScale(1, 1) }, banner)
+	UI.corner(fade, 16)
+	UI.new("UIGradient", { Rotation = 90, Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.55, 0.75), NumberSequenceKeypoint.new(1, 0.05) }) }, fade)
+	Home.gameBanner = banner
+	local icon = UI.new("ImageLabel", { Name = "Icon", BackgroundColor3 = T.card2, Position = UDim2.fromOffset(16, 70), Size = UDim2.fromOffset(46, 46), Image = "rbxthumb://type=GameIcon&id=" .. tostring(game.GameId) .. "&w=150&h=150" }, g)
+	UI.corner(icon, 12)
+	UI.stroke(icon, T.panel, 2, 0)
+	Home.game = UI.label(g, { Name = "GameName", Text = "Loading game...", Font = FONT_B, TextSize = 14, Position = UDim2.fromOffset(16, 122), Size = UDim2.new(1, -32, 0, 18), TextTruncate = Enum.TextTruncate.AtEnd })
+	Home.creator = UI.label(g, { Name = "Creator", Text = "Place " .. tostring(game.PlaceId), TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(16, 141), Size = UDim2.new(1, -32, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+	Home.copyLink = Home.pill(g, "link", "Copy link", UDim2.fromOffset(12, 162), UDim2.new(0.5, -15, 0, 28))
+	Home.copyJob = Home.pill(g, "copy", "Join script", UDim2.new(0.5, 3, 0, 162), UDim2.new(0.5, -15, 0, 28))
+	Home.copyLink.Activated:Connect(function()
+		copyText("https://www.roblox.com/games/" .. tostring(game.PlaceId), "Game link")
+	end)
+	Home.copyJob.Activated:Connect(function()
+		copyText(string.format('game:GetService("TeleportService"):TeleportToPlaceInstance(%d, "%s", game:GetService("Players").LocalPlayer)', game.PlaceId, game.JobId), "Join script")
+	end)
+	task.spawn(function()
+		local ok, info = pcall(function()
+			return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
+		end)
+		if not HUB.alive then return end
+		local okInfo = ok and type(info) == "table"
+		Home.game.Text = (okInfo and type(info.Name) == "string") and info.Name or ("Place " .. tostring(game.PlaceId))
+		local by = okInfo and type(info.Creator) == "table" and info.Creator.Name or nil
+		Home.creator.Text = (by and ("By " .. tostring(by) .. "  ·  ") or "") .. "Place " .. tostring(game.PlaceId)
+	end)
+	task.spawn(function()
+		if not (HAS_FS and X.getcustomasset) or game.GameId == 0 then return end
+		local ok, body = Net.get("https://thumbnails.roblox.com/v1/games/multiget/thumbnails?universeIds=" .. tostring(game.GameId) .. "&countPerUniverse=1&defaults=true&size=768x432&format=Png&isCircular=false")
+		local data = ok and jsonDecode(body) or nil
+		local entry = type(data) == "table" and type(data.data) == "table" and data.data[1] or nil
+		local thumb = type(entry) == "table" and type(entry.thumbnails) == "table" and entry.thumbnails[1] or nil
+		local url = type(thumb) == "table" and thumb.imageUrl or nil
+		if type(url) ~= "string" or not HUB.alive then return end
+		Spot.setImage(banner, url)
+		task.delay(3, function()
+			if banner.Parent and string.find(banner.Image, "rbxthumb", 1, true) == nil then banner.ImageTransparency = 0.05 end
+		end)
+	end)
+
+	local sv = Home.widget(B, 124, 102, "This server", "activity")
+	sv.Name = "Server"
+	local cells = { { "players", "Players" }, { "ping", "Ping" }, { "uptime", "Uptime" } }
+	for i, c in ipairs(cells) do
+		local cell = UI.new("Frame", { Name = "Stat_" .. c[1], BackgroundTransparency = 1, Size = UDim2.new(1 / 3, -10, 0, 36), Position = UDim2.new((i - 1) / 3, 14 - (i - 1) * 4, 0, 36) }, sv)
+		Home.stats[c[1]] = UI.label(cell, { Name = "Value", Text = "-", Font = FONT_B, TextSize = 18, Size = UDim2.new(1, 0, 0, 22), TextTruncate = Enum.TextTruncate.AtEnd })
+		UI.label(cell, { Text = string.upper(c[2]), Font = FONT_B, TextSize = 8, TextColor3 = T.dim, Position = UDim2.fromOffset(0, 23), Size = UDim2.new(1, 0, 0, 11) })
+	end
+	Home.rejoin, Home.rejoinSet = Home.pill(sv, "rotate-ccw", "Rejoin", UDim2.fromOffset(12, 84), UDim2.new(0.5, -15, 0, 28))
+	Home.hop = Home.pill(sv, "shuffle", "Server hop", UDim2.new(0.5, 3, 0, 84), UDim2.new(0.5, -15, 0, 28))
+	Home.rejoin.Activated:Connect(confirmTap(function(text, armed)
+		Home.rejoinSet(armed and "check" or "rotate-ccw", armed and "Sure?" or text, armed and T.yellow or T.text)
 	end, "Rejoin", function()
 		notify("Rejoining", "See you in a moment", "info")
 		local ok = pcall(function()
@@ -5661,39 +6477,82 @@ do
 		end
 	end))
 
-	section(hv, "Server", 8)
-	local srv = card(hv, 50, 9)
-	srv.Name = "Server"
-	Home.game = UI.label(srv, { Name = "Game", Text = "Loading game name...", Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(12, 9), Size = UDim2.new(1, -86, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
-	Home.server = UI.label(srv, { Name = "Info", Text = "", TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(12, 27), Size = UDim2.new(1, -86, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
-	Home.hop = UI.button(srv, { Name = "Hop", BackgroundColor3 = T.card2, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0), Size = UDim2.fromOffset(64, 28) })
-	UI.corner(Home.hop, 14)
-	iconText(Home.hop, "shuffle", "Hop", T.text, 11)
-	UI.pressable(Home.hop, 0.92)
-	task.spawn(function()
-		local ok, info = pcall(function()
-			return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
-		end)
-		if not HUB.alive then return end
-		Home.game.Text = (ok and type(info) == "table" and type(info.Name) == "string") and info.Name or ("Place " .. tostring(game.PlaceId))
-	end)
+	local fw = Home.widget(B, 104, 103, "Friends online")
+	fw.Name = "Friends"
+	Home.friendCount = UI.label(fw, { Name = "Count", Text = "", Font = FONT_B, TextSize = 12, TextColor3 = T.sub, TextXAlignment = Enum.TextXAlignment.Right, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 10), Size = UDim2.fromOffset(60, 18) })
+	Home.friendRow = UI.new("Frame", { Name = "Faces", BackgroundTransparency = 1, Position = UDim2.fromOffset(14, 36), Size = UDim2.new(1, -28, 0, 34), ClipsDescendants = true }, fw)
+	Home.friendText = UI.label(fw, { Name = "Info", Text = "Checking your friends...", TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(14, 76), Size = UDim2.new(1, -28, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
 
-	section(hv, "Recent", 10)
 	local ex = "unknown"
 	if X.identifyexecutor then
 		local ok, n = pcall(X.identifyexecutor)
 		if ok and n then ex = tostring(n) end
 	end
-	Home.footer = UI.label(hv, {
-		Name = "Footer",
-		Text = "",
-		TextSize = 10,
-		TextColor3 = T.dim,
-		TextXAlignment = Enum.TextXAlignment.Center,
-		Size = UDim2.new(1, 0, 0, 26),
-		LayoutOrder = 99,
-	})
 	Home.executor = ex
+	Home.footer = UI.label(B, { Name = "Footer", Text = "", TextSize = 10, TextColor3 = T.dim, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.new(1, 0, 0, 20), LayoutOrder = 199 })
+	Home.bItems[#Home.bItems + 1] = Home.footer
+
+	local tools = UI.new("Frame", { Name = "Tools_home", BackgroundTransparency = 1, Size = UDim2.fromOffset(10, 36), AutomaticSize = Enum.AutomaticSize.X, Visible = false, LayoutOrder = 1 }, Tools.frame)
+	local tl = UI.list(tools, 8, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Right)
+	tl.VerticalAlignment = Enum.VerticalAlignment.Center
+	Home.tools = tools
+	Home.exSet = Tools.chip(tools, "zap", ex, 1)
+	Home.clockSet = Tools.chip(tools, "clock", Util.shortTime(S.clock24), 2)
+end
+
+function Home.layout(w, h)
+	local narrow = Shell.narrow
+	if narrow ~= Home.isNarrow then
+		Home.isNarrow = narrow
+		for _, c in ipairs(Home.bItems) do
+			c.Parent = narrow and Home.colA or Home.colB
+		end
+	end
+	if narrow then
+		Home.colA.Position, Home.colA.Size = UDim2.fromOffset(0, 0), UDim2.fromOffset(w, h)
+		Home.colB.Visible = false
+	else
+		Home.colA.Position, Home.colA.Size = UDim2.fromOffset(0, 0), UDim2.fromOffset(Shell.leftW, h)
+		Home.colB.Visible = true
+		Home.colB.Position, Home.colB.Size = UDim2.fromOffset(w - Shell.rightW, 0), UDim2.fromOffset(Shell.rightW, h)
+	end
+end
+
+function Home.loadFriends()
+	Home.friendsAt = os.clock()
+	task.spawn(function()
+		local ok, body = Net.get("https://friends.roblox.com/v1/users/" .. tostring(LP.UserId) .. "/friends/count")
+		local data = ok and jsonDecode(body) or nil
+		if HUB.alive and type(data) == "table" and tonumber(data.count) then Home.stats.friends.Text = tostring(data.count) end
+	end)
+	task.spawn(function()
+		local ok, list = pcall(function() return LP:GetFriendsOnline(50) end)
+		if not HUB.alive then return end
+		if not ok or type(list) ~= "table" then
+			Home.friendText.Text = "Couldn't check your friends"
+			return
+		end
+		clearList(Home.friendRow)
+		local here = 0
+		for _, f in ipairs(list) do
+			if type(f) == "table" and f.PlaceId == game.PlaceId then here += 1 end
+		end
+		Home.stats.online.Text = tostring(#list)
+		Home.friendCount.Text = tostring(#list)
+		for i, f in ipairs(list) do
+			if i > 8 or type(f) ~= "table" or not tonumber(f.VisitorId) then break end
+			local face = UI.new("ImageLabel", { Name = "Face", BackgroundColor3 = T.card2, Size = UDim2.fromOffset(32, 32), Position = UDim2.fromOffset((i - 1) * 26, 1), Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(f.VisitorId) .. "&w=48&h=48", ZIndex = 20 - i }, Home.friendRow)
+			UI.corner(face, 16)
+			UI.stroke(face, T.panel, 2, 0)
+		end
+		if #list == 0 then
+			Home.friendText.Text = "None of your friends are online"
+		elseif here > 0 then
+			Home.friendText.Text = here .. (here == 1 and " of them is" or " of them are") .. " in this game"
+		else
+			Home.friendText.Text = "None of them are in this game"
+		end
+	end)
 end
 
 function Home.renderRecent()
@@ -5704,15 +6563,15 @@ function Home.renderRecent()
 	local shown = 0
 	for _, path in ipairs(S.recent) do
 		local e = Repo.byPath[path]
-		if Repo.visible(e) and shown < 4 then
+		if Repo.visible(e) and shown < 3 then
 			shown += 1
-			local row = UI.button(Home.view, { Name = "Recent", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 46), LayoutOrder = 10 + shown })
+			local row = UI.button(Home.recentBox, { Name = "Recent", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 42), LayoutOrder = shown })
 			UI.corner(row, 12)
-			UI.label(row, { Text = e.name, Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(12, 8), Size = UDim2.new(1, -92, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
-			UI.label(row, { Text = e.category, TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(12, 25), Size = UDim2.new(1, -92, 0, 13), TextTruncate = Enum.TextTruncate.AtEnd })
+			UI.label(row, { Text = e.name, Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(12, 6), Size = UDim2.new(1, -88, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+			UI.label(row, { Text = e.category, TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(12, 22), Size = UDim2.new(1, -88, 0, 13), TextTruncate = Enum.TextTruncate.AtEnd })
 			local running = Runner.isRunning(path)
 			local pending = Runner.pending[path]
-			local b = UI.button(row, { Name = "RunStop", Size = UDim2.fromOffset(62, 26), Position = UDim2.new(1, -72, 0.5, -13) })
+			local b = UI.button(row, { Name = "RunStop", Size = UDim2.fromOffset(62, 26), Position = UDim2.new(1, -70, 0.5, -13) })
 			UI.corner(b, 13)
 			if pending then
 				b.BackgroundColor3 = T.card2
@@ -5739,13 +6598,13 @@ function Home.renderRecent()
 		end
 	end
 	if shown == 0 then
-		local l = UI.label(Home.view, {
-			Text = "Scripts you run will show up here",
+		local l = UI.label(Home.recentBox, {
+			Text = "Scripts you run show up here",
 			TextSize = 11,
 			TextColor3 = T.dim,
 			TextXAlignment = Enum.TextXAlignment.Center,
-			Size = UDim2.new(1, 0, 0, 40),
-			LayoutOrder = 11,
+			Size = UDim2.new(1, 0, 0, 30),
+			LayoutOrder = 1,
 		})
 		Home.recentRows[1] = l
 	end
@@ -5762,15 +6621,14 @@ local function getPing()
 end
 
 function Home.tick(fps, ping)
-	Home.stats.running.Text = tostring(Runner.count())
-	Home.stats.fps.Text = tostring(fps)
-	Home.stats.ping.Text = ping and (ping .. " ms") or "-"
 	local players = #Players:GetPlayers()
 	local okMax, maxP = pcall(function() return Players.MaxPlayers end)
-	local cap = (okMax and type(maxP) == "number" and maxP > 0) and ("/" .. maxP) or ""
+	Home.stats.players.Text = players .. ((okMax and type(maxP) == "number" and maxP > 0) and ("/" .. maxP) or "")
+	Home.stats.ping.Text = ping and (ping .. "ms") or "-"
 	local age = 0
 	pcall(function() age = workspace.DistributedGameTime end)
-	Home.server.Text = players .. cap .. (players == 1 and " player" or " players") .. "  ·  up " .. Util.fmtTime(age)
+	age = math.floor(age)
+	Home.stats.uptime.Text = (age < 60 and (age .. "s")) or (age < 3600 and (age // 60 .. "m")) or (age // 3600 .. "h " .. (age % 3600) // 60 .. "m")
 	local smart
 	if not S.smartStop then
 		smart = "off"
@@ -5779,13 +6637,23 @@ function Home.tick(fps, ping)
 	else
 		smart = "limited"
 	end
-	Home.footer.Text = Home.executor .. "  ·  Smart Stop " .. smart .. "  ·  Atsuko Hub"
+	Home.footer.Text = Home.executor .. "  ·  Smart Stop " .. smart .. "  ·  v" .. HUB_VERSION
+	Home.clockSet(Util.shortTime(S.clock24) .. "   " .. os.date("%a %d"))
+	if os.clock() - Home.friendsAt > 90 then Home.loadFriends() end
 end
 Home.onShow = function()
 	Home.renderRecent()
+	if Home.syncMusic then Home.syncMusic() end
+	if os.clock() - Home.friendsAt > 90 then Home.loadFriends() end
 end
 
-local Scripts = newPage({ id = "scripts", title = "Scripts", icon = "layout-list", tabs = { "All", "Favorites", "Recent" }, viewY = 40 })
+local Scripts = newPage({ id = "scripts", title = "My Scripts", icon = "layout-list", tabs = { "All", "Favorites", "Recent" }, viewY = 40 })
+Scripts.head = function()
+	local n = #Repo.shown()
+	if n > 0 then return "My Scripts", n .. (n == 1 and " script ready to run" or " scripts ready to run") end
+	if Repo.state == "loading" then return "My Scripts", "Looking for your scripts" end
+	return "My Scripts", "Your own script collection"
+end
 Scripts.spinWhileLoading = true
 Scripts.right = { icon = "refresh-cw", fn = function() Repo.refresh(true) end }
 Scripts.query = ""
@@ -5996,7 +6864,597 @@ Scripts.onShow = function()
 	if Repo.state ~= "loading" and os.clock() - (Repo.lastTry or 0) > 120 then Repo.refresh(false) end
 end
 
+local Explore = newPage({ id = "explore", title = "Scripts", icon = "code", tabs = { "Trending", "This game", "Universal", "Saved" }, viewY = 40 })
+Explore.query = ""
+Explore.state = {}
+Explore.gameName = nil
+for i = 1, 4 do
+	Explore.state[i] = { items = {}, page = 1, total = 1, status = "idle", err = nil, key = nil }
+end
+Explore.right = { icon = "refresh-cw", fn = function() Explore.reload() end }
+Explore.head = function()
+	return "Scripts", Explore.gameName and ("Scripts for " .. Explore.gameName .. " and more") or "Find something for your game"
+end
+
+local SB = { base = "https://scriptblox.com/api/script" }
+Explore.SB = SB
+
+function SB.get(path)
+	local ok, body = Net.get(SB.base .. path, { ["User-Agent"] = "AtsukoHub/" .. HUB_VERSION, Accept = "application/json" })
+	if not ok then return false, "Couldn't reach ScriptBlox (" .. Util.firstLine(body or "?") .. ")" end
+	local data = jsonDecode(body)
+	if type(data) ~= "table" then return false, "ScriptBlox sent something odd" end
+	if data.result == nil and data.script == nil and type(data.message) == "string" then return false, data.message end
+	return true, data
+end
+
+function SB.img(u)
+	if type(u) ~= "string" or u == "" then return nil end
+	if string.sub(u, 1, 1) == "/" then return "https://scriptblox.com" .. u end
+	if string.find(u, "^https?://") then return u end
+	return nil
+end
+
+local function truthy(v)
+	return v == true or v == 1 or v == "true"
+end
+
+function SB.norm(raw)
+	if type(raw) ~= "table" or type(raw.slug) ~= "string" or raw.slug == "" then return nil end
+	local g = raw.game
+	local gameName = (type(g) == "table" and type(g.name) == "string" and g.name) or (type(g) == "string" and g) or nil
+	local tags = {}
+	if type(raw.tags) == "table" then
+		for _, t in ipairs(raw.tags) do
+			local name = type(t) == "string" and t or (type(t) == "table" and t.name) or nil
+			if type(name) == "string" and #tags < 6 then tags[#tags + 1] = name end
+		end
+	end
+	return {
+		slug = raw.slug,
+		id = type(raw._id) == "string" and raw._id or nil,
+		title = Util.trim(tostring(raw.title or "Untitled")),
+		game = gameName,
+		gameId = type(g) == "table" and tonumber(g.gameId) or nil,
+		image = SB.img(raw.image) or (type(g) == "table" and SB.img(g.imageUrl)) or nil,
+		verified = truthy(raw.verified),
+		key = truthy(raw.key),
+		keyLink = type(raw.keyLink) == "string" and raw.keyLink ~= "" and raw.keyLink or nil,
+		views = tonumber(raw.views) or 0,
+		likes = tonumber(raw.likeCount) or 0,
+		dislikes = tonumber(raw.dislikeCount) or 0,
+		universal = truthy(raw.isUniversal),
+		patched = truthy(raw.isPatched),
+		paid = raw.scriptType == "paid",
+		source = type(raw.script) == "string" and raw.script ~= "" and raw.script or nil,
+		updated = type(raw.updatedAt) == "string" and raw.updatedAt or (type(raw.createdAt) == "string" and raw.createdAt or nil),
+		tags = tags,
+		owner = type(raw.owner) == "table" and type(raw.owner.username) == "string" and raw.owner.username or nil,
+		about = type(raw.features) == "string" and raw.features or nil,
+	}
+end
+
+function SB.thumb(it)
+	if it.gameId and it.gameId > 0 then return "rbxthumb://type=Asset&id=" .. string.format("%d", it.gameId) .. "&w=150&h=150" end
+	return ""
+end
+
+function SB.count(n)
+	n = tonumber(n) or 0
+	if n >= 1000000 then return string.format("%.1fM", n / 1000000) end
+	if n >= 1000 then return string.format("%.1fK", n / 1000) end
+	return tostring(math.floor(n))
+end
+
+function SB.ago(iso)
+	if type(iso) ~= "string" then return nil end
+	local ok, ts = pcall(function() return DateTime.fromIsoDate(iso).UnixTimestamp end)
+	if not ok or type(ts) ~= "number" then
+		local y, mo, d = string.match(iso, "^(%d+)%-(%d+)%-(%d+)")
+		if not y then return nil end
+		ts = os.time({ year = tonumber(y), month = tonumber(mo), day = tonumber(d), hour = 12 })
+	end
+	local s = os.time() - ts
+	if s < 3600 then return math.max(1, s // 60) .. "m ago" end
+	if s < 86400 then return s // 3600 .. "h ago" end
+	if s < 86400 * 30 then return s // 86400 .. "d ago" end
+	if s < 86400 * 365 then return s // (86400 * 30) .. "mo ago" end
+	return s // (86400 * 365) .. "y ago"
+end
+
+function SB.source(it)
+	if it.source and it.source ~= "" then return true, it.source, "net" end
+	if it.paid then return false, "that's a paid script" end
+	local ok, body = Net.get(SB.base .. "/raw/" .. Util.urlEncode(it.slug))
+	if ok and validSource(body) and not string.find(body, '^%s*{%s*"message"') then
+		it.source = body
+		return true, body, "net"
+	end
+	local ok2, data = SB.get("/" .. Util.urlEncode(it.slug))
+	if ok2 and type(data.script) == "table" and type(data.script.script) == "string" and data.script.script ~= "" then
+		it.source = data.script.script
+		return true, it.source, "net"
+	end
+	return false, "couldn't download it from ScriptBlox"
+end
+
+function Explore.entry(it)
+	local path = "sb:" .. it.slug
+	local e = Repo.remote[path]
+	if not e then
+		e = { path = path, name = it.title, category = "ScriptBlox", size = 0, ext = "lua", sb = it }
+		e.remote = function() return SB.source(e.sb) end
+		Repo.remote[path] = e
+	end
+	e.sb, e.name = it, it.title
+	return e
+end
+
+function Explore.isSaved(slug)
+	for _, s in ipairs(S.sbSaved) do
+		if s.slug == slug then return true end
+	end
+	return false
+end
+
+function Explore.toggleSave(it)
+	for i, s in ipairs(S.sbSaved) do
+		if s.slug == it.slug then
+			table.remove(S.sbSaved, i)
+			saveSettings()
+			Bus.fire("sbSaved")
+			return false
+		end
+	end
+	if #S.sbSaved >= 100 then table.remove(S.sbSaved) end
+	table.insert(S.sbSaved, 1, {
+		slug = it.slug, title = it.title, game = it.game, gameId = it.gameId, image = it.image, verified = it.verified, key = it.key,
+		keyLink = it.keyLink, views = it.views, likes = it.likes, universal = it.universal, patched = it.patched, paid = it.paid, updated = it.updated,
+	})
+	saveSettings()
+	Bus.fire("sbSaved")
+	notify("Saved", it.title, "ok", 2)
+	return true
+end
+
+function Explore.run(it)
+	if it.paid then
+		notify(it.title, "That's a paid script, it can't run from here", "info", 3)
+		return
+	end
+	local e = Explore.entry(it)
+	if Runner.isRunning(e.path) then
+		notify(it.title, "Already running", "info", 2)
+		return
+	end
+	Runner.run(e)
+end
+
+function Explore.copy(it)
+	task.spawn(function()
+		local ok, src = SB.source(it)
+		if not HUB.alive then return end
+		if ok then
+			copyText(src, it.title .. " script")
+		else
+			copyText(string.format("loadstring(game:HttpGet(%q))()", SB.base .. "/raw/" .. it.slug), it.title .. " loadstring")
+		end
+	end)
+end
+
+do
+	local bar = UI.new("Frame", { Name = "SearchBar", BackgroundColor3 = T.card, Size = UDim2.new(1, -94, 0, 32) }, Explore.frame)
+	UI.corner(bar, 10)
+	local barStroke = UI.stroke(bar, T.stroke, 1, 1)
+	UI.icon("search", 14, T.dim, bar, { Position = UDim2.fromOffset(11, 9) })
+	local box = UI.new("TextBox", {
+		Name = "Box",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(32, 0),
+		Size = UDim2.new(1, -60, 1, 0),
+		Font = FONT_M,
+		TextSize = 12,
+		TextColor3 = T.text,
+		PlaceholderText = "Search scripts or games",
+		PlaceholderColor3 = T.dim,
+		Text = "",
+		ClearTextOnFocus = false,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ClipsDescendants = true,
+	}, bar)
+	local clear = UI.button(bar, { Name = "Clear", BackgroundTransparency = 1, Size = UDim2.fromOffset(28, 28), Position = UDim2.new(1, -30, 0, 2), Visible = false })
+	UI.icon("x", 13, T.sub, clear, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+	clear.Activated:Connect(function() box.Text = "" end)
+	box.Focused:Connect(function() UI.tween(barStroke, 0.2, { Transparency = 0.2 }) end)
+	local function apply()
+		local q = Util.trim(box.Text)
+		if q == Explore.query then return end
+		Explore.query = q
+		for i = 1, 4 do
+			Explore.state[i].status = "idle"
+			Explore.state[i].key = nil
+		end
+		if Panel.page == "explore" then Explore.show(Explore.tab) end
+	end
+	box.FocusLost:Connect(function(enter)
+		UI.tween(barStroke, 0.2, { Transparency = 1 })
+		if enter then apply() end
+	end)
+	local seq = 0
+	box:GetPropertyChangedSignal("Text"):Connect(function()
+		clear.Visible = box.Text ~= ""
+		seq += 1
+		local my = seq
+		task.delay(0.8, function()
+			if my == seq then apply() end
+		end)
+	end)
+	Explore.box = box
+
+	local kb = UI.button(Explore.frame, { Name = "Keyless", BackgroundColor3 = T.card, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0), Size = UDim2.fromOffset(86, 32) })
+	UI.corner(kb, 10)
+	local kst = UI.stroke(kb, T.stroke, 1, 1)
+	local kic = UI.icon("key-round", 13, T.sub, kb, { Position = UDim2.fromOffset(10, 9) })
+	local kl = UI.label(kb, { Text = "Keyless", Font = FONT_B, TextSize = 11, TextColor3 = T.sub, Position = UDim2.fromOffset(28, 0), Size = UDim2.new(1, -32, 1, 0) })
+	UI.pressable(kb, 0.94)
+	local function drawKey()
+		local on = S.sbKeyless
+		local a = accentColor()
+		UI.tween(kst, 0.15, { Transparency = on and 0.35 or 1, Color = a })
+		UI.tint(kic, on and a or T.sub, 0.15)
+		UI.tween(kl, 0.15, { TextColor3 = on and T.text or T.sub })
+	end
+	Explore.drawKey = drawKey
+	drawKey()
+	kb.Activated:Connect(function()
+		S.sbKeyless = not S.sbKeyless
+		saveSettings()
+		drawKey()
+		for i = 1, 3 do
+			Explore.state[i].status = "idle"
+			Explore.state[i].key = nil
+		end
+		Explore.show(Explore.tab)
+	end)
+
+	for i = 1, 4 do
+		Explore.views[i] = newScroll(Explore.frame, 40, i == 1)
+	end
+end
+
+function Explore.path(i, page)
+	local q = Explore.query
+	local key = S.sbKeyless and "&key=0" or ""
+	if i == 1 then
+		if q == "" then return "/trending", false end
+		return "/search?q=" .. Util.urlEncode(q) .. "&page=" .. page .. "&max=20&strict=false" .. key, true
+	elseif i == 2 then
+		local g = Explore.gameName or ""
+		return "/search?q=" .. Util.urlEncode(Util.trim(g .. " " .. q)) .. "&page=" .. page .. "&max=20&strict=false&sortBy=views&order=desc" .. key, true
+	end
+	if q == "" then return "/fetch?universal=1&page=" .. page .. "&max=20&sortBy=views&order=desc" .. key, true end
+	return "/search?q=" .. Util.urlEncode(q) .. "&universal=1&page=" .. page .. "&max=20&strict=false" .. key, true
+end
+
+function Explore.ensureGame(done)
+	if Explore.gameName then return done() end
+	task.spawn(function()
+		local ok, info = pcall(function()
+			return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
+		end)
+		Explore.gameName = (ok and type(info) == "table" and type(info.Name) == "string" and info.Name ~= "") and info.Name or ("Place " .. tostring(game.PlaceId))
+		Panel.refreshHead()
+		done()
+	end)
+end
+
+function Explore.load(i, more)
+	if i == 4 then return Explore.render(4) end
+	local st = Explore.state[i]
+	if st.status == "loading" then return end
+	local reqKey = i .. "|" .. Explore.query .. "|" .. tostring(S.sbKeyless)
+	local page = more and (st.page + 1) or 1
+	st.status = "loading"
+	st.key = reqKey
+	if not more then
+		st.items = {}
+		st.seen = {}
+	end
+	Explore.render(i)
+	local function go()
+		local path, paged = Explore.path(i, page)
+		local ok, data = SB.get(path)
+		if not ok and path == "/trending" and HUB.alive then
+			path, paged = "/fetch?page=" .. page .. "&max=20&sortBy=views&order=desc" .. (S.sbKeyless and "&key=0" or ""), true
+			ok, data = SB.get(path)
+		end
+		if not HUB.alive or st.key ~= reqKey then return end
+		if ok then
+			local res = data.result
+			local list = (type(res) == "table" and (res.scripts or (res[1] and res))) or {}
+			local fresh = {}
+			for _, raw in ipairs(list) do
+				local it = SB.norm(raw)
+				if it and not st.seen[it.slug] and not (S.sbKeyless and it.key) then
+					st.seen[it.slug] = true
+					fresh[#fresh + 1] = it
+				end
+			end
+			if i == 2 then
+				table.sort(fresh, function(a, b)
+					local am, bm = a.gameId == game.PlaceId, b.gameId == game.PlaceId
+					if am ~= bm then return am end
+					return a.views > b.views
+				end)
+			end
+			for _, it in ipairs(fresh) do
+				st.items[#st.items + 1] = it
+			end
+			st.page = page
+			st.total = paged and (tonumber(type(res) == "table" and res.totalPages) or (#list >= 20 and page + 1 or page)) or 1
+			st.status = "ready"
+			st.err = nil
+		else
+			st.status = "error"
+			st.err = data
+		end
+		if Panel.page == "explore" then Explore.render(i) end
+	end
+	if i == 2 then Explore.ensureGame(go) else task.spawn(go) end
+end
+
+function Explore.show(i)
+	local st = Explore.state[i]
+	if i ~= 4 and (st.status == "idle" or st.key ~= (i .. "|" .. Explore.query .. "|" .. tostring(S.sbKeyless))) then
+		Explore.load(i, false)
+	else
+		Explore.render(i)
+	end
+end
+
+function Explore.reload()
+	local i = Explore.tab
+	if i == 4 then return Explore.render(4) end
+	Explore.state[i].status = "idle"
+	Explore.state[i].key = nil
+	Explore.load(i, false)
+end
+
+function Explore.row(sf, it, order)
+	local row = UI.button(sf, { Name = "Script", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 58), LayoutOrder = order })
+	UI.corner(row, 12)
+	local th = UI.new("Frame", { Name = "Thumb", BackgroundColor3 = T.card2, Size = UDim2.fromOffset(42, 42), Position = UDim2.fromOffset(8, 8), ClipsDescendants = true }, row)
+	UI.corner(th, 10)
+	UI.icon(it.universal and "globe" or "code", 16, T.dim, th, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+	local img = UI.new("ImageLabel", { Name = "Img", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ScaleType = Enum.ScaleType.Crop, Image = SB.thumb(it) }, th)
+	UI.corner(img, 10)
+	if it.image then Spot.setImage(img, it.image) end
+	local maxW = math.max(60, (Shell.leftW - 23) - 58 - 104 - (it.verified and 17 or 0))
+	local tw = math.min(maxW, math.ceil(textWidth(it.title, 12, FONT_B)))
+	UI.label(row, { Name = "Title", Text = it.title, Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(58, 10), Size = UDim2.fromOffset(tw + 2, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+	if it.verified then
+		local v = UI.icon("badge-check", 12, accentColor(), row, { Name = "Verified", Position = UDim2.fromOffset(58 + tw + 5, 12) })
+		UI.accent(v, "ImageColor3")
+	end
+	local bits = { it.game or (it.universal and "Universal") or "Any game" }
+	bits[#bits + 1] = it.paid and "Paid" or (it.key and "Key" or "Keyless")
+	bits[#bits + 1] = SB.count(it.views) .. " views"
+	if it.patched then bits[#bits + 1] = "patched" end
+	UI.label(row, { Name = "Sub", Text = table.concat(bits, "  ·  "), TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(58, 29), Size = UDim2.new(1, -154, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+	local hb = UI.button(row, { Name = "Save", BackgroundColor3 = T.card2, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -66, 0.5, 0), Size = UDim2.fromOffset(28, 28) })
+	UI.corner(hb, 14)
+	local saved = Explore.isSaved(it.slug)
+	local hic = UI.icon(saved and "heart-fill" or "heart", 12, saved and accentColor() or T.sub, hb, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+	UI.pressable(hb, 0.85)
+	hb.Activated:Connect(function()
+		local on = Explore.toggleSave(it)
+		UI.setIcon(hic, on and "heart-fill" or "heart")
+		UI.tint(hic, on and accentColor() or T.sub, 0.15)
+	end)
+	local rb = UI.button(row, { Name = "Run", BackgroundColor3 = T.text, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0), Size = UDim2.fromOffset(54, 28) })
+	UI.corner(rb, 14)
+	iconText(rb, "play-fill", "Run", T.ink, 11)
+	UI.pressable(rb, 0.92)
+	rb.Activated:Connect(function() Explore.run(it) end)
+	Ctl.hoverable(row)
+	row.Activated:Connect(function() Explore.open(it) end)
+end
+
+function Explore.render(i)
+	local sf = Explore.views[i]
+	if not sf then return end
+	clearList(sf)
+	if i == 4 then
+		local q = string.lower(Explore.query)
+		local n = 0
+		for _, it in ipairs(S.sbSaved) do
+			if q == "" or string.find(string.lower(it.title), q, 1, true) or (it.game and string.find(string.lower(it.game), q, 1, true)) then
+				n += 1
+				Explore.row(sf, it, n)
+			end
+		end
+		if n == 0 then emptyState(sf, "heart", "Nothing saved yet", "Tap the heart on a script to keep it here", 1) end
+		return
+	end
+	local st = Explore.state[i]
+	if #st.items == 0 then
+		if st.status == "loading" or st.status == "idle" then
+			skeleton(sf, 5)
+		elseif st.status == "error" then
+			emptyState(sf, "wifi", "Couldn't load scripts", Util.firstLine(st.err or "Try again in a bit"), 1, "Try again", function() Explore.reload() end)
+		else
+			emptyState(sf, "search", "Nothing found", Explore.query ~= "" and "Try another word" or "Nothing here right now", 1)
+		end
+		return
+	end
+	local here = 0
+	for n, it in ipairs(st.items) do
+		if i == 2 and it.gameId == game.PlaceId then here += 1 end
+		Explore.row(sf, it, n + 1)
+	end
+	local caption = (i == 1 and (Explore.query == "" and "Trending right now" or ("Results for " .. Explore.query))) or (i == 2 and (here > 0 and ("Made for " .. (Explore.gameName or "this game")) or ("Related to " .. (Explore.gameName or "this game")))) or "Work in any game"
+	section(sf, caption, 0)
+	if st.status == "loading" then
+		UI.label(sf, { Name = "More", Text = "Loading more...", TextSize = 10, TextColor3 = T.dim, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.new(1, 0, 0, 30), LayoutOrder = 9999 })
+	elseif st.page < st.total then
+		local more = UI.button(sf, { Name = "LoadMore", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 36), LayoutOrder = 9999 })
+		UI.corner(more, 12)
+		iconText(more, "chevron-down", "Load more", T.text, 11)
+		Ctl.hoverable(more)
+		more.Activated:Connect(function() Explore.load(i, true) end)
+	else
+		UI.label(sf, { Name = "End", Text = #st.items .. (#st.items == 1 and " script" or " scripts") .. "  ·  from ScriptBlox", TextSize = 10, TextColor3 = T.dim, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.new(1, 0, 0, 26), LayoutOrder = 9999 })
+	end
+end
+
+function Explore.open(it)
+	if Explore.detail then Explore.detail:Destroy() end
+	local f = UI.new("Frame", { Name = "ScriptDetail", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1) })
+	Explore.detail = f
+	Explore.sel = it
+	local _, backIc = Aside.header(f, "SCRIPTBLOX")
+	UI.setIcon(backIc, Aside.backIcon())
+	local sc = newScroll(f, 40)
+	local pad = sc:FindFirstChildOfClass("UIPadding")
+	pad.PaddingLeft, pad.PaddingRight = UDim.new(0, 10), UDim.new(0, 10)
+	local cover = card(sc, 150, 1)
+	cover.Name = "Cover"
+	local banner = UI.new("Frame", { Name = "Banner", BackgroundColor3 = T.card2, Position = UDim2.fromOffset(6, 6), Size = UDim2.new(1, -12, 0, 78), ClipsDescendants = true }, cover)
+	UI.corner(banner, 10)
+	local glow = UI.new("Frame", { Name = "Glow", BorderSizePixel = 0, Size = UDim2.fromScale(1, 1) }, banner)
+	UI.corner(glow, 10)
+	UI.accent(glow, "BackgroundColor3")
+	UI.new("UIGradient", { Rotation = 25, Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.55), NumberSequenceKeypoint.new(1, 0.9) }) }, glow)
+	UI.icon(it.universal and "globe" or "code", 26, T.text, banner, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), ImageTransparency = 0.4 })
+	local img = UI.new("ImageLabel", { Name = "Img", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ScaleType = Enum.ScaleType.Crop, Image = SB.thumb(it) }, banner)
+	UI.corner(img, 10)
+	if it.image then Spot.setImage(img, it.image) end
+	local maxW = math.max(80, Aside.card.Size.X.Offset - 16 - 20 - 24 - (it.verified and 22 or 0))
+	local tw = math.min(maxW, math.ceil(textWidth(it.title, 14, FONT_B)))
+	UI.label(cover, { Name = "Title", Text = it.title, Font = FONT_B, TextSize = 14, Position = UDim2.fromOffset(12, 92), Size = UDim2.fromOffset(tw + 2, 18), TextTruncate = Enum.TextTruncate.AtEnd })
+	if it.verified then
+		local v = UI.icon("badge-check", 14, accentColor(), cover, { Name = "Verified", Position = UDim2.fromOffset(12 + tw + 6, 94) })
+		UI.accent(v, "ImageColor3")
+	end
+	local by = UI.label(cover, { Name = "By", Text = (it.owner and ("by " .. it.owner .. "  ·  ") or "") .. (it.game or "Universal"), TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(12, 112), Size = UDim2.new(1, -24, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+	UI.label(cover, { Name = "When", Text = SB.ago(it.updated) and ("Updated " .. SB.ago(it.updated)) or "", TextSize = 10, TextColor3 = T.dim, Position = UDim2.fromOffset(12, 128), Size = UDim2.new(1, -24, 0, 13) })
+
+	local stats = card(sc, 52, 2)
+	stats.Name = "Stats"
+	for k, s in ipairs({ { SB.count(it.views), "Views" }, { SB.count(it.likes), "Likes" }, { SB.count(it.dislikes), "Dislikes" } }) do
+		local cell = UI.new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1 / 3, 0, 1, 0), Position = UDim2.new((k - 1) / 3, 0, 0, 0) }, stats)
+		UI.label(cell, { Text = s[1], Font = FONT_B, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 9), Size = UDim2.new(1, 0, 0, 18) })
+		UI.label(cell, { Text = string.upper(s[2]), Font = FONT_B, TextSize = 8, TextColor3 = T.dim, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 29), Size = UDim2.new(1, 0, 0, 11) })
+	end
+
+	local chips = UI.new("Frame", { Name = "Tags", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 22), LayoutOrder = 3 }, sc)
+	local cl = UI.list(chips, 5, Enum.FillDirection.Horizontal)
+	cl.Wraps = true
+	chips.AutomaticSize = Enum.AutomaticSize.Y
+	local function chip(text, color, order)
+		local c = UI.new("Frame", { Name = "Tag", BackgroundColor3 = color or T.card2, BackgroundTransparency = color and 0.8 or 0, Size = UDim2.fromOffset(math.ceil(textWidth(text, 10, FONT_B)) + 18, 22), LayoutOrder = order }, chips)
+		UI.corner(c, 11)
+		UI.label(c, { Text = text, Font = FONT_B, TextSize = 10, TextColor3 = color or T.text, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromScale(1, 1) })
+	end
+	if it.verified then chip("Verified", T.blue, 1) end
+	chip(it.paid and "Paid" or (it.key and "Key" or "Keyless"), it.key and T.yellow or T.green, 2)
+	if it.universal then chip("Universal", T.violet, 3) end
+	if it.patched then chip("Patched", T.red, 4) end
+	for n, t in ipairs(it.tags or {}) do
+		chip("#" .. t, nil, 10 + n)
+	end
+
+	local about = UI.new("Frame", { Name = "About", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 4 }, sc)
+	UI.corner(about, 12)
+	UI.pad(about, 12, 12, 10, 12)
+	UI.list(about, 5)
+	UI.label(about, { Text = "ABOUT", Font = FONT_B, TextSize = 10, TextColor3 = T.dim, Size = UDim2.new(1, 0, 0, 14), LayoutOrder = 1 })
+	local aboutText = UI.label(about, { Name = "Text", Text = it.about and Util.trim(it.about) ~= "" and it.about or "Loading info...", TextSize = 11, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 2 })
+
+	local actions = UI.new("Frame", { Name = "Actions", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 42), LayoutOrder = 5 }, sc)
+	local run = UI.button(actions, { Name = "Run", BackgroundColor3 = T.text, Size = UDim2.new(1, -144, 1, 0) })
+	UI.corner(run, 21)
+	local runSet = iconText(run, "play-fill", it.paid and "Paid" or "Run", T.ink, 13)
+	UI.pressable(run, 0.95)
+	run.Activated:Connect(function() Explore.run(it) end)
+	local function round(icon, x, fn)
+		local b = UI.button(actions, { Name = icon, BackgroundColor3 = T.card, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, x, 0, 0), Size = UDim2.fromOffset(42, 42) })
+		UI.corner(b, 21)
+		local ic = UI.icon(icon, 15, T.text, b, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+		UI.pressable(b, 0.88)
+		Ctl.hoverable(b)
+		b.Activated:Connect(fn)
+		return b, ic
+	end
+	round("copy", -96, function() Explore.copy(it) end)
+	local _, keyIc = round(it.keyLink and "key-round" or "link", -48, function()
+		if it.keyLink then
+			copyText(it.keyLink, "Key link, open it in your browser")
+		else
+			copyText("https://scriptblox.com/script/" .. it.slug, "Script page link")
+		end
+	end)
+	local heart = {}
+	_, heart.ic = round(Explore.isSaved(it.slug) and "heart-fill" or "heart", 0, function()
+		local on = Explore.toggleSave(it)
+		UI.setIcon(heart.ic, on and "heart-fill" or "heart")
+		UI.tint(heart.ic, on and accentColor() or T.text, 0.15)
+	end)
+	if Explore.isSaved(it.slug) then heart.ic.ImageColor3 = accentColor() end
+	Ctl.note(sc, 6, "Scripts here are made by other people on ScriptBlox. Only run the ones you trust.")
+	Explore.runSet = runSet
+	Explore.refreshRun = function()
+		local e = Repo.remote["sb:" .. it.slug]
+		if it.paid then return end
+		if e and Runner.pending[e.path] then
+			runSet("loader-circle", "Starting...", T.ink)
+		elseif e and Runner.isRunning(e.path) then
+			runSet("check", "Running", T.ink)
+		else
+			runSet("play-fill", "Run", T.ink)
+		end
+	end
+	Explore.refreshRun()
+	Aside.show("explore", f, "explore", function()
+		Explore.sel = nil
+		Explore.refreshRun = nil
+	end)
+	task.spawn(function()
+		local ok, data = SB.get("/" .. Util.urlEncode(it.slug))
+		if not HUB.alive or Explore.sel ~= it then return end
+		local full = ok and type(data.script) == "table" and SB.norm(data.script) or nil
+		if full then
+			it.owner = full.owner or it.owner
+			it.about = full.about or it.about
+			it.keyLink = full.keyLink or it.keyLink
+			if full.source and not it.source then it.source = full.source end
+			by.Text = (it.owner and ("by " .. it.owner .. "  ·  ") or "") .. (it.game or "Universal")
+		end
+		aboutText.Text = (it.about and Util.trim(it.about) ~= "") and it.about or "No description for this one."
+		if it.keyLink then UI.setIcon(keyIc, "key-round") end
+	end)
+end
+
+Explore.onTab = function(i)
+	Explore.show(i)
+end
+Explore.onShow = function()
+	Explore.drawKey()
+	Explore.show(Explore.tab)
+	if not Explore.gameName then Explore.ensureGame(function() end) end
+end
+Bus.on("sbSaved", function()
+	if Panel.open and Panel.page == "explore" and Explore.tab == 4 then Explore.render(4) end
+end)
+Bus.on("running", function()
+	if Explore.refreshRun then Explore.refreshRun() end
+end)
+
 local Running = newPage({ id = "running", title = "Running", icon = "activity" })
+Running.head = function()
+	local n = Runner.count()
+	return "Running", n > 0 and (n .. (n == 1 and " script on right now" or " scripts on right now")) or "Nothing on right now"
+end
 Running.view = newScroll(Running.frame, 0)
 Running.views = { Running.view }
 Running.subs = {}
@@ -6053,7 +7511,14 @@ function Running.render()
 		UI.onHover(r, function(on)
 			UI.tween(r, 0.15, { BackgroundColor3 = on and T.card2 or T.card })
 		end)
-		r.Activated:Connect(function() Detail.open(pseudoEntry(path, name)) end)
+		r.Activated:Connect(function()
+			local e = pseudoEntry(path, name)
+			if e.sb then
+				Explore.open(e.sb)
+			else
+				Detail.open(e)
+			end
+		end)
 	end
 	for _, rec in ipairs(active) do
 		row(rec.name, rec.path, rec, false)
@@ -6101,6 +7566,14 @@ end
 Running.onShow = function() Running.render() end
 
 local Console = newPage({ id = "console", title = "Console", icon = "square-terminal", tabs = { "All", "Errors" } })
+Console.head = function()
+	local errs = 0
+	for _, it in ipairs(Log.items) do
+		if it.kind == "error" then errs += 1 end
+	end
+	if errs > 0 then return "Console", errs .. (errs == 1 and " error to look at" or " errors to look at") end
+	return "Console", "Messages from the hub and your scripts"
+end
 Console.views = { newScroll(Console.frame, 0, true), newScroll(Console.frame, 0, false) }
 Console.dirty = { true, true }
 Console.left = { icon = "copy", fn = function()
@@ -7661,6 +9134,14 @@ do
 end
 
 local Commands = newPage({ id = "commands", title = "Commands", icon = "command", tabs = Cmd.cats, viewY = 40 })
+Commands.head = function()
+	local on = 0
+	for _, def in ipairs(Cmd.list) do
+		if Cmd.isOn(def.id) then on += 1 end
+	end
+	if on > 0 then return "Commands", on .. " on right now  ·  chat prefix " .. S.chatPrefix end
+	return "Commands", "Toggles and tools for your character"
+end
 Commands.right = { icon = "command", fn = function() Cmd.openBar(true) end }
 Commands.left = { icon = "power", fn = function() Cmd.stopAll() end }
 Commands.query = ""
@@ -7783,7 +9264,7 @@ Bus.on("cmd", function()
 	for _, r in ipairs(Commands.rows) do
 		if r.row.Parent then r.render(true) end
 	end
-	SideRefs.cmdDot.Visible = Cmd.activeCount() > 0
+	Dock.cmdDot.Visible = Cmd.activeCount() > 0
 end)
 Bus.on("accent", function()
 	for _, r in ipairs(Commands.rows) do
@@ -7833,7 +9314,9 @@ do
 			end
 			chips[id](false)
 		end
-		Home.quick.Size = UDim2.new(1, 0, 0, math.max(1, math.ceil(#ids / 2)) * 41 - 6)
+		local qh = math.max(1, math.ceil(#ids / 2)) * 41 - 6
+		Home.quick.Size = UDim2.new(1, -24, 0, qh)
+		Home.quickW.Size = UDim2.new(1, 0, 0, qh + 52)
 	end
 	function Home.pickQuick()
 		return Win.show("quickpick", {
@@ -7889,13 +9372,24 @@ do
 			if Cmd.isOn(id) then f(false) end
 		end
 	end)
-	Home.acts[2].btn.Activated:Connect(function() Cmd.run("refresh") end)
+	Home.tiles.respawn.Activated:Connect(function() Cmd.run("refresh") end)
+	Home.tiles.cmdbar.Activated:Connect(function() Cmd.openBar(true) end)
 	Home.hop.Activated:Connect(function() Cmd.run("serverhop") end)
+	Home.quickEdit.Activated:Connect(function() Home.pickQuick() end)
 end
 
-local PlayersPage = newPage({ id = "players", title = "Players", icon = "users", viewY = 40 })
+local PlayersPage = newPage({ id = "players", title = "Players", icon = "users", tabs = { "Everyone", "Friends", "Nearby" }, viewY = 40 })
 PlayersPage.query = ""
 PlayersPage.rows = {}
+PlayersPage.friend = {}
+PlayersPage.dirty = { true, true, true }
+PlayersPage.fx = { hl = {}, hide = {}, conns = {} }
+PlayersPage.head = function()
+	local n = #Players:GetPlayers()
+	local okMax, maxP = pcall(function() return Players.MaxPlayers end)
+	local cap = (okMax and type(maxP) == "number" and maxP > 0) and (" of " .. maxP) or ""
+	return "Players", n .. cap .. " in this server"
+end
 do
 	local bar = UI.new("Frame", { Name = "SearchBar", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 32) }, PlayersPage.frame)
 	UI.corner(bar, 10)
@@ -7925,170 +9419,365 @@ do
 		task.delay(0.15, function()
 			if my ~= seq then return end
 			PlayersPage.query = string.lower(Util.trim(box.Text))
-			PlayersPage.render()
+			PlayersPage.invalidate()
 		end)
 	end)
-	PlayersPage.view = newScroll(PlayersPage.frame, 40)
-	PlayersPage.views = { PlayersPage.view }
+	for i = 1, 3 do
+		PlayersPage.views[i] = newScroll(PlayersPage.frame, 40, i == 1)
+	end
 end
 
 local function headshot(p)
 	return "rbxthumb://type=AvatarHeadShot&id=" .. tostring(p.UserId) .. "&w=150&h=150"
 end
 
-function PlayersPage.openWin(p)
-	if not p or not p.Parent then return end
-	return Win.show("player_" .. tostring(p.UserId), {
-		title = p.DisplayName,
-		icon = "user",
-		sub = "@" .. p.Name,
-		w = 250,
-		h = 300,
-		minH = 150,
-		build = function(w, body)
-			local top = card(body, 76, 1)
-			top.Name = "Top"
-			local av = UI.new("ImageLabel", { BackgroundColor3 = T.card2, Size = UDim2.fromOffset(56, 56), Position = UDim2.fromOffset(10, 10), Image = headshot(p) }, top)
-			UI.corner(av, 28)
-			UI.stroke(av, T.text, 1, 0.8)
-			UI.label(top, { Text = p.DisplayName, Font = FONT_B, TextSize = 13, Position = UDim2.fromOffset(76, 12), Size = UDim2.new(1, -86, 0, 17), TextTruncate = Enum.TextTruncate.AtEnd })
-			UI.label(top, { Text = "@" .. p.Name, TextSize = 11, TextColor3 = T.sub, Position = UDim2.fromOffset(76, 30), Size = UDim2.new(1, -86, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
-			local age = 0
-			pcall(function() age = p.AccountAge end)
-			local team = ""
-			pcall(function()
-				if p.Team then team = "  ·  " .. p.Team.Name end
-			end)
-			UI.label(top, { Text = (p == LP and "You" or (age .. " days old")) .. team, TextSize = 10, TextColor3 = T.dim, Position = UDim2.fromOffset(76, 47), Size = UDim2.new(1, -86, 0, 13), TextTruncate = Enum.TextTruncate.AtEnd })
-			if p ~= LP then
-				local btns = Ctl.buttons(body, 2, {
-					{ "map-pin", "Go to", function() Cmd.run("goto", p.Name) end },
-					{ "eye", "Spectate", nil },
-				})
-				local function drawView()
-					local on = Cmd.isOn("view") and Cmd.view.target == p
-					btns[2].set(on and "eye-off" or "eye", on and "Stop" or "Spectate", on and accentColor() or T.text)
-				end
-				btns[2].btn.Activated:Connect(function()
-					if Cmd.isOn("view") and Cmd.view.target == p then
-						Cmd.set("view", false)
-					else
-						Cmd.set("view", true, p.Name)
-					end
-				end)
-				local fb = Ctl.buttons(body, 3, { { "footprints", "Follow", nil } })
-				local function drawFollow()
-					local on = Cmd.isOn("follow") and Cmd.follow.target == p
-					fb[1].set(on and "x" or "footprints", on and "Stop following" or "Follow", on and accentColor() or T.text)
-				end
-				fb[1].btn.Activated:Connect(function()
-					if Cmd.isOn("follow") and Cmd.follow.target == p then
-						Cmd.set("follow", false)
-					else
-						Cmd.set("follow", true, p.Name)
-					end
-				end)
-				w:on("cmd", function(id)
-					if not w.alive then return end
-					if id == "view" then drawView() end
-					if id == "follow" then drawFollow() end
-				end)
-				drawView()
-				drawFollow()
-			end
-			Ctl.buttons(body, 4, {
-				{ "copy", "Copy name", function() copyText(p.Name, "Username") end },
-				{ "hash", "Copy ID", function() copyText(tostring(p.UserId), "User ID") end },
-			})
-			Ctl.info(body, 5, "User ID", p.UserId, function(v) copyText(v, "User ID") end)
-			w:conn(Players.PlayerRemoving:Connect(function(pl)
-				if pl == p then
-					task.defer(function() w:close() end)
-				end
-			end))
-		end,
-	})
+function PlayersPage.dist(p)
+	local r = Cmd.root()
+	local c = p.Character
+	local pr = c and (c:FindFirstChild("HumanoidRootPart") or c.PrimaryPart)
+	if not (r and pr) then return nil end
+	return (pr.Position - r.Position).Magnitude
 end
 
-local function playerRow(sf, p, order)
-	local row = UI.button(sf, { Name = "P_" .. p.Name, BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 50), LayoutOrder = order })
-	UI.corner(row, 12)
-	local av = UI.new("ImageLabel", { BackgroundColor3 = T.card2, Size = UDim2.fromOffset(34, 34), Position = UDim2.fromOffset(8, 8), Image = headshot(p) }, row)
-	UI.corner(av, 17)
-	UI.label(row, { Text = p.DisplayName, Font = FONT_B, TextSize = 13, Position = UDim2.fromOffset(52, 9), Size = UDim2.new(1, -110, 0, 17), TextTruncate = Enum.TextTruncate.AtEnd })
-	UI.label(row, { Text = "@" .. p.Name, TextSize = 11, TextColor3 = T.sub, Position = UDim2.fromOffset(52, 27), Size = UDim2.new(1, -110, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
-	if p == LP then
-		local tag = UI.new("Frame", { BackgroundColor3 = T.card2, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.5, 0), Size = UDim2.fromOffset(38, 20) }, row)
-		UI.corner(tag, 10)
-		local l = UI.label(tag, { Text = "YOU", Font = FONT_B, TextSize = 9, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromScale(1, 1) })
-		UI.accent(l, "TextColor3")
-	else
-		local eye = UI.button(row, { Name = "View", BackgroundColor3 = T.card2, Size = UDim2.fromOffset(30, 30), Position = UDim2.new(1, -40, 0.5, -15) })
-		UI.corner(eye, 15)
-		local ic = UI.icon("eye", 14, T.sub, eye, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
-		UI.pressable(eye, 0.88)
-		eye.Activated:Connect(function()
-			if Cmd.isOn("view") and Cmd.view.target == p then
-				Cmd.set("view", false)
-			else
-				Cmd.set("view", true, p.Name)
-			end
-		end)
-		PlayersPage.rows[#PlayersPage.rows + 1] = { p = p, row = row, render = function()
-			local on = Cmd.isOn("view") and Cmd.view.target == p
-			UI.setIcon(ic, on and "eye-off" or "eye")
-			UI.tint(ic, on and accentColor() or T.sub, 0.15)
-		end }
-		PlayersPage.rows[#PlayersPage.rows].render()
-	end
-	Ctl.hoverable(row)
-	row.Activated:Connect(function() PlayersPage.openWin(p) end)
-end
-
-function PlayersPage.render()
-	PlayersPage.dirty = false
-	PlayersPage.rows = {}
-	local sf = PlayersPage.view
-	clearList(sf)
-	local q = PlayersPage.query
-	local list = Players:GetPlayers()
-	table.sort(list, function(a, b)
-		if a == LP then return true end
-		if b == LP then return false end
-		return string.lower(a.DisplayName) < string.lower(b.DisplayName)
+function PlayersPage.checkFriend(p)
+	if p == LP or PlayersPage.friend[p.UserId] ~= nil then return end
+	PlayersPage.friend[p.UserId] = false
+	task.spawn(function()
+		local ok, v = pcall(function() return LP:IsFriendsWith(p.UserId) end)
+		if HUB.alive and ok and v == true then
+			PlayersPage.friend[p.UserId] = true
+			PlayersPage.dirty[2] = true
+			if Panel.open and Panel.page == "players" and PlayersPage.tab == 2 then PlayersPage.render(2) end
+		end
 	end)
-	section(sf, "In this server (" .. #list .. ")", 0)
-	local n = 0
-	for _, p in ipairs(list) do
-		if q == "" or string.find(string.lower(p.Name), q, 1, true) or string.find(string.lower(p.DisplayName), q, 1, true) then
-			n += 1
-			playerRow(sf, p, n)
+end
+
+local FX = PlayersPage.fx
+function FX.hidePart(d)
+	if d:IsA("BasePart") or d:IsA("Decal") then d.LocalTransparencyModifier = 1 end
+end
+
+function FX.apply(p)
+	local c = p.Character
+	local h = FX.hl[p]
+	if h then
+		if h.inst then pcall(function() h.inst:Destroy() end) end
+		h.inst = nil
+		if c then
+			local hl = Instance.new("Highlight")
+			hl.Name = "AtsukoMark"
+			hl.Adornee = c
+			hl.FillColor = accentColor()
+			hl.OutlineColor = accentColor()
+			hl.FillTransparency = 0.7
+			hl.OutlineTransparency = 0
+			hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+			hl.Parent = Gui.Parent or Gui
+			h.inst = hl
 		end
 	end
-	if n == 0 then emptyState(sf, "search", "Nobody matches", "Try another name", 1) end
+	if FX.hide[p] and c then
+		for _, d in ipairs(c:GetDescendants()) do
+			pcall(FX.hidePart, d)
+		end
+	end
 end
 
+function FX.watch(p)
+	if FX.conns[p] then return end
+	local list = {}
+	list[1] = p.CharacterAdded:Connect(function(c)
+		task.wait(0.3)
+		if HUB.alive and (FX.hl[p] or FX.hide[p]) then
+			FX.apply(p)
+			if list[2] then list[2]:Disconnect() end
+			list[2] = c.DescendantAdded:Connect(function(d)
+				if FX.hide[p] then pcall(FX.hidePart, d) end
+			end)
+		end
+	end)
+	local c = p.Character
+	if c then
+		list[2] = c.DescendantAdded:Connect(function(d)
+			if FX.hide[p] then pcall(FX.hidePart, d) end
+		end)
+	end
+	FX.conns[p] = list
+end
+
+function FX.unwatch(p)
+	if FX.hl[p] or FX.hide[p] then return end
+	local list = FX.conns[p]
+	FX.conns[p] = nil
+	for _, cn in pairs(list or {}) do
+		pcall(function() cn:Disconnect() end)
+	end
+end
+
+function FX.set(p, kind, on)
+	if kind == "hl" then
+		if on then
+			FX.hl[p] = FX.hl[p] or {}
+		else
+			local h = FX.hl[p]
+			FX.hl[p] = nil
+			if h and h.inst then pcall(function() h.inst:Destroy() end) end
+		end
+	else
+		FX.hide[p] = on or nil
+		if not on and p.Character then
+			for _, d in ipairs(p.Character:GetDescendants()) do
+				if d:IsA("BasePart") or d:IsA("Decal") then pcall(function() d.LocalTransparencyModifier = 0 end) end
+			end
+		end
+	end
+	if on then
+		FX.watch(p)
+		FX.apply(p)
+	else
+		FX.unwatch(p)
+	end
+	Bus.fire("playerFx", p)
+end
+
+function FX.clear(p)
+	FX.set(p, "hl", false)
+	FX.set(p, "hide", false)
+end
+
+function PlayersPage.clearFx()
+	for p in pairs(table.clone(FX.hl)) do
+		pcall(FX.set, p, "hl", false)
+	end
+	for p in pairs(table.clone(FX.hide)) do
+		pcall(FX.set, p, "hide", false)
+	end
+end
+
+local function playerRow(sf, p, order, right)
+	local row = UI.button(sf, { Name = "P_" .. p.Name, BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 48), LayoutOrder = order })
+	UI.corner(row, 12)
+	local st = UI.stroke(row, accentColor(), 1, PlayersPage.sel == p and 0.4 or 1)
+	local av = UI.new("ImageLabel", { BackgroundColor3 = T.card2, Size = UDim2.fromOffset(32, 32), Position = UDim2.fromOffset(9, 8), Image = headshot(p) }, row)
+	UI.corner(av, 16)
+	UI.label(row, { Text = p.DisplayName, Font = FONT_B, TextSize = 13, Position = UDim2.fromOffset(50, 8), Size = UDim2.new(1, -110, 0, 17), TextTruncate = Enum.TextTruncate.AtEnd })
+	UI.label(row, { Text = "@" .. p.Name .. (p == LP and ", you" or ""), TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(50, 26), Size = UDim2.new(1, -110, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+	local tag = UI.label(row, { Name = "Right", Text = right or "", Font = FONT_B, TextSize = 10, TextColor3 = T.sub, TextXAlignment = Enum.TextXAlignment.Right, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -30, 0.5, 0), Size = UDim2.fromOffset(70, 16) })
+	UI.icon("chevron-right", 13, T.dim, row, { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0) })
+	local marks = {}
+	if FX.hl[p] then marks[#marks + 1] = "marked" end
+	if FX.hide[p] then marks[#marks + 1] = "hidden" end
+	if Cmd.isOn("view") and Cmd.view.target == p then marks[#marks + 1] = "watching" end
+	if Cmd.isOn("follow") and Cmd.follow.target == p then marks[#marks + 1] = "following" end
+	if not right and #marks > 0 then
+		tag.Text = marks[1] .. (#marks > 1 and ("  +" .. (#marks - 1)) or "")
+		UI.accent(tag, "TextColor3")
+	end
+	Ctl.hoverable(row)
+	row.Activated:Connect(function() PlayersPage.open(p) end)
+	PlayersPage.rows[#PlayersPage.rows + 1] = { p = p, row = row, stroke = st }
+end
+
+function PlayersPage.render(i)
+	i = i or PlayersPage.tab
+	PlayersPage.dirty[i] = false
+	local keep = {}
+	for _, r in ipairs(PlayersPage.rows) do
+		if r.row.Parent and not r.row:IsDescendantOf(PlayersPage.views[i]) then keep[#keep + 1] = r end
+	end
+	PlayersPage.rows = keep
+	local sf = PlayersPage.views[i]
+	clearList(sf)
+	local q = PlayersPage.query
+	local all = Players:GetPlayers()
+	local list = {}
+	for _, p in ipairs(all) do
+		PlayersPage.checkFriend(p)
+		local hit = q == "" or string.find(string.lower(p.Name), q, 1, true) or string.find(string.lower(p.DisplayName), q, 1, true)
+		if hit and (i == 1 or (i == 2 and PlayersPage.friend[p.UserId] == true) or (i == 3 and p ~= LP and PlayersPage.dist(p))) then
+			list[#list + 1] = p
+		end
+	end
+	local dist = {}
+	if i == 3 then
+		for _, p in ipairs(list) do
+			dist[p] = PlayersPage.dist(p) or math.huge
+		end
+		table.sort(list, function(a, b) return dist[a] < dist[b] end)
+	else
+		table.sort(list, function(a, b)
+			if a == LP then return true end
+			if b == LP then return false end
+			return string.lower(a.DisplayName) < string.lower(b.DisplayName)
+		end)
+	end
+	local titles = { "In this server  ·  " .. #all, "Your friends here  ·  " .. #list, "Closest to you" }
+	section(sf, titles[i], 0)
+	for n, p in ipairs(list) do
+		playerRow(sf, p, n, i == 3 and (math.floor(dist[p] + 0.5) .. " studs") or nil)
+	end
+	if #list == 0 then
+		if i == 2 then
+			emptyState(sf, "users", "No friends here", "Friends in this server show up here", 1)
+		elseif i == 3 then
+			emptyState(sf, "map-pin", "Nobody nearby", "Spawn in to see who's close", 1)
+		else
+			emptyState(sf, "search", "Nobody matches", "Try another name", 1)
+		end
+	end
+end
+
+function PlayersPage.invalidate()
+	PlayersPage.dirty = { true, true, true }
+	if Panel.open and Panel.page == "players" then PlayersPage.render(PlayersPage.tab) end
+end
+
+PlayersPage.onTab = function(i)
+	if PlayersPage.dirty[i] or i == 3 then PlayersPage.render(i) end
+end
 PlayersPage.onShow = function()
-	if PlayersPage.dirty ~= false then PlayersPage.render() end
+	if PlayersPage.dirty[PlayersPage.tab] or PlayersPage.tab == 3 then PlayersPage.render(PlayersPage.tab) end
+end
+
+function PlayersPage.open(p)
+	if not p or not p.Parent then return end
+	PlayersPage.sel = p
+	for _, r in ipairs(PlayersPage.rows) do
+		if r.row.Parent then UI.tween(r.stroke, 0.2, { Transparency = r.p == p and 0.4 or 1 }) end
+	end
+	if PlayersPage.detail then PlayersPage.detail:Destroy() end
+	local f = UI.new("Frame", { Name = "PlayerDetail", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1) })
+	PlayersPage.detail = f
+	local _, backIc = Aside.header(f, "PLAYER")
+	UI.setIcon(backIc, Aside.backIcon())
+	local sc = newScroll(f, 40)
+	local pad = sc:FindFirstChildOfClass("UIPadding")
+	pad.PaddingLeft, pad.PaddingRight = UDim.new(0, 10), UDim.new(0, 10)
+	local short = Aside.card.Size.Y.Offset < 380
+	local hero = card(sc, short and 112 or 196, 1)
+	hero.Name = "Hero"
+	local glow = UI.new("Frame", { Name = "Glow", BorderSizePixel = 0, Size = UDim2.fromScale(1, 1) }, hero)
+	UI.corner(glow, 12)
+	UI.accent(glow, "BackgroundColor3")
+	UI.new("UIGradient", { Rotation = short and 0 or 90, Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.72), NumberSequenceKeypoint.new(0.7, 0.95), NumberSequenceKeypoint.new(1, 1) }) }, glow)
+	local avatar = "rbxthumb://type=Avatar&id=" .. tostring(p.UserId) .. "&w=420&h=420"
+	local who = "@" .. p.Name .. (p == LP and ", you" or "")
+	if short then
+		UI.new("ImageLabel", { Name = "Avatar", BackgroundTransparency = 1, Position = UDim2.fromOffset(4, 4), Size = UDim2.fromOffset(104, 104), Image = avatar }, hero)
+		UI.label(hero, { Name = "Name", Text = p.DisplayName, Font = FONT_B, TextSize = 16, Position = UDim2.fromOffset(114, 36), Size = UDim2.new(1, -126, 0, 20), TextTruncate = Enum.TextTruncate.AtEnd })
+		UI.label(hero, { Name = "User", Text = who, TextSize = 11, TextColor3 = T.sub, Position = UDim2.fromOffset(114, 58), Size = UDim2.new(1, -126, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+	else
+		UI.new("ImageLabel", { Name = "Avatar", BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 4), Size = UDim2.fromOffset(140, 140), Image = avatar }, hero)
+		UI.label(hero, { Name = "Name", Text = p.DisplayName, Font = FONT_B, TextSize = 16, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(10, 146), Size = UDim2.new(1, -20, 0, 20), TextTruncate = Enum.TextTruncate.AtEnd })
+		UI.label(hero, { Name = "User", Text = who, TextSize = 11, TextColor3 = T.sub, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(10, 167), Size = UDim2.new(1, -20, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+	end
+	local defs
+	if p == LP then
+		defs = {
+			{ "copy", "Copy name", T.yellow, function() copyText(p.Name, "Username") end },
+			{ "hash", "Copy ID", T.blue, function() copyText(tostring(p.UserId), "User ID") end },
+		}
+	else
+		defs = {
+			{ "map-pin", "Go to", T.blue, function() Cmd.run("goto", p.Name) end },
+			{ "eye", "Spectate", T.green, function()
+				if Cmd.isOn("view") and Cmd.view.target == p then Cmd.set("view", false) else Cmd.set("view", true, p.Name) end
+			end, function() return Cmd.isOn("view") and Cmd.view.target == p end },
+			{ "footprints", "Follow", T.violet, function()
+				if Cmd.isOn("follow") and Cmd.follow.target == p then Cmd.set("follow", false) else Cmd.set("follow", true, p.Name) end
+			end, function() return Cmd.isOn("follow") and Cmd.follow.target == p end },
+			{ "scan-eye", "Mark", T.orange, function() FX.set(p, "hl", not FX.hl[p]) end, function() return FX.hl[p] ~= nil end },
+			{ "eye-off", "Hide", T.red, function() FX.set(p, "hide", not FX.hide[p]) end, function() return FX.hide[p] == true end },
+			{ "copy", "Copy name", T.yellow, function() copyText(p.Name, "Username") end },
+		}
+	end
+	local grid = UI.new("Frame", { Name = "Actions", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, math.ceil(#defs / 2) * 60 - 6), LayoutOrder = 2 }, sc)
+	local draws = {}
+	for i, d in ipairs(defs) do
+		local col, row = (i - 1) % 2, (i - 1) // 2
+		local color = d[3]
+		local b = UI.button(grid, { Name = "Tile_" .. d[2], BackgroundColor3 = color, BackgroundTransparency = 0.86, Size = UDim2.new(0.5, -3, 0, 54), Position = UDim2.new(col * 0.5, col * 3, 0, row * 60) })
+		UI.corner(b, 14)
+		UI.stroke(b, color, 1, 0.72)
+		UI.icon(d[1], 16, color, b, { Position = UDim2.fromOffset(11, 9) })
+		UI.label(b, { Text = d[2], Font = FONT_B, TextSize = 11, Position = UDim2.fromOffset(11, 32), Size = UDim2.new(1, -50, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+		local stl = UI.label(b, { Name = "State", Text = "", TextSize = 10, TextColor3 = T.sub, TextXAlignment = Enum.TextXAlignment.Right, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -10, 0, 33), Size = UDim2.fromOffset(36, 13) })
+		UI.pressable(b, 0.94)
+		b.Activated:Connect(d[4])
+		if d[5] then
+			draws[#draws + 1] = function()
+				local on = d[5]()
+				stl.Text = on and "on" or "off"
+				stl.TextColor3 = on and color or T.sub
+				UI.tween(b, 0.15, { BackgroundTransparency = on and 0.7 or 0.86 })
+			end
+		end
+	end
+	local function redraw()
+		for _, fn in ipairs(draws) do
+			pcall(fn)
+		end
+	end
+	redraw()
+	PlayersPage.redraw = redraw
+	PlayersPage.info = UI.label(sc, { Name = "Info", Text = "", TextSize = 10, TextColor3 = T.sub, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.new(1, 0, 0, 20), LayoutOrder = 3, TextTruncate = Enum.TextTruncate.AtEnd })
+	Ctl.buttons(sc, 4, {
+		{ "hash", "Copy ID", function() copyText(tostring(p.UserId), "User ID") end },
+		{ "link", "Profile link", function() copyText("https://www.roblox.com/users/" .. tostring(p.UserId) .. "/profile", "Profile link") end },
+	})
+	PlayersPage.tick()
+	Aside.show("player", f, "players", function()
+		PlayersPage.sel = nil
+		PlayersPage.redraw = nil
+		for _, r in ipairs(PlayersPage.rows) do
+			if r.row.Parent then UI.tween(r.stroke, 0.2, { Transparency = 1 }) end
+		end
+	end)
+end
+
+function PlayersPage.tick()
+	local p = PlayersPage.sel
+	local l = PlayersPage.info
+	if not (p and l and l.Parent) then return end
+	local bits = {}
+	local age = 0
+	pcall(function() age = p.AccountAge end)
+	bits[1] = age >= 365 and (math.floor(age / 365) .. " yr account") or (age .. " day account")
+	local team = "No team"
+	pcall(function()
+		if p.Team then team = p.Team.Name end
+	end)
+	bits[2] = team
+	local d = p ~= LP and PlayersPage.dist(p) or nil
+	if d then bits[3] = math.floor(d + 0.5) .. " studs away" end
+	l.Text = table.concat(bits, "  ·  ")
 end
 
 local function playersChanged()
-	PlayersPage.dirty = true
+	PlayersPage.dirty = { true, true, true }
 	if Panel.open and Panel.page == "players" then
 		task.defer(function()
-			if HUB.alive and PlayersPage.dirty then PlayersPage.render() end
+			if HUB.alive and PlayersPage.dirty[PlayersPage.tab] then PlayersPage.render(PlayersPage.tab) end
 		end)
 	end
 end
 hubConn(Players.PlayerAdded:Connect(playersChanged))
-hubConn(Players.PlayerRemoving:Connect(function()
+hubConn(Players.PlayerRemoving:Connect(function(p)
+	pcall(FX.clear, p)
+	PlayersPage.friend[p.UserId] = nil
+	if PlayersPage.sel == p and Aside.key == "player" then Aside.hide() end
 	task.delay(0.1, playersChanged)
 end))
 Bus.on("cmd", function(id)
-	if id ~= "view" then return end
-	for _, r in ipairs(PlayersPage.rows) do
-		if r.row.Parent then r.render() end
-	end
+	if id ~= "view" and id ~= "follow" then return end
+	if PlayersPage.redraw then PlayersPage.redraw() end
+	PlayersPage.dirty = { true, true, true }
+	if Panel.open and Panel.page == "players" then PlayersPage.render(PlayersPage.tab) end
+end)
+Bus.on("playerFx", function()
+	if PlayersPage.redraw then PlayersPage.redraw() end
+	PlayersPage.dirty = { true, true, true }
+	if Panel.open and Panel.page == "players" then PlayersPage.render(PlayersPage.tab) end
 end)
 
 local MusicUI = { views = {} }
@@ -8096,14 +9785,16 @@ local PlayerUI = { views = {} }
 
 function Home.syncMusic()
 	local pv = Player.cur ~= nil and (Player.state ~= "stopped" or not Spot.connected())
+	local sv = Spot.connected() and not pv
 	Home.player.Visible = pv
-	Home.music.Visible = Spot.connected() and not pv
+	Home.music.Visible = sv
+	Home.idle.Visible = not (pv or sv)
 end
 
 function MusicUI.text()
 	local s = Spot.state
 	if s and s.title and s.title ~= "" then return s.title, s.artist or "", true end
-	if not Spot.connected() then return "Spotify isn't connected", "Connect it on the Music page", false end
+	if not Spot.connected() then return "Spotify isn't connected", "Connect it on the Spotify page", false end
 	if Spot.err then return "Spotify needs a look", Spot.err, false end
 	return "Nothing playing", "Play something on Spotify", false
 end
@@ -8164,6 +9855,7 @@ function MusicUI.render(v)
 		v.note.Text = Spot.err or ""
 		v.note.Visible = Spot.err ~= nil
 	end
+	if v.extra then v.extra(s, has) end
 	MusicUI.tick(v, true)
 end
 
@@ -8270,16 +9962,32 @@ function MusicUI.art(parent, size, radius, pos, iconSize)
 	return art, ic
 end
 
-local Music = newPage({ id = "music", title = "Spotify", icon = "music" })
+local Music = newPage({ id = "music", title = "Spotify", icon = "music", tabs = { "Player", "Library", "Lyrics", "Queue" } })
+Music.TABS = Music.tabs
 Music.setup = newScroll(Music.frame, 0, false)
-Music.player = newScroll(Music.frame, 0, false)
-Music.views = { Music.setup }
+Music.player = newScroll(Music.frame, 0, true)
+Music.library = newScroll(Music.frame, 0, false)
+Music.lyricsView = newScroll(Music.frame, 0, false)
+Music.queueView = newScroll(Music.frame, 0, false)
+Music.tabViews = { Music.player, Music.library, Music.lyricsView, Music.queueView }
+Music.views = Music.tabViews
 Music.right = { icon = "picture-in-picture-2", fn = function() MusicUI.openMini() end }
 Music.pending = ""
+Music.ly = { key = nil, status = nil, labels = {}, times = {}, cur = 0, userUntil = 0, autoUntil = 0, dirty = true }
+Music.q = { at = -100, busy = false, data = nil, recent = nil, err = nil }
+Music.head = function()
+	if not Spot.connected() then return "Spotify", "Connect your account to control your music" end
+	local s = Spot.state
+	if s and s.title and s.title ~= "" then
+		if s.playing then return "Spotify", s.device and ("Playing on " .. s.device) or "Playing now" end
+		return "Spotify", "Paused"
+	end
+	return "Spotify", "Open Spotify on any device to start"
+end
 
 function MusicUI.openMini()
 	if not Spot.connected() then
-		notify("Spotify", "Connect it on the Music page first", "info")
+		notify("Spotify", "Connect it on the Spotify page first", "info")
 		if not (Panel.open and Panel.page == "music") then Panel.nav("music") end
 		return nil
 	end
@@ -8313,47 +10021,166 @@ function MusicUI.openMini()
 	})
 end
 
+function Music.shown(i)
+	return Panel.open and Panel.page == "music" and Spot.connected() and (i == nil or Music.tab == i)
+end
+
+function Music.thumb(parent, size, radius, pos, url, icon)
+	local th = UI.new("Frame", { Name = "Thumb", BackgroundColor3 = T.card2, Size = UDim2.fromOffset(size, size), Position = pos, ClipsDescendants = true }, parent)
+	UI.corner(th, radius)
+	local ic = UI.icon(icon or "music", math.floor(size * 0.4), T.dim, th, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+	local img = UI.new("ImageLabel", { Name = "Img", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ScaleType = Enum.ScaleType.Crop, Image = "" }, th)
+	UI.corner(img, radius)
+	if url then Spot.setImage(img, url, ic) end
+	return th, img, ic
+end
+
+function Music.trackRow(parent, t, order, onPlay, canQueue)
+	local row = UI.button(parent, { Name = "Track", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 48), LayoutOrder = order })
+	UI.corner(row, 12)
+	Music.thumb(row, 36, 8, UDim2.fromOffset(6, 6), t.thumb)
+	local s = Spot.state
+	local now = s ~= nil and s.uri == t.uri
+	local right = canQueue and 44 or 12
+	UI.label(row, { Name = "Title", Text = t.name, Font = FONT_B, TextSize = 12, TextColor3 = now and accentColor() or T.text, Position = UDim2.fromOffset(50, 8), Size = UDim2.new(1, -(50 + right), 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+	local sub = t.artist ~= "" and t.artist or "Unknown artist"
+	if t.duration > 0 then sub ..= "  ·  " .. Util.mmss(t.duration) end
+	UI.label(row, { Name = "Sub", Text = sub, TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(50, 25), Size = UDim2.new(1, -(50 + right), 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+	if canQueue then
+		local qb = UI.button(row, { Name = "Queue", BackgroundColor3 = T.card2, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0), Size = UDim2.fromOffset(30, 30) })
+		UI.corner(qb, 15)
+		UI.icon("list-plus", 14, T.text, qb, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+		UI.pressable(qb, 0.85)
+		qb.Activated:Connect(function() Spot.queueAdd(t.uri, t.name) end)
+	end
+	Ctl.hoverable(row)
+	if onPlay then row.Activated:Connect(onPlay) end
+	return row
+end
+
+function Music.listFrame(parent, order)
+	local f = UI.new("Frame", { Name = "List", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = order }, parent)
+	UI.list(f, 6)
+	return f
+end
+
+function Music.banner(parent, order, icon, title, text, btnText, fn)
+	local b = UI.new("Frame", { Name = "Banner", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 62), LayoutOrder = order }, parent)
+	UI.corner(b, 12)
+	local st = UI.stroke(b, accentColor(), 1, 0.5)
+	UI.accent(st, "Color")
+	local ic = UI.icon(icon, 16, accentColor(), b, { Position = UDim2.fromOffset(12, 12) })
+	UI.accent(ic, "ImageColor3")
+	UI.label(b, { Text = title, Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(36, 10), Size = UDim2.new(1, -130, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+	UI.label(b, { Text = text, TextSize = 10, TextColor3 = T.sub, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, Position = UDim2.fromOffset(36, 28), Size = UDim2.new(1, -130, 0, 28) })
+	local btn = UI.button(b, { Name = "Go", AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0), Size = UDim2.fromOffset(84, 28) })
+	UI.corner(btn, 14)
+	UI.accent(btn, "BackgroundColor3")
+	iconText(btn, nil, btnText, T.ink, 11)
+	UI.pressable(btn, 0.92)
+	btn.Activated:Connect(fn)
+	return b
+end
+
+function Music.reconnectBanner(parent, order)
+	return Music.banner(parent, order, "sparkles", "Unlock playlists and likes", "Log in again once so the hub can see your library.", "Log in", function() Spot.reconnect() end)
+end
+
 do
 	local pv = Music.player
-	local v = { root = pv, shown = function() return Panel.open and Panel.page == "music" end }
-	local hero = card(pv, 128, 1)
+	local v = { root = pv, shown = function() return Music.shown(1) end }
+	Music.pv = v
+	Music.relog = Music.reconnectBanner(pv, 0)
+	Music.relog.Visible = false
+	local hero = card(pv, 260, 1)
 	hero.Name = "NowPlaying"
-	v.bg = UI.new("ImageLabel", { Name = "Backdrop", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ScaleType = Enum.ScaleType.Crop, ImageTransparency = 0.72, Image = "" }, hero)
+	hero.ClipsDescendants = true
+	v.hero = hero
+	v.bg = UI.new("ImageLabel", { Name = "Backdrop", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ScaleType = Enum.ScaleType.Crop, ImageTransparency = 0.78, Image = "" }, hero)
 	UI.corner(v.bg, 12)
 	local shade = UI.new("Frame", { Name = "Shade", BackgroundColor3 = T.card, BorderSizePixel = 0, Size = UDim2.fromScale(1, 1) }, hero)
 	UI.corner(shade, 12)
 	UI.new("UIGradient", {
+		Rotation = 90,
 		Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 0.6),
-			NumberSequenceKeypoint.new(0.45, 0.15),
-			NumberSequenceKeypoint.new(1, 0.05),
+			NumberSequenceKeypoint.new(0, 0.55),
+			NumberSequenceKeypoint.new(0.5, 0.3),
+			NumberSequenceKeypoint.new(1, 0),
 		}),
 	}, shade)
-	v.art, v.artIcon = MusicUI.art(hero, 104, 10, UDim2.fromOffset(12, 12), 34)
-	v.live = UI.new("Frame", { Name = "Live", BackgroundColor3 = T.dim, Size = UDim2.fromOffset(6, 6), Position = UDim2.fromOffset(128, 19) }, hero)
+	v.live = UI.new("Frame", { Name = "Live", BackgroundColor3 = T.dim, Size = UDim2.fromOffset(6, 6), Position = UDim2.fromOffset(14, 19) }, hero)
 	UI.corner(v.live, 3)
-	v.device = UI.label(hero, { Font = FONT_B, TextSize = 9, TextColor3 = T.sub, Text = "SPOTIFY", Position = UDim2.fromOffset(140, 14), Size = UDim2.new(1, -152, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
-	v.title = UI.label(hero, { Font = FONT_B, TextSize = 14, Position = UDim2.fromOffset(128, 34), Size = UDim2.new(1, -140, 0, 36), TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, TextTruncate = Enum.TextTruncate.AtEnd })
-	v.artist = UI.label(hero, { TextSize = 11, TextColor3 = T.sub, Position = UDim2.fromOffset(128, 74), Size = UDim2.new(1, -140, 0, 15), TextTruncate = Enum.TextTruncate.AtEnd })
-	v.album = UI.label(hero, { TextSize = 10, TextColor3 = T.dim, Position = UDim2.fromOffset(128, 92), Size = UDim2.new(1, -140, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
-	v.place = function(title)
-		local width = v.title.AbsoluteSize.X / math.max(0.01, L.scale)
-		local two = width > 0 and textWidth(title, 14, FONT_B) > width - 2
-		local top = two and 14 or 24
-		v.live.Position = UDim2.fromOffset(128, top + 5)
-		v.device.Position = UDim2.fromOffset(140, top)
-		v.title.Position = UDim2.fromOffset(128, top + 20)
-		v.title.Size = UDim2.new(1, -140, 0, two and 36 or 18)
-		v.artist.Position = UDim2.fromOffset(128, top + (two and 60 or 42))
-		v.album.Position = UDim2.fromOffset(128, top + (two and 78 or 60))
-	end
-	local lastW = -1
-	v.title:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-		local wNow = v.title.AbsoluteSize.X
-		if math.abs(wNow - lastW) < 0.5 then return end
-		lastW = wNow
-		v.place(v.title.Text)
+	v.device = UI.label(hero, { Font = FONT_B, TextSize = 9, TextColor3 = T.sub, Text = "SPOTIFY", Position = UDim2.fromOffset(26, 14), Size = UDim2.new(1, -76, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+	local dv = UI.button(hero, { Name = "Devices", BackgroundColor3 = T.card2, BackgroundTransparency = 0.2, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -10, 0, 8), Size = UDim2.fromOffset(30, 30) })
+	UI.corner(dv, 15)
+	UI.icon("speaker", 14, T.text, dv, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+	UI.pressable(dv, 0.86)
+	dv.Activated:Connect(function() Music.openDevices() end)
+	v.art, v.artIcon = MusicUI.art(hero, 160, 12, UDim2.new(0.5, 0, 0, 44), 44)
+	v.art.AnchorPoint = Vector2.new(0.5, 0)
+	v.title = UI.label(hero, { Name = "Title", Font = FONT_B, TextSize = 16, Position = UDim2.fromOffset(14, 216), Size = UDim2.new(1, -66, 0, 20), TextTruncate = Enum.TextTruncate.AtEnd })
+	v.artist = UI.label(hero, { Name = "Artist", TextSize = 11, TextColor3 = T.sub, Position = UDim2.fromOffset(14, 237), Size = UDim2.new(1, -66, 0, 15), TextTruncate = Enum.TextTruncate.AtEnd })
+	v.ctx = UI.label(hero, { Name = "From", TextSize = 10, TextColor3 = T.dim, Position = UDim2.fromOffset(14, 254), Size = UDim2.new(1, -28, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+	local hb = UI.button(hero, { Name = "Like", BackgroundColor3 = T.card2, BackgroundTransparency = 0.2, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 214), Size = UDim2.fromOffset(36, 36) })
+	UI.corner(hb, 18)
+	v.heart = UI.icon("heart", 16, T.text, hb, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+	UI.pressable(hb, 0.82)
+	v.likeBtn = hb
+	hb.Activated:Connect(function()
+		local s = Spot.state
+		if not (s and s.uri and string.find(s.uri, "^spotify:track:")) then return end
+		Spot.setLike(s.uri, not Spot.liked(s.uri))
 	end)
+	v.extra = function(s, has)
+		local uri = has and s and s.uri or nil
+		local isTrack = uri ~= nil and string.find(uri, "^spotify:track:") ~= nil
+		hb.Visible = isTrack
+		if isTrack then
+			Spot.checkLike(s)
+			local on = Spot.liked(uri)
+			UI.setIcon(v.heart, on and "heart-fill" or "heart")
+			UI.tint(v.heart, on and accentColor() or T.text, 0.15)
+		end
+		local from = ""
+		if has and s and s.ctxUri then
+			local name = string.find(s.ctxUri, ":collection", 1, true) and "Liked Songs" or Spot.contextName(s.ctxUri)
+			if name then from = "From " .. name end
+		end
+		if from == "" and has and s and s.album then from = s.album end
+		v.ctx.Text = from
+		Music.relog.Visible = Spot.missingScopes()
+	end
+	Music.layout = function(w, h)
+		if (h or 999) >= 420 then
+			local a = math.clamp(math.floor((w - 24) * 0.56), 120, 190)
+			v.art.AnchorPoint = Vector2.new(0.5, 0)
+			v.art.Position = UDim2.new(0.5, 0, 0, 44)
+			v.art.Size = UDim2.fromOffset(a, a)
+			local y = 44 + a + 14
+			v.title.Position = UDim2.fromOffset(14, y)
+			v.title.Size = UDim2.new(1, -66, 0, 20)
+			v.artist.Position = UDim2.fromOffset(14, y + 21)
+			v.artist.Size = UDim2.new(1, -66, 0, 15)
+			v.ctx.Position = UDim2.fromOffset(14, y + 38)
+			v.ctx.Size = UDim2.new(1, -28, 0, 14)
+			hb.Position = UDim2.new(1, -12, 0, y - 2)
+			hero.Size = UDim2.new(1, 0, 0, y + 60)
+		else
+			local a = math.clamp(math.floor((w - 24) * 0.3), 84, 112)
+			local x = 24 + a
+			v.art.AnchorPoint = Vector2.new(0, 0)
+			v.art.Position = UDim2.fromOffset(12, 40)
+			v.art.Size = UDim2.fromOffset(a, a)
+			v.title.Position = UDim2.fromOffset(x, 46)
+			v.title.Size = UDim2.new(1, -(x + 12), 0, 20)
+			v.artist.Position = UDim2.fromOffset(x, 68)
+			v.artist.Size = UDim2.new(1, -(x + 12), 0, 15)
+			v.ctx.Position = UDim2.fromOffset(x, 86)
+			v.ctx.Size = UDim2.new(1, -(x + 56), 0, 14)
+			hb.Position = UDim2.new(1, -12, 0, 40 + a - 36)
+			hero.Size = UDim2.new(1, 0, 0, 52 + a)
+		end
+	end
 
 	local prog = UI.new("Frame", { Name = "Progress", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 34), LayoutOrder = 2 }, pv)
 	MusicUI.bar(prog, v, { Position = UDim2.fromOffset(8, 10), Size = UDim2.new(1, -16, 0, 4) }, true)
@@ -8430,16 +10257,537 @@ do
 	end)
 
 	v.note = UI.label(pv, { Name = "Status", TextSize = 10, TextColor3 = T.yellow, TextXAlignment = Enum.TextXAlignment.Center, TextWrapped = true, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 5, Visible = false })
-	section(pv, "Options", 6)
-	Music.barToggle = Ctl.toggle(pv, 7, "Show the song on the top bar", nil, function() return S.musicBar end, function(x)
+	local quick = UI.new("Frame", { Name = "Jump", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 40), LayoutOrder = 6 }, pv)
+	local function jump(icon, text, i)
+		local b = UI.button(quick, { Name = text, BackgroundColor3 = T.card, Position = UDim2.new((i - 2) / 3, (i - 2) * 2, 0, 0), Size = UDim2.new(1 / 3, -4, 1, 0) })
+		UI.corner(b, 12)
+		iconText(b, icon, text, T.text, 11)
+		Ctl.hoverable(b)
+		UI.pressable(b, 0.95)
+		b.Activated:Connect(function() Panel.setTab(Music, i) end)
+	end
+	jump("library", "Library", 2)
+	jump("mic-vocal", "Lyrics", 3)
+	jump("list-music", "Queue", 4)
+	section(pv, "Options", 7)
+	Music.barToggle = Ctl.toggle(pv, 8, "Show the song on the top bar", nil, function() return S.musicBar end, function(x)
 		S.musicBar = x
 		saveSettings()
 		Bus.fire("spotify")
 	end)
-	Ctl.action(pv, 8, "Pop out the mini player", "picture-in-picture-2", false, function() MusicUI.openMini() end)
-	Ctl.action(pv, 9, "Disconnect Spotify", "log-out", true, function() Spot.logout("Disconnected") end, true)
-	Ctl.note(pv, 10, "Song info updates every few seconds. Play, skip, seek and volume need Spotify Premium.")
+	Ctl.action(pv, 9, "Pop out the mini player", "picture-in-picture-2", false, function() MusicUI.openMini() end)
+	Ctl.action(pv, 10, "Disconnect Spotify", "log-out", true, function() Spot.logout("Disconnected") end, true)
+	Ctl.note(pv, 11, "Song info updates every few seconds. Play, skip, seek and volume need Spotify Premium.")
 	MusicUI.add(v)
+end
+
+function Music.openList(pl)
+	local f = UI.new("Frame", { Name = "TrackList", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1) })
+	local _, backIc = Aside.header(f, pl.caption)
+	UI.setIcon(backIc, Aside.backIcon())
+	local sc = newScroll(f, 40)
+	local pad = sc:FindFirstChildOfClass("UIPadding")
+	pad.PaddingLeft, pad.PaddingRight = UDim.new(0, 10), UDim.new(0, 10)
+	local hc = card(sc, 96, 1)
+	hc.Name = "Head"
+	if pl.kind == "playlist" then
+		Music.thumb(hc, 72, 10, UDim2.fromOffset(12, 12), pl.image, "list-music")
+	else
+		local tile = UI.new("Frame", { Name = "Thumb", Size = UDim2.fromOffset(72, 72), Position = UDim2.fromOffset(12, 12) }, hc)
+		UI.corner(tile, 10)
+		UI.accent(tile, "BackgroundColor3")
+		UI.new("UIGradient", { Rotation = 45, Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0.45) }) }, tile)
+		UI.icon(pl.kind == "liked" and "heart-fill" or "history", 28, T.ink, tile, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+	end
+	UI.label(hc, { Name = "Name", Text = pl.name, Font = FONT_B, TextSize = 15, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, Position = UDim2.fromOffset(96, 16), Size = UDim2.new(1, -108, 0, 38), TextTruncate = Enum.TextTruncate.AtEnd })
+	local count = UI.label(hc, { Name = "Count", Text = pl.sub or "", TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(96, 62), Size = UDim2.new(1, -108, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+	local acts = UI.new("Frame", { Name = "Actions", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 40), LayoutOrder = 2 }, sc)
+	local play = UI.button(acts, { Name = "Play", Size = UDim2.new(1, -48, 1, 0) })
+	UI.corner(play, 20)
+	UI.accent(play, "BackgroundColor3")
+	iconText(play, "play-fill", "Play", T.ink, 13)
+	UI.pressable(play, 0.95)
+	local shuf = UI.button(acts, { Name = "Shuffle", BackgroundColor3 = T.card, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0), Size = UDim2.fromOffset(40, 40) })
+	UI.corner(shuf, 20)
+	UI.icon("shuffle", 16, T.text, shuf, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+	UI.pressable(shuf, 0.88)
+	Ctl.hoverable(shuf)
+	local list = Music.listFrame(sc, 3)
+	skeleton(list, 6)
+	local tracks = nil
+	local function uris(from)
+		local out = {}
+		for _, t in ipairs(from) do
+			out[#out + 1] = t.uri
+		end
+		return out
+	end
+	local function start(index, shuffle)
+		if not tracks or #tracks == 0 then return end
+		task.spawn(function()
+			local want = shuffle == true
+			local s = Spot.state
+			if s and s.shuffle ~= want then
+				Spot.call("PUT", "/me/player/shuffle?state=" .. tostring(want))
+				if s then s.shuffle = want end
+			end
+			if pl.kind == "playlist" then
+				local pick = index or (want and math.random(1, #tracks)) or nil
+				Spot.playContext(pl.uri, pick and tracks[pick].uri or nil)
+			else
+				local all = uris(tracks)
+				if want and not index then
+					for i = #all, 2, -1 do
+						local j = math.random(1, i)
+						all[i], all[j] = all[j], all[i]
+					end
+				end
+				Spot.playUris(all, index)
+			end
+		end)
+	end
+	play.Activated:Connect(function() start(nil, false) end)
+	shuf.Activated:Connect(function() start(nil, true) end)
+	Music.listSel = pl
+	Aside.show("spotlist", f, "music", function()
+		if Music.listSel == pl then Music.listSel = nil end
+	end)
+	task.spawn(function()
+		local got, err = Spot.fetchTracks(pl.kind, pl.id)
+		if not HUB.alive or Music.listSel ~= pl then return end
+		clearList(list)
+		if not got then
+			emptyState(list, "circle-alert", "Couldn't load songs", err or "Try again", 1)
+			return
+		end
+		tracks = got
+		count.Text = (pl.sub and (pl.sub .. "  ·  ") or "") .. #got .. (#got == 1 and " song" or " songs")
+		if #got == 0 then
+			emptyState(list, "music", "No songs here", "Add some on Spotify", 1)
+			return
+		end
+		for i, t in ipairs(got) do
+			Music.trackRow(list, t, i, function() start(i, nil) end, true)
+		end
+	end)
+end
+
+function Music.openDevices()
+	local f = UI.new("Frame", { Name = "Devices", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1) })
+	local _, backIc = Aside.header(f, "PLAY ON")
+	UI.setIcon(backIc, Aside.backIcon())
+	local sc = newScroll(f, 40)
+	local pad = sc:FindFirstChildOfClass("UIPadding")
+	pad.PaddingLeft, pad.PaddingRight = UDim.new(0, 10), UDim.new(0, 10)
+	local token = {}
+	Music.devSel = token
+	local function load()
+		clearList(sc)
+		skeleton(sc, 3)
+		task.spawn(function()
+			local list, err = Spot.fetchDevices()
+			if not HUB.alive or Music.devSel ~= token then return end
+			clearList(sc)
+			if not list then
+				emptyState(sc, "circle-alert", "Couldn't load devices", err or "Try again", 1, "Try again", load)
+				return
+			end
+			if #list == 0 then
+				emptyState(sc, "speaker", "No devices found", "Open Spotify on your phone or computer, then try again", 1, "Refresh", load)
+				return
+			end
+			for i, d in ipairs(list) do
+				local row = UI.button(sc, { Name = "Device", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 52), LayoutOrder = i })
+				UI.corner(row, 12)
+				if d.active then
+					local st = UI.stroke(row, accentColor(), 1, 0.4)
+					UI.accent(st, "Color")
+				end
+				local k = string.lower(d.kind)
+				local icon = (k == "smartphone" or k == "tablet") and "smartphone" or (k == "computer" and "laptop") or "speaker"
+				local circ = UI.new("Frame", { BackgroundColor3 = T.card2, Size = UDim2.fromOffset(36, 36), Position = UDim2.fromOffset(8, 8) }, row)
+				UI.corner(circ, 18)
+				local ic = UI.icon(icon, 16, d.active and accentColor() or T.text, circ, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+				if d.active then UI.accent(ic, "ImageColor3") end
+				UI.label(row, { Text = d.name, Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(54, 10), Size = UDim2.new(1, -66, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+				UI.label(row, { Text = (d.active and "Playing here" or (d.kind ~= "" and d.kind or "Device")) .. (d.volume and ("  ·  " .. d.volume .. "%") or ""), TextSize = 10, TextColor3 = d.active and T.green or T.sub, Position = UDim2.fromOffset(54, 27), Size = UDim2.new(1, -66, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+				Ctl.hoverable(row)
+				row.Activated:Connect(function()
+					if d.active then return end
+					Spot.transfer(d.id, d.name)
+					task.delay(1.2, function()
+						if HUB.alive and Music.devSel == token then load() end
+					end)
+				end)
+			end
+			Ctl.note(sc, 50, "Pick where your music plays. Spotify has to be open on that device.")
+		end)
+	end
+	Aside.show("spotdev", f, "music", function()
+		if Music.devSel == token then Music.devSel = nil end
+	end)
+	load()
+end
+
+do
+	local lv = Music.library
+	local bar = UI.new("Frame", { Name = "SearchBar", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 34), LayoutOrder = 1 }, lv)
+	UI.corner(bar, 12)
+	local barStroke = UI.stroke(bar, T.stroke, 1, 1)
+	UI.icon("search", 14, T.dim, bar, { Position = UDim2.fromOffset(11, 10) })
+	local box = UI.new("TextBox", {
+		Name = "Box",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(32, 0),
+		Size = UDim2.new(1, -62, 1, 0),
+		Font = FONT_M,
+		TextSize = 12,
+		TextColor3 = T.text,
+		PlaceholderText = "Search songs on Spotify",
+		PlaceholderColor3 = T.dim,
+		Text = "",
+		ClearTextOnFocus = false,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ClipsDescendants = true,
+	}, bar)
+	local clear = UI.button(bar, { Name = "Clear", BackgroundTransparency = 1, Size = UDim2.fromOffset(28, 28), Position = UDim2.new(1, -31, 0, 3), Visible = false })
+	UI.icon("x", 13, T.sub, clear, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+	clear.Activated:Connect(function() box.Text = "" end)
+	Music.results = Music.listFrame(lv, 2)
+	Music.libBody = Music.listFrame(lv, 3)
+	local seq = 0
+	local function run(q)
+		seq += 1
+		local my = seq
+		clearList(Music.results)
+		if q == "" then return end
+		section(Music.results, "Songs", 0)
+		skeleton(Music.results, 3)
+		task.spawn(function()
+			local got, err = Spot.search(q)
+			if not HUB.alive or my ~= seq then return end
+			clearList(Music.results)
+			section(Music.results, "Songs", 0)
+			if not got then
+				emptyState(Music.results, "circle-alert", "Search didn't work", err or "Try again", 1)
+			elseif #got == 0 then
+				emptyState(Music.results, "search", "No songs found", "Try another word", 1)
+			else
+				for i, t in ipairs(got) do
+					Music.trackRow(Music.results, t, i, function() Spot.playUris({ t.uri }) end, true)
+				end
+			end
+		end)
+	end
+	box.Focused:Connect(function() UI.tween(barStroke, 0.2, { Transparency = 0.2 }) end)
+	box.FocusLost:Connect(function(enter)
+		UI.tween(barStroke, 0.2, { Transparency = 1 })
+		if enter then run(Util.trim(box.Text)) end
+	end)
+	local tk = 0
+	box:GetPropertyChangedSignal("Text"):Connect(function()
+		clear.Visible = box.Text ~= ""
+		tk += 1
+		local my = tk
+		task.delay(0.7, function()
+			if my == tk and HUB.alive then run(Util.trim(box.Text)) end
+		end)
+	end)
+end
+
+function Music.renderLibrary()
+	local body = Music.libBody
+	clearList(body)
+	local tiles = UI.new("Frame", { Name = "Tiles", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 60), LayoutOrder = 2 }, body)
+	local function tile(icon, title, sub, x, filled, fn)
+		local b = UI.button(tiles, { Name = title, BackgroundColor3 = T.card, Position = UDim2.new(x, x > 0 and 3 or 0, 0, 0), Size = UDim2.new(0.5, -3, 1, 0) })
+		UI.corner(b, 12)
+		local sq = UI.new("Frame", { BackgroundColor3 = T.card2, Size = UDim2.fromOffset(40, 40), Position = UDim2.fromOffset(10, 10) }, b)
+		UI.corner(sq, 10)
+		if filled then
+			UI.accent(sq, "BackgroundColor3")
+			UI.new("UIGradient", { Rotation = 45, Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0.45) }) }, sq)
+		end
+		UI.icon(icon, 17, filled and T.ink or T.text, sq, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+		UI.label(b, { Text = title, Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(58, 13), Size = UDim2.new(1, -64, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+		UI.label(b, { Text = sub, TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(58, 30), Size = UDim2.new(1, -64, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+		Ctl.hoverable(b)
+		UI.pressable(b, 0.96)
+		b.Activated:Connect(fn)
+	end
+	tile("heart-fill", "Liked Songs", "Your saved songs", 0, true, function()
+		if not Spot.hasScope("user-library-read") then return notify("Spotify", "Log in again to see your liked songs", "info", 3) end
+		Music.openList({ kind = "liked", name = "Liked Songs", caption = "LIKED SONGS" })
+	end)
+	tile("history", "Recent", "Played lately", 0.5, false, function()
+		if not Spot.hasScope("user-read-recently-played") then return notify("Spotify", "Log in again to see what you played", "info", 3) end
+		Music.openList({ kind = "recent", name = "Recently played", caption = "RECENTLY PLAYED" })
+	end)
+	if Spot.missingScopes() then Music.reconnectBanner(body, 1) end
+	section(body, "Your playlists", 3)
+	local L2 = Spot.lists
+	if L2.state == "loading" or (L2.state == "idle" and not L2.playlists) then
+		skeleton(Music.listFrame(body, 4), 4)
+		return
+	end
+	if L2.state == "scope" then
+		emptyState(body, "list-music", "Playlists are locked", "Log in again on the Player tab to see them", 4)
+		return
+	end
+	if L2.state == "error" and not L2.playlists then
+		emptyState(body, "circle-alert", "Couldn't load playlists", L2.err or "Try again", 4, "Try again", function() Spot.fetchPlaylists() end)
+		return
+	end
+	local list = L2.playlists or {}
+	if #list == 0 then
+		emptyState(body, "list-music", "No playlists yet", "Make one on Spotify and it shows up here", 4)
+		return
+	end
+	for i, p in ipairs(list) do
+		local row = UI.button(body, { Name = "Playlist", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 56), LayoutOrder = 10 + i })
+		UI.corner(row, 12)
+		Music.thumb(row, 44, 8, UDim2.fromOffset(6, 6), p.thumb, "list-music")
+		local s = Spot.state
+		local now = s ~= nil and s.ctxUri == p.uri
+		UI.label(row, { Text = p.name, Font = FONT_B, TextSize = 12, TextColor3 = now and accentColor() or T.text, Position = UDim2.fromOffset(60, 11), Size = UDim2.new(1, -96, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+		local bits = {}
+		if p.owner ~= "" then bits[#bits + 1] = "by " .. p.owner end
+		if p.count then bits[#bits + 1] = p.count .. (p.count == 1 and " song" or " songs") end
+		UI.label(row, { Text = table.concat(bits, "  ·  "), TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(60, 29), Size = UDim2.new(1, -96, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+		UI.icon(now and "audio-lines" or "chevron-right", 14, now and accentColor() or T.dim, row, { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -14, 0.5, 0) })
+		Ctl.hoverable(row)
+		row.Activated:Connect(function()
+			Music.openList({ kind = "playlist", id = p.id, uri = p.uri, name = p.name, image = p.image or p.thumb, sub = p.owner ~= "" and ("by " .. p.owner) or nil, caption = "PLAYLIST" })
+		end)
+	end
+	Ctl.note(body, 999, "Spotify only shows the songs inside playlists you made or joined.")
+end
+
+function Music.showLibrary(force)
+	local L2 = Spot.lists
+	if force or L2.state == "idle" or (L2.state == "error" and os.clock() - (L2.at or 0) > 20) then
+		L2.at = os.clock()
+		Spot.fetchPlaylists()
+	end
+	Music.renderLibrary()
+end
+
+function Music.lyricsHead(sv, s, status)
+	local hc = card(sv, 56, 1)
+	hc.Name = "Song"
+	local art, aic = MusicUI.art(hc, 40, 8, UDim2.fromOffset(8, 8), 16)
+	art.Image = Spot.artId or ""
+	aic.Visible = Spot.artId == nil
+	UI.label(hc, { Text = s.title, Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(58, 11), Size = UDim2.new(1, -130, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+	UI.label(hc, { Text = s.artist or "", TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(58, 28), Size = UDim2.new(1, -130, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+	local tag = ({ synced = "SYNCED", plain = "TEXT ONLY", loading = "LOADING", instrumental = "NO WORDS" })[status]
+	if tag then
+		local w = math.ceil(textWidth(tag, 9, FONT_B)) + 16
+		local pill = UI.new("Frame", { BackgroundColor3 = T.card2, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0), Size = UDim2.fromOffset(w, 20) }, hc)
+		UI.corner(pill, 10)
+		UI.label(pill, { Text = tag, Font = FONT_B, TextSize = 9, TextColor3 = status == "synced" and T.green or T.sub, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromScale(1, 1) })
+	end
+end
+
+function Music.renderLyrics()
+	local sv = Music.lyricsView
+	local ly = Music.ly
+	ly.autoUntil = os.clock() + 0.6
+	ly.userUntil = 0
+	clearList(sv)
+	sv.CanvasPosition = Vector2.new(0, 0)
+	ly.labels, ly.times, ly.cur, ly.status = {}, {}, 0, nil
+	ly.dirty = false
+	local s = Spot.state
+	ly.key = s and s.id or nil
+	if not (s and s.title and s.title ~= "") then
+		emptyState(sv, "mic-vocal", "Nothing playing", "Play a song on Spotify and the words show up here", 1)
+		return
+	end
+	if s.id == "ad" then
+		emptyState(sv, "mic-vocal", "Ad break", "Lyrics come back after the ad", 1)
+		return
+	end
+	local token = {}
+	ly.token = token
+	local res = Spot.lyrics(s)
+	if ly.token ~= token then return end
+	local status = res and res.status or "none"
+	ly.status = status
+	Music.lyricsHead(sv, s, status)
+	if status == "loading" then
+		local f = UI.new("Frame", { Name = "Wait", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 2 }, sv)
+		UI.list(f, 10)
+		UI.pad(f, 6, 6, 14, 0)
+		for i, w in ipairs({ 0.7, 0.5, 0.82, 0.6, 0.4 }) do
+			local bar = UI.new("Frame", { BackgroundColor3 = T.card2, Size = UDim2.new(w, 0, 0, 14), LayoutOrder = i }, f)
+			UI.corner(bar, 7)
+			if S.animations then
+				TweenService:Create(bar, TweenInfo.new(0.7, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true, i * 0.08), { BackgroundTransparency = 0.6 }):Play()
+			end
+		end
+		return
+	end
+	if status == "instrumental" then
+		emptyState(sv, "music", "Instrumental", "No words in this one, just vibes", 2)
+		return
+	end
+	if status == "none" then
+		emptyState(sv, "mic-vocal", "No lyrics found", "LRCLIB doesn't have this song yet", 2)
+		return
+	end
+	if status == "error" then
+		emptyState(sv, "wifi", "Couldn't get lyrics", "Check your connection and try again", 2, "Try again", function()
+			Music.ly.dirty = true
+			Music.renderLyrics()
+		end)
+		return
+	end
+	local synced = status == "synced"
+	local box = UI.new("Frame", { Name = "Lines", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 2 }, sv)
+	UI.list(box, synced and 10 or 4)
+	UI.pad(box, 8, 8, 12, 0)
+	for i, line in ipairs(res.lines) do
+		local text = line.text ~= "" and line.text or (synced and "• • •" or " ")
+		local props = {
+			Name = "Line",
+			BackgroundTransparency = 1,
+			Text = text,
+			Font = FONT_B,
+			TextSize = synced and 17 or 13,
+			TextColor3 = T.text,
+			TextTransparency = synced and 0.6 or 0.1,
+			TextWrapped = true,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			LayoutOrder = i,
+		}
+		local lab
+		if synced then
+			lab = UI.button(box, props)
+			local t = line.t
+			lab.Activated:Connect(function()
+				local st = Spot.state
+				if st and st.duration > 0 then Spot.control("seek", math.max(0, t * 1000 - 150)) end
+			end)
+			ly.times[i] = t
+		else
+			lab = UI.label(box, props)
+		end
+		ly.labels[i] = lab
+	end
+	UI.new("Frame", { Name = "Space", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, synced and 140 or 10), LayoutOrder = 3 }, sv)
+	Ctl.note(sv, 4, "Lyrics from LRCLIB. Tap a line to jump to it.")
+	if synced then Music.lyricsTick(true) end
+end
+
+function Music.lyricsTick(instant)
+	local ly = Music.ly
+	if ly.status ~= "synced" or #ly.times == 0 then return end
+	local s = Spot.state
+	if not s or s.id ~= ly.key then return end
+	local p = Spot.progressNow() / 1000 + 0.25
+	local idx = 0
+	local lo, hi = 1, #ly.times
+	while lo <= hi do
+		local mid = (lo + hi) // 2
+		if ly.times[mid] <= p then
+			idx = mid
+			lo = mid + 1
+		else
+			hi = mid - 1
+		end
+	end
+	if idx == ly.cur then return end
+	local t = instant and 0 or 0.3
+	local old = ly.labels[ly.cur]
+	if old then UI.tween(old, t, { TextTransparency = 0.6, TextColor3 = T.text }) end
+	ly.cur = idx
+	local lab = ly.labels[idx]
+	if not lab then return end
+	UI.tween(lab, t, { TextTransparency = 0, TextColor3 = accentColor() })
+	if os.clock() < ly.userUntil then return end
+	local sv = Music.lyricsView
+	local sc = math.max(0.01, L.scale)
+	task.delay(instant and 0.1 or 0, function()
+		if not lab.Parent or ly.labels[ly.cur] ~= lab then return end
+		local rel = (lab.AbsolutePosition.Y - sv.AbsolutePosition.Y) / sc + sv.CanvasPosition.Y
+		local view = sv.AbsoluteSize.Y / sc
+		local canvas = sv.AbsoluteCanvasSize.Y / sc
+		local y = math.clamp(rel - view * 0.36 + lab.AbsoluteSize.Y / sc / 2, 0, math.max(0, canvas - view))
+		local t2 = instant and 0 or 0.45
+		ly.autoUntil = os.clock() + t2 + 0.15
+		UI.tween(sv, t2, { CanvasPosition = Vector2.new(0, y) }, Enum.EasingStyle.Quad)
+	end)
+end
+
+Music.lyricsView:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+	if os.clock() > Music.ly.autoUntil then Music.ly.userUntil = os.clock() + 3 end
+end)
+
+function Music.showLyrics()
+	local s = Spot.state
+	if Music.ly.dirty or Music.ly.key ~= (s and s.id or nil) or Music.ly.status == "loading" then Music.renderLyrics() end
+end
+
+function Music.renderQueue()
+	local sv = Music.queueView
+	local q = Music.q
+	clearList(sv)
+	local head = UI.new("Frame", { Name = "Head", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 20), LayoutOrder = 0 }, sv)
+	local rb = UI.button(head, { Name = "Refresh", BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0), Size = UDim2.fromOffset(70, 20) })
+	iconText(rb, "refresh-cw", q.busy and "Loading" or "Refresh", T.sub, 10)
+	rb.Activated:Connect(function() Music.loadQueue(true) end)
+	if q.err and not q.data then
+		emptyState(sv, "list-music", "Queue is empty", q.err, 1)
+	elseif not q.data then
+		skeleton(Music.listFrame(sv, 1), 4)
+	else
+		section(sv, "Now playing", 1)
+		if q.data.now then
+			Music.trackRow(sv, q.data.now, 2, nil, false)
+		else
+			UI.label(sv, { Text = "Nothing right now", TextSize = 11, TextColor3 = T.dim, Size = UDim2.new(1, 0, 0, 24), LayoutOrder = 2 })
+		end
+		section(sv, "Next up", 3)
+		local list = Music.listFrame(sv, 4)
+		if #q.data.list == 0 then
+			UI.label(list, { Text = "Your queue is empty, add songs from the Library tab", TextSize = 11, TextColor3 = T.dim, TextWrapped = true, Size = UDim2.new(1, 0, 0, 30), LayoutOrder = 1 })
+		end
+		for i, t in ipairs(q.data.list) do
+			Music.trackRow(list, t, i, nil, false)
+		end
+	end
+	if q.recent and #q.recent > 0 then
+		section(sv, "Played before", 5)
+		local list = Music.listFrame(sv, 6)
+		for i, t in ipairs(q.recent) do
+			if i > 10 then break end
+			Music.trackRow(list, t, i, function() Spot.playUris({ t.uri }) end, true)
+		end
+	end
+	Ctl.note(sv, 9, "Spotify doesn't let apps skip to a song in the queue. Tap a song you played before to hear it again.")
+end
+
+function Music.loadQueue(force)
+	local q = Music.q
+	if q.busy or (not force and os.clock() - q.at < 4) then
+		if Music.shown(4) then Music.renderQueue() end
+		return
+	end
+	q.busy, q.at = true, os.clock()
+	if Music.shown(4) then Music.renderQueue() end
+	task.spawn(function()
+		local data, err = Spot.fetchQueue()
+		local recent = nil
+		if Spot.hasScope("user-read-recently-played") then recent = Spot.fetchTracks("recent") end
+		if not HUB.alive then return end
+		q.busy = false
+		q.data, q.err = data, err
+		if recent then q.recent = recent end
+		if Music.shown(4) then Music.renderQueue() end
+	end)
 end
 
 do
@@ -8553,7 +10901,7 @@ do
 end
 
 do
-	local hc = UI.button(Home.music, { Name = "Card", BackgroundColor3 = T.card, Size = UDim2.fromScale(1, 1) })
+	local hc = UI.button(Home.music, { Name = "Card", BackgroundColor3 = T.card2, BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1) })
 	UI.corner(hc, 12)
 	local v = { root = hc, shown = function() return Panel.open and Panel.page == "home" and Home.music.Visible end }
 	v.art, v.artIcon = MusicUI.art(hc, 44, 10, UDim2.fromOffset(10, 9), 18)
@@ -8565,17 +10913,40 @@ do
 	play.Activated:Connect(function() Spot.control("toggle") end)
 	nxt.Activated:Connect(function() Spot.control("next") end)
 	MusicUI.bar(hc, v, { Position = UDim2.new(0, 12, 1, -6), Size = UDim2.new(1, -24, 0, 2) }, false)
-	Ctl.hoverable(hc)
 	hc.Activated:Connect(function() Panel.nav("music") end)
 	MusicUI.add(v)
 end
 
 function Music.sync()
 	local c = Spot.connected()
+	local had = Music.tabs ~= nil
+	Music.tabs = c and Music.TABS or nil
 	Music.setup.Visible = not c
-	Music.player.Visible = c
-	Music.views = { c and Music.player or Music.setup }
+	for i, sv in ipairs(Music.tabViews) do
+		sv.Visible = c and i == Music.tab
+		sv.Position = UDim2.new(0, 0, 0, 0)
+	end
+	if not c then
+		Music.ly.dirty = true
+		Music.q.data, Music.q.recent, Music.q.err = nil, nil, nil
+		if Aside.open and Aside.page == "music" then Aside.hide(true) end
+	end
+	if had ~= c and Panel.open and Panel.page == "music" then
+		Shell.applyPage(Music, true)
+		Panel.buildTabs(Music)
+		Panel.refreshHead()
+	end
 	Home.syncMusic()
+end
+
+Music.onTab = function(i)
+	if i == 2 then
+		Music.showLibrary(false)
+	elseif i == 3 then
+		Music.showLyrics()
+	elseif i == 4 then
+		Music.loadQueue(false)
+	end
 end
 
 Music.onShow = function()
@@ -8583,7 +10954,10 @@ Music.onShow = function()
 	Music.barToggle.render(false)
 	Music.idBox.render()
 	Music.secretBox.render()
-	if Spot.connected() and not Spot.polling and os.clock() - Spot.lastPoll > 1.5 then task.spawn(Spot.poll) end
+	if Spot.connected() then
+		if not Spot.polling and os.clock() - Spot.lastPoll > 1.5 then task.spawn(Spot.poll) end
+		Music.onTab(Music.tab)
+	end
 end
 
 function MusicUI.interval()
@@ -8594,28 +10968,53 @@ end
 
 Bus.on("spotify", function()
 	MusicUI.each(MusicUI.render)
+	Home.syncMusic()
+end)
+
+Bus.on("spotifyTrack", function()
+	Music.ly.dirty = true
+	if Music.shown(3) then Music.renderLyrics() end
+	if Music.shown(4) then task.delay(0.6, function() Music.loadQueue(true) end) end
+end)
+
+Bus.on("spotifyLyrics", function(key)
+	if Music.shown(3) and key == Music.ly.key then Music.renderLyrics() end
+end)
+
+Bus.on("spotifyLists", function()
+	if Music.shown(2) then Music.renderLibrary() end
+end)
+
+Bus.on("spotifyQueue", function()
+	if Music.shown(4) then Music.loadQueue(true) end
 end)
 
 Bus.on("spotifyConn", function()
 	Music.sync()
 	if not Spot.connected() then Win.close("music_mini") end
 	MusicUI.each(MusicUI.render)
+	Panel.refreshHead()
 end)
 
 Music.sync()
 
 local Settings = newPage({ id = "settings", title = "Settings", icon = "settings", tabs = { "General", "Scripts", "Commands", "About" } })
+Settings.head = function() return "Settings", "Atsuko Hub v" .. HUB_VERSION .. "  ·  make it yours" end
 Settings.views = { newScroll(Settings.frame, 0, true), newScroll(Settings.frame, 0, false), newScroll(Settings.frame, 0, false), newScroll(Settings.frame, 0, false) }
 Settings.controls = {}
 local waitingKey = nil
 
 local function applyLook()
-	Side.BackgroundTransparency = S.opacity
+	Dock.frame.BackgroundTransparency = S.opacity
 	Edge.BackgroundTransparency = S.opacity
-	P.card.BackgroundTransparency = S.opacity
+	if not Shell.bare then P.bg.BackgroundTransparency = S.opacity end
+	Aside.bg.BackgroundTransparency = S.opacity
+	P.left.btn.BackgroundTransparency = S.opacity
+	P.right.btn.BackgroundTransparency = S.opacity
 	for _, w in pairs(Win.open) do
 		if w.alive then w.frame.BackgroundTransparency = S.opacity end
 	end
+	if Home.restyle then Home.restyle() end
 end
 
 local function reg(c)
@@ -8804,7 +11203,7 @@ do
 		S.statsBar = x
 		saveSettings()
 		Pill.frame.Visible = x and not HUB.hidden
-		Toast.place(true)
+		Shell.layout()
 	end))
 	reg(Ctl.toggle(v, 15, "Show the song that's playing", "From the Music Player or Spotify", function() return S.musicBar end, function(x)
 		S.musicBar = x
@@ -8863,24 +11262,33 @@ do
 	keyRow(v, 28, "Command bar key", "cmdKey")
 	keyRow(v, 29, "Panic key", "panicKey")
 	Ctl.note(v, 30, "Panic stops every script, turns off every command, stops the music and hides the whole hub. Press your show / hide key to bring it back. Keys only matter on a keyboard, Backspace clears one.")
-	reg(Ctl.toggle(v, 31, "Lock the panel in place", nil, function() return S.lockPanel end, function(x)
-		S.lockPanel = x
-		saveSettings()
-	end))
-	Ctl.action(v, 32, "Put the panel back next to the bar", "rotate-ccw", false, function()
-		S.panelPos = false
-		saveSettings()
-		Panel.place()
-		notify("Panel moved back", "", "ok", 1.5)
-	end)
-	Ctl.action(v, 33, "Put the windows back in the middle", "maximize-2", false, function()
+	Ctl.action(v, 31, "Put the windows back in the middle", "maximize-2", false, function()
 		Win.resetPositions()
 		notify("Windows moved back", "", "ok", 1.5)
 	end)
 
+	section(v, "Layout", 32)
+	reg(Ctl.choice(v, 33, "Top bar spot", { { "top", "Top" }, { "left", "Left" }, { "right", "Right" }, { "bottom", "Bottom" } }, function() return S.barPos end, function(x)
+		S.barPos = x
+		saveSettings()
+		Shell.layout()
+	end))
+	reg(Ctl.choice(v, 34, "Dock spot", { { "bottom", "Bottom" }, { "left", "Left" }, { "right", "Right" } }, function() return S.dockPos end, function(x)
+		S.dockPos = x
+		saveSettings()
+		Shell.layout()
+		Dock.select(Dock.sel)
+	end))
+	reg(Ctl.toggle(v, 35, "Show the page name in the dock", nil, function() return S.dockLabels end, function(x)
+		S.dockLabels = x
+		saveSettings()
+		Dock.layout(true)
+	end))
+	Ctl.note(v, 36, "On a small screen the hub shows one card at a time. Tap back to go back.")
+
 	if X.setfpscap then
-		section(v, "Performance", 34)
-		reg(Ctl.slider(v, 35, "FPS cap", 0, 360, 30, function() return S.fpsCap end, function(x, final)
+		section(v, "Performance", 37)
+		reg(Ctl.slider(v, 38, "FPS cap", 0, 360, 30, function() return S.fpsCap end, function(x, final)
 			if final then
 				S.fpsCap = x
 				saveSettings()
@@ -9005,7 +11413,7 @@ do
 		local n = 0
 		for k, val in pairs(data) do
 			local d = DEFAULTS[k]
-			if d ~= nil and k ~= "lastVersion" and (type(val) == type(d) or (k == "panelPos" and type(val) == "table")) then
+			if d ~= nil and k ~= "lastVersion" and type(val) == type(d) then
 				S[k] = val
 				n += 1
 			end
@@ -9019,7 +11427,7 @@ do
 
 	section(v, "Reset", 13)
 	Ctl.action(v, 14, "Reset all settings", "rotate-ccw", true, function()
-		local keep = { favorites = S.favorites, recent = S.recent, perScript = S.perScript, cmd = S.cmd, lastVersion = S.lastVersion }
+		local keep = { favorites = S.favorites, recent = S.recent, perScript = S.perScript, cmd = S.cmd, lastVersion = S.lastVersion, sbSaved = S.sbSaved }
 		for k, d in pairs(DEFAULTS) do
 			S[k] = (type(d) == "table") and {} or d
 		end
@@ -9332,6 +11740,12 @@ end
 
 PlayerUI.build = function()
 	local MP = newPage({ id = "player", title = "Music Player", icon = "headphones", tabs = { "Now", "Library", "Add", "Options" } })
+	MP.head = function()
+		local pt = Player.cur
+		if pt and Player.state == "playing" then return "Music Player", "Playing " .. pt.name end
+		if pt and Player.state == "paused" then return "Music Player", "Paused  ·  " .. pt.name end
+		return "Music Player", "Your own songs, right in the game"
+	end
 	PlayerUI.page = MP
 	MP.right = { icon = "picture-in-picture-2", fn = function() PlayerUI.openMini() end }
 	MP.views[1] = newScroll(MP.frame, 0, true)
@@ -9821,7 +12235,7 @@ end
 PlayerUI.build()
 
 do
-	local hc = UI.button(Home.player, { Name = "Card", BackgroundColor3 = T.card, Size = UDim2.fromScale(1, 1) })
+	local hc = UI.button(Home.player, { Name = "Card", BackgroundColor3 = T.card2, BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1) })
 	UI.corner(hc, 12)
 	local v = { root = hc, shown = function() return Panel.open and Panel.page == "home" and Home.player.Visible end }
 	v.art, v.icon, v.bars = PlayerUI.art(hc, 44, 10, UDim2.fromOffset(10, 9), 18, 5)
@@ -9833,7 +12247,6 @@ do
 	play.Activated:Connect(function() Player.toggle() end)
 	nxt.Activated:Connect(function() Player.next(false) end)
 	MusicUI.bar(hc, v, { Position = UDim2.new(0, 12, 1, -6), Size = UDim2.new(1, -24, 0, 2) }, false)
-	Ctl.hoverable(hc)
 	hc.Activated:Connect(function() Panel.nav("player") end)
 	PlayerUI.add(v)
 	Home.syncMusic()
@@ -9849,18 +12262,12 @@ end
 Edge.Activated:Connect(function()
 	Panel.openBar()
 end)
-SideRefs.logo.Activated:Connect(function()
-	Panel.nav("home")
-end)
 for _, def in ipairs(NAV) do
-	local ref = SideRefs.nav[def.id]
-	if ref and not def.logo then
-		ref.btn.Activated:Connect(function()
-			Panel.nav(def.id)
-		end)
-	end
+	Dock.items[def.id].btn.Activated:Connect(function()
+		Panel.nav(def.id)
+	end)
 end
-SideRefs.collapse.Activated:Connect(function()
+Dock.close.Activated:Connect(function()
 	Panel.closeAll()
 end)
 Pill.frame.Activated:Connect(function()
@@ -9872,15 +12279,15 @@ end)
 
 local function updateBadge()
 	local n = Runner.count()
-	SideRefs.badgeText.Text = tostring(n)
+	Dock.badgeText.Text = tostring(n)
 	if n > 0 then
-		if not SideRefs.badge.Visible then
-			SideRefs.badge.Visible = true
-			SideRefs.badgeScale.Scale = 0.3
-			UI.tween(SideRefs.badgeScale, 0.4, { Scale = 1 }, Enum.EasingStyle.Back)
+		if not Dock.badge.Visible then
+			Dock.badge.Visible = true
+			Dock.badgeScale.Scale = 0.3
+			UI.tween(Dock.badgeScale, 0.4, { Scale = 1 }, Enum.EasingStyle.Back)
 		end
 	else
-		SideRefs.badge.Visible = false
+		Dock.badge.Visible = false
 	end
 end
 
@@ -9921,8 +12328,6 @@ Bus.on("accent", function(instant)
 	if Detail.isOpen then
 		if instant then Detail.recolor() else Detail.refresh() end
 	end
-	if Panel.open and not instant then setNavSelected(Panel.page) end
-	if Panel.open and instant and navSelected == "home" then SideRefs.nav.home.ring.Color = accentColor() end
 end)
 
 Bus.on("update", function(v)
@@ -9931,6 +12336,7 @@ Bus.on("update", function(v)
 end)
 
 local fps, frames, acc, tickAcc, rainbowAcc, hue, posAcc = 60, 0, 0, 0, 0, 0, 0
+local fastAcc, nearAcc = 0, 0
 do
 	local vizAcc = 0
 	hubConn(RunService.RenderStepped:Connect(function(dt)
@@ -9957,6 +12363,11 @@ hubConn(RunService.Heartbeat:Connect(function(dt)
 			UI.applyAccent(true)
 		end
 	end
+	fastAcc += dt
+	if fastAcc >= 0.15 then
+		fastAcc = 0
+		if Music.shown(3) then Music.lyricsTick(false) end
+	end
 	tickAcc += dt
 	if tickAcc >= 0.5 then
 		tickAcc = 0
@@ -9969,6 +12380,15 @@ hubConn(RunService.Heartbeat:Connect(function(dt)
 			if Panel.page == "home" then Home.tick(fps, ping) end
 			if Panel.page == "running" then Running.tick() end
 			if Detail.isOpen then Detail.tick() end
+			if Aside.open and Aside.key == "player" then PlayersPage.tick() end
+			if Panel.page == "players" and PlayersPage.tab == 3 then
+				nearAcc += 0.5
+				if nearAcc >= 3 then
+					nearAcc = 0
+					PlayersPage.render(3)
+				end
+			end
+			Panel.refreshHead()
 		end
 		if Spot.state then MusicUI.each(MusicUI.tick, true) end
 		if Player.cur then PlayerUI.each(PlayerUI.tick, true) end
@@ -10032,6 +12452,7 @@ function HUB.Destroy()
 	pcall(Cmd.stopAll, true)
 	pcall(Win.closeAll)
 	pcall(Player.shutdown)
+	pcall(PlayersPage.clearFx)
 	HUB.alive = false
 	for _, snd in pairs(Sfx.cache) do
 		pcall(function() snd:Destroy() end)
