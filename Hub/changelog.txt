@@ -1,3 +1,36 @@
+v1.1.0
+- smoother everywhere: switching pages and tabs doesn't snap or jump anymore, things on the left slide in from the left and things on the right slide in from the right
+- home opens with the left cards coming in from the left and the right cards from the right
+- runs and opens straight on home, and when you close it and open it again you're back on the page you left
+- pc: alt (left or right) opens and closes it, change it in settings > general. the arrow on the side of the screen is only on phones now
+- spotify moved into the music player: one player for your songs and spotify, with a whole new look
+- lyrics show the line you're on big and the next line under it, plus a full lyrics tab
+- new mini player with a lyrics button
+- add songs from youtube and other links, they get saved in your music folder and the same song never gets added twice
+- music keeps going on phones: if the game or the phone cuts the song off it picks it back up, and spotify stays logged in on phones that can't save files
+- tap the dynamic island while a song is on to see it, with nothing playing it opens home
+- new editor tab: write scripts, run them, save them, and pop it out into its own window you can move around
+- atsuko's own scripts page is called atsuko script now. edit any of them and save your copy, it shows up in scripts > my scripts
+- hub size setting, starts at 75%
+- pick any color you want for the accent, and the background can take some of it too
+- customize home: show, hide and move the cards, and add your own pictures, notes and clocks
+- new command bar: suggestions as you type, arrow keys, tab to fill and your recent commands
+- new commands: antifling, antivoid, antisit, tpwalk, swim, freecam, hipheight, light, edgejump, fixcam and lay
+- running the hub again just tells you it's already running instead of making a second one, same for commands that are already on
+- no more double notifications
+- say -reload in chat to restart the hub, it tells you if anything broke
+- studio dummy: stop really stops it now, none of its commands work until you run it again
+- the dynamic island grows right out of the top bar when you tap it and shrinks back into it, same size and smooth
+- drag the title to move the hub anywhere, the reset button in the corner (or running it again) puts it back
+- home fits everything on the screen instead of scrolling (turn it off in customize home)
+- spotify works with free accounts too, through discord: the song, the time, lyrics and the visualizer
+- the visualizer bounces on spotify songs too
+- hub chat: a server chat with the hub users in your server and a global chat with everyone, in a window you can move and resize. tap someone's picture to block them, bad words get covered up
+- the hub's owner gets a purple-to-pink Atsuko tag in chat and above their head, and nobody else can fake it
+- tags command: shows a tag above everyone in your server who uses the hub
+- commands from 07hub (with permission): smooth fly, fly speed, freeze, orbit, head sit, teleport to a spot, copy position, waypoints, emotes, fps and ping, fps cap, shaders, colored fog, trail, cone hat, sky particles, aurora sky and rain
+- video player for testing: youtube (through your converter), webm and mp4 links and roblox video ids, saved in your videos folder
+
 v1.0.8
 - opening a script doesn't lag anymore, works with checks a little at a time in the background and remembers what it found
 - works with shows 6 of each kind first, tap show all to see the rest
