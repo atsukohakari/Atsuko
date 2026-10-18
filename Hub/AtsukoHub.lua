@@ -4225,6 +4225,7 @@ Core.NAV = {
 	{ id = "explore", title = "Scripts", icon = "code" },
 	{ id = "scripts", title = "Atsuko Script", icon = "layout-list" },
 	{ id = "editor", title = "Editor", icon = "code-xml" },
+	{ id = "ai", title = "AI", icon = "sparkles" },
 	{ id = "running", title = "Running", icon = "activity" },
 	{ id = "commands", title = "Commands", icon = "command" },
 	{ id = "players", title = "Players", icon = "users" },
@@ -10285,6 +10286,110 @@ do
 	else
 		Ed.load("", "", nil, false)
 	end
+end
+
+-- AI tab: the chat itself lives in its own file (Hub/AtsukoAI.lua) so this one doesn't get bigger.
+-- it loads the first time you open the tab, and a saved copy covers you when GitHub can't be reached
+Core.AI_CACHE = LOCAL_DIR .. "/ai_module.lua"
+Core.AI_URL = HOME_REPO .. HUB_DIR .. "/AtsukoAI.lua"
+local AIPage = newPage({ id = "ai", title = "AI", icon = "sparkles" })
+AIPage.state = "idle"
+AIPage.head = function()
+	return "AI", AIPage.sub or "Help writing and fixing scripts"
+end
+do
+	local box = UI.new("Frame", { Name = "Loading", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1) }, AIPage.frame)
+	AIPage.loadingBox = box
+	UI.icon("sparkles", 26, T.dim, box, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, -26) })
+	AIPage.loadingText = UI.label(box, { Text = "Getting the AI ready...", TextSize = 11, TextColor3 = T.sub, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Center, AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0.5, 0), Size = UDim2.new(1, -40, 0, 34) })
+	AIPage.retry = UI.button(box, { Name = "Retry", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0.5, 42), Size = UDim2.fromOffset(120, 32), Visible = false })
+	UI.corner(AIPage.retry, 12)
+	iconText(AIPage.retry, "refresh-cw", "Try again", T.text, 11)
+	Ctl.hoverable(AIPage.retry)
+	AIPage.retry.Activated:Connect(function() Core.loadAI(true) end)
+end
+
+function Core.aiContext()
+	return {
+		version = HUB_VERSION,
+		page = AIPage,
+		root = AIPage.frame,
+		UI = UI,
+		T = T,
+		fontM = function() return FONT_M end,
+		fontB = function() return FONT_B end,
+		Ctl = Ctl,
+		section = section,
+		card = card,
+		clearList = clearList,
+		iconText = iconText,
+		notify = notify,
+		copyText = copyText,
+		Net = Net,
+		json = { encode = jsonEncode, decode = jsonDecode },
+		FS = FS,
+		dir = LOCAL_DIR,
+		genv = GENV,
+		Util = Util,
+		accentColor = accentColor,
+		Bus = Bus,
+		hub = HUB,
+		hubConn = hubConn,
+		LP = LP,
+		UserInputService = UserInputService,
+		refreshHead = function()
+			if Panel.open and Panel.page == "ai" then Panel.header(AIPage) end
+		end,
+		shown = function() return Panel.open and Panel.page == "ai" end,
+		editor = {
+			open = function(name, code)
+				Ed.open({ name = name, code = code })
+				Panel.go("editor")
+			end,
+			code = function() return Ed.box.Text, Ed.name() end,
+		},
+	}
+end
+
+function Core.loadAI(force)
+	if AIPage.state == "loading" or (AIPage.state == "ready" and not force) then return end
+	if AIPage.state == "ready" then return end
+	AIPage.state = "loading"
+	AIPage.loadingText.Text = "Getting the AI ready..."
+	AIPage.loadingText.TextColor3 = T.sub
+	AIPage.retry.Visible = false
+	local function fail(why)
+		AIPage.state = "failed"
+		AIPage.loadingText.Text = why
+		AIPage.loadingText.TextColor3 = T.yellow
+		AIPage.retry.Visible = true
+		Log.add("error", "AI", why)
+	end
+	task.spawn(function()
+		if not X.loadstring then return fail("Your executor has no loadstring, so the AI can't load") end
+		local ok, src = Net.get(Core.AI_URL .. "?t=" .. os.time())
+		if ok and type(src) == "string" and #src > 500 and string.find(src, "AtsukoAI", 1, true) then
+			FS.write(Core.AI_CACHE, src)
+		else
+			src = FS.read(Core.AI_CACHE)
+		end
+		if not HUB.alive then return end
+		if type(src) ~= "string" or src == "" then return fail("Couldn't download the AI part (Hub/AtsukoAI.lua). Check your internet and try again.") end
+		local f, err = X.loadstring(src, "=AtsukoAI")
+		if type(f) ~= "function" then return fail("The AI part has a mistake in it: " .. Util.firstLine(err or "?")) end
+		local okRun, build = pcall(f)
+		if not okRun or type(build) ~= "function" then return fail("The AI part didn't start: " .. Util.firstLine(okRun and "it returned nothing" or build)) end
+		local okBuild, e = pcall(build, Core.aiContext())
+		if not okBuild then return fail("The AI part broke while opening: " .. Util.firstLine(e)) end
+		AIPage.state = "ready"
+		AIPage.loadingBox.Visible = false
+		if Panel.open and Panel.page == "ai" then Panel.header(AIPage) end
+	end)
+end
+
+AIPage.onShow = function()
+	Core.loadAI(false)
+	if AIPage.api and AIPage.api.onShow then pcall(AIPage.api.onShow) end
 end
 
 local Running = newPage({ id = "running", title = "Running", icon = "activity" })
