@@ -448,6 +448,7 @@ local DEFAULTS = {
 	miniLyrics = true,
 	ytApi = "",
 	ytKey = "",
+	ytSearchKey = "",
 	editorFile = "",
 	editorFontSize = 13,
 	editorHighlight = true,
@@ -471,6 +472,7 @@ function Core.normalizeSettings()
 	S.editorFontSize = math.clamp(math.floor(tonumber(S.editorFontSize) or 13), 10, 20)
 	S.ytApi = Util.trim(tostring(S.ytApi or ""))
 	S.ytKey = Util.trim(tostring(S.ytKey or ""))
+	S.ytSearchKey = Util.trim(tostring(S.ytSearchKey or ""))
 	local hist = {}
 	for _, h in ipairs(S.cmdHistory) do
 		if type(h) == "string" and h ~= "" and #hist < 20 and not table.find(hist, h) then hist[#hist + 1] = h end
@@ -550,6 +552,8 @@ function Core.loadSettings()
 end
 
 Core.saveQueued = false
+-- keys stay on this device: never in Copy my settings
+Core.SECRET_SETTINGS = { ytKey = true, ytSearchKey = true }
 local function saveSettings()
 	if Core.saveQueued then return end
 	Core.saveQueued = true
@@ -14447,7 +14451,7 @@ do
 	Ctl.action(v, 10, "Copy my settings", "upload", false, function()
 		local copy = {}
 		for k, val in pairs(S) do
-			if k ~= "lastVersion" then copy[k] = val end
+			if k ~= "lastVersion" and not Core.SECRET_SETTINGS[k] then copy[k] = val end
 		end
 		local s = jsonEncode(copy)
 		if s then copyText(s, "Settings") end
@@ -14463,7 +14467,7 @@ do
 		local n = 0
 		for k, val in pairs(data) do
 			local d = DEFAULTS[k]
-			if d ~= nil and k ~= "lastVersion" and type(val) == type(d) then
+			if d ~= nil and k ~= "lastVersion" and not Core.SECRET_SETTINGS[k] and type(val) == type(d) then
 				S[k] = val
 				n += 1
 			end
@@ -16251,6 +16255,236 @@ do
 	section(av, "Video (beta)", 20)
 	Ctl.action(av, 21, "Open the video player", "video", false, function() Core.Video.open() end)
 	Ctl.note(av, 22, "For testing: YouTube (through your converter), .webm or .mp4 links and Roblox video IDs. Roblox only plays some video files from an executor.")
+
+	-- YouTube music search: YouTube's own search with your free API key, only the music category,
+	-- and picks go through your converter into the music folder like any other link
+	local YT = { results = {}, nextPage = nil, q = "", busy = {}, searching = false, typed = nil, keyTyped = nil }
+	Core.YT = YT
+	YT.CONSOLE = "https://console.cloud.google.com/apis/library/youtube.googleapis.com"
+	function YT.unescape(str)
+		str = tostring(str or "")
+		str = string.gsub(str, "&#(%d+);", function(n)
+			local c = tonumber(n)
+			return (c and c < 128) and string.char(c) or ""
+		end)
+		str = string.gsub(str, "&quot;", "\"")
+		str = string.gsub(str, "&lt;", "<")
+		str = string.gsub(str, "&gt;", ">")
+		str = string.gsub(str, "&amp;", "&")
+		return str
+	end
+	-- "PT3M45S" -> 225
+	function YT.seconds(iso)
+		iso = tostring(iso or "")
+		local h = tonumber(string.match(iso, "(%d+)H")) or 0
+		local m = tonumber(string.match(iso, "(%d+)M")) or 0
+		local sec = tonumber(string.match(iso, "(%d+)S")) or 0
+		return h * 3600 + m * 60 + sec
+	end
+	function YT.why(code, d)
+		local e = type(d) == "table" and type(d.error) == "table" and d.error or {}
+		local reason = type(e.errors) == "table" and type(e.errors[1]) == "table" and e.errors[1].reason or ""
+		local msg = string.lower(tostring(e.message or ""))
+		if code == 0 then return "Couldn't reach YouTube" end
+		if reason == "quotaExceeded" or reason == "dailyLimitExceeded" or reason == "rateLimitExceeded" then return "Today's free searches are used up, they come back tomorrow" end
+		if reason == "keyInvalid" or string.find(msg, "api key not valid", 1, true) then return "That API key doesn't work, check you copied all of it" end
+		if reason == "accessNotConfigured" or string.find(msg, "has not been used", 1, true) or string.find(msg, "disabled", 1, true) then return "Turn on YouTube Data API v3 for your key's project" end
+		if string.find(reason, "Blocked", 1, true) then return "Your key only works on some websites, take its restrictions off" end
+		return "YouTube said " .. code
+	end
+	function YT.search(q, page, done)
+		local key = S.ytSearchKey
+		if key == "" then return done(nil, "Add your YouTube API key first") end
+		local url = "https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=15&q=" .. Util.urlEncode(q) .. "&key=" .. Util.urlEncode(key)
+		if page then url ..= "&pageToken=" .. Util.urlEncode(page) end
+		task.spawn(function()
+			local code, raw = Net.request("GET", url, { Accept = "application/json" })
+			if not HUB.alive then return end
+			local d = jsonDecode(raw)
+			if code ~= 200 or type(d) ~= "table" then return done(nil, YT.why(code, d)) end
+			local items, ids = {}, {}
+			for _, it in ipairs(type(d.items) == "table" and d.items or {}) do
+				local sn = type(it) == "table" and it.snippet
+				local vid = type(it) == "table" and type(it.id) == "table" and it.id.videoId
+				-- live streams can't be turned into a song
+				if type(vid) == "string" and type(sn) == "table" and (sn.liveBroadcastContent == nil or sn.liveBroadcastContent == "none") then
+					local th = type(sn.thumbnails) == "table" and (sn.thumbnails.medium or sn.thumbnails.default) or nil
+					local by = YT.unescape(sn.channelTitle)
+					by = string.gsub(by, "%s*%-%s*Topic$", "")
+					items[#items + 1] = { id = vid, title = YT.unescape(sn.title), by = by, thumb = type(th) == "table" and th.url or nil, len = 0 }
+					ids[#ids + 1] = vid
+				end
+			end
+			-- how long each one is: one more cheap call for all of them
+			if #ids > 0 then
+				local c2, raw2 = Net.request("GET", "https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=" .. table.concat(ids, ",") .. "&key=" .. Util.urlEncode(key), { Accept = "application/json" })
+				local d2 = c2 == 200 and jsonDecode(raw2) or nil
+				if type(d2) == "table" and type(d2.items) == "table" then
+					local len = {}
+					for _, v in ipairs(d2.items) do
+						if type(v) == "table" and type(v.contentDetails) == "table" then len[v.id] = YT.seconds(v.contentDetails.duration) end
+					end
+					for _, it in ipairs(items) do
+						it.len = len[it.id] or 0
+					end
+				end
+			end
+			if not HUB.alive then return end
+			done(items, nil, type(d.nextPageToken) == "string" and d.nextPageToken or nil)
+		end)
+	end
+	function YT.have(it)
+		return Player.findSrc("yt:" .. it.id)
+	end
+	function YT.get(it, play)
+		local have = YT.have(it)
+		if have then
+			if play then Player.play(have) end
+			return
+		end
+		if S.ytApi == "" then
+			notify("Music Player", "Set up a converter in More > YouTube first, it turns songs into mp3s", "info", 3.5)
+			return
+		end
+		if YT.busy[it.id] then return end
+		YT.busy[it.id] = true
+		YT.draw()
+		Player.download("https://www.youtube.com/watch?v=" .. it.id, it.title, function(ok, t, existed)
+			YT.busy[it.id] = nil
+			if not HUB.alive then return end
+			if ok then
+				if not existed then notify("Music Player", "Added " .. t.name, "ok", 2) end
+				if play then Player.play(t) end
+			else
+				notify("Couldn't add " .. it.title, tostring(t), "error", 3.5)
+			end
+			YT.draw()
+		end)
+	end
+	function YT.run(q, more)
+		q = Util.trim(tostring(q or ""))
+		if q == "" then return end
+		if YT.searching then return end
+		YT.searching = true
+		if not more then
+			YT.q = q
+			YT.results, YT.nextPage = {}, nil
+		end
+		YT.status.Text = "Searching..."
+		YT.status.Visible = true
+		YT.draw()
+		YT.search(q, more and YT.nextPage or nil, function(items, err, nextPage)
+			YT.searching = false
+			if err then
+				YT.status.Text = err
+				YT.status.Visible = true
+				YT.draw()
+				return
+			end
+			for _, it in ipairs(items) do
+				YT.results[#YT.results + 1] = it
+			end
+			YT.nextPage = nextPage
+			YT.status.Visible = #YT.results == 0
+			YT.status.Text = #YT.results == 0 and ("Nothing found for " .. q) or ""
+			YT.draw()
+		end)
+	end
+	function YT.row(it, order)
+		local row = UI.button(YT.list, { Name = "Result", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 50), LayoutOrder = order })
+		UI.corner(row, 12)
+		local th = MP.thumb(row, 38, 8, UDim2.fromOffset(6, 6), it.thumb, "music")
+		th.Size = UDim2.fromOffset(52, 38)
+		local have = YT.have(it)
+		local busy = YT.busy[it.id]
+		UI.label(row, { Name = "Title", Text = it.title, Font = FONT_B, TextSize = 12, TextColor3 = have and accentColor() or T.text, Position = UDim2.fromOffset(66, 8), Size = UDim2.new(1, -140, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+		local sub = it.by
+		if it.len > 0 then sub ..= "  ·  " .. Util.mmss(it.len * 1000) end
+		if busy then sub = "Getting it..." elseif have then sub = "In your library  ·  " .. sub end
+		UI.label(row, { Name = "Sub", Text = sub, TextSize = 10, TextColor3 = busy and T.yellow or T.sub, Position = UDim2.fromOffset(66, 26), Size = UDim2.new(1, -140, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+		local function btn(name, icon, x, fn, filled)
+			local b = UI.button(row, { Name = name, BackgroundColor3 = filled and accentColor() or T.card2, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, x, 0.5, 0), Size = UDim2.fromOffset(30, 30) })
+			UI.corner(b, 15)
+			if filled then UI.accent(b, "BackgroundColor3") end
+			UI.icon(icon, 13, filled and T.ink or T.text, b, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+			UI.pressable(b, 0.85)
+			b.Activated:Connect(fn)
+			return b
+		end
+		btn("Play", busy and "loader-circle" or "play-fill", -8, function() YT.get(it, true) end, true)
+		if not have then btn("Add", busy and "loader-circle" or "plus", -42, function() YT.get(it, false) end) end
+		Ctl.hoverable(row)
+		row.Activated:Connect(function() YT.get(it, true) end)
+	end
+	function YT.draw()
+		if not (YT.list and YT.list.Parent) then return end
+		local hasKey = S.ytSearchKey ~= ""
+		YT.setup.Visible = not hasKey
+		YT.box.row.Visible = hasKey
+		YT.goBtn.Visible = hasKey
+		YT.keyAction.Visible = hasKey
+		clearList(YT.list)
+		for i, it in ipairs(YT.results) do
+			YT.row(it, i)
+		end
+		YT.more.Visible = hasKey and YT.nextPage ~= nil and not YT.searching and #YT.results > 0
+	end
+
+	section(av, "Search YouTube", -30)
+	-- first time: get a free key
+	YT.setup = UI.new("Frame", { Name = "YouTubeSetup", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = -29 }, av)
+	UI.list(YT.setup, 6)
+	Ctl.note(YT.setup, 1, "Find songs on YouTube right here. It needs a free YouTube API key (about 100 searches a day):  1  Open the Google Cloud console and make a project.  2  Turn on YouTube Data API v3.  3  Go to Credentials, make an API key and paste it below. Songs you pick go through your converter (More > YouTube).")
+	Ctl.action(YT.setup, 2, "Copy the Google Cloud link", "link", false, function()
+		copyText(YT.CONSOLE, "Google Cloud link, open it in your browser")
+	end)
+	local keyBox = Ctl.input(YT.setup, 3, "YouTube API key", "AIza...", function() return YT.keyTyped or "" end, function(x, enter)
+		YT.keyTyped = x ~= "" and x or nil
+		if enter and x ~= "" then YT.saveKey(x) end
+	end)
+	keyBox.box.ClearTextOnFocus = false
+	Ctl.buttons(YT.setup, 4, { { "check", "Save key", function()
+		YT.saveKey(YT.keyTyped or keyBox.box.Text)
+	end } })
+	function YT.saveKey(x)
+		x = string.gsub(tostring(x or ""), "%s", "")
+		if #x < 20 then return notify("YouTube", "That doesn't look like an API key, it's a long code starting with AIza", "error", 3) end
+		S.ytSearchKey = x
+		YT.keyTyped = nil
+		keyBox.render()
+		saveSettings()
+		notify("YouTube", "Key saved, search for a song", "ok", 2.5)
+		YT.draw()
+	end
+	-- searching
+	YT.box = Ctl.input(av, -28, "Find a song", "song or artist", function() return YT.typed or YT.q end, function(x, enter)
+		YT.typed = x
+		if enter and Util.trim(x) ~= "" then YT.run(x) end
+	end)
+	local _, goHolder = Ctl.buttons(av, -27, { { "search", "Search", function()
+		YT.run(YT.typed or YT.box.box.Text)
+	end } })
+	YT.goBtn = goHolder
+	YT.status = UI.label(av, { Name = "SearchStatus", Text = "", TextSize = 10, TextColor3 = T.sub, TextXAlignment = Enum.TextXAlignment.Center, TextWrapped = true, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = -26, Visible = false })
+	YT.list = UI.new("Frame", { Name = "YouTubeResults", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = -25 }, av)
+	UI.list(YT.list, 6)
+	YT.more = UI.button(av, { Name = "More", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 34), LayoutOrder = -24, Visible = false })
+	UI.corner(YT.more, 12)
+	iconText(YT.more, "chevron-down", "Show more", T.sub, 11)
+	Ctl.hoverable(YT.more)
+	YT.more.Activated:Connect(function() YT.run(YT.q, true) end)
+	YT.keyAction = Ctl.action(av, -23, "Remove my YouTube key", "key-round", true, function()
+		S.ytSearchKey = ""
+		saveSettings()
+		YT.results, YT.nextPage = {}, nil
+		YT.status.Visible = false
+		YT.draw()
+		notify("YouTube", "Key removed", "ok", 2)
+	end, true)
+	Bus.on("playerLib", function()
+		if MP.shown(4) then YT.draw() end
+	end)
+	YT.draw()
 end
 
 -- more tab: Spotify, YouTube, options ----------------------------------------------------------------
