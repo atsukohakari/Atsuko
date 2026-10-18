@@ -1,3 +1,22 @@
+v1.1.1
+- new ai tab: ask for a script or how to fix one and it writes it for you, with copy and open in editor buttons on the code
+- the ai can read the script in your editor: tap the code button next to the box and it goes with your message
+- the ai is called Atsuko Hakari and has its own picture. its name is the big title on the ai tab, change the name and picture whenever you want
+- personal preferences: tell the ai about you and how you want your answers, in settings > ai or in the ai's own settings. it reads them before every answer
+- recent chats: your last 30 chats are saved, search them, open one to keep going or delete it (the clock button at the top of the ai tab)
+- ai settings with 4 tabs: profile, preferences, ai key and chats. answer length, creativity, reply language, chat memory, remember chats and a heads-up when an answer is ready
+- clean chat look: your messages on the right with your picture, answers with the ai's picture, copy and retry under each answer, and ideas to start with
+- the ai works with a free google gemini key, or any openai-style service (openrouter, groq and more). your keys stay on your device
+- the ai lives in its own file and only downloads when you open the tab, so the hub doesn't get bigger. an old copy of that file never opens on a newer hub, the tab tells you to update it
+- pick your own profile picture in settings > general (a roblox image id or a picture link), it shows on home and in the ai chat
+- search youtube for songs in music > add, then add them with one tap (needs a free youtube key, songs go through your converter)
+- the command bar opens as soon as you press ; (or your own key), and the key doesn't end up in the box
+- keys can be combos now: shift + ; makes : and the other shift symbols work too (! ? @ and more), plus ctrl + any key
+- hub keys work even when the game uses the same key, just not while you're typing or in the roblox menu
+- your converter and youtube keys are never in copy my settings
+- the owner's chat tag says Atsuko Hakari now
+- removed the colored fog and aurora sky commands
+
 v1.1.0
 - smoother everywhere: switching pages and tabs doesn't snap or jump anymore, things on the left slide in from the left and things on the right slide in from the right
 - home opens with the left cards coming in from the left and the right cards from the right
@@ -26,9 +45,8 @@ v1.1.0
 - spotify works with free accounts too, through discord: the song, the time, lyrics and the visualizer
 - the visualizer bounces on spotify songs too
 - hub chat: a server chat with the hub users in your server and a global chat with everyone, in a window you can move and resize. tap someone's picture to block them, bad words get covered up
-- the hub's owner gets a purple-to-pink Atsuko tag in chat and above their head, and nobody else can fake it
-- tags command: shows a tag above everyone in your server who uses the hub
-- commands from 07hub (with permission): smooth fly, fly speed, freeze, orbit, head sit, teleport to a spot, copy position, waypoints, emotes, fps and ping, fps cap, shaders, colored fog, trail, cone hat, sky particles, aurora sky and rain
+- the hub's owner gets a purple-to-pink Atsuko tag in chat, and nobody else can fake it
+- commands from 07hub (with permission): smooth fly, fly speed, freeze, orbit, head sit, teleport to a spot, copy position, waypoints, emotes, fps and ping, fps cap, colored fog and aurora sky
 - video player for testing: youtube (through your converter), webm and mp4 links and roblox video ids, saved in your videos folder
 
 v1.0.8
