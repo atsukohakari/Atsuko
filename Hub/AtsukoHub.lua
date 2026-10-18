@@ -5236,7 +5236,7 @@ do
 end
 
 Core.CHANGELOG = {
-	{ version = "1.1.0", notes = { "smoother everywhere: switching pages and tabs doesn't snap or jump anymore, things on the left slide in from the left and things on the right slide in from the right", "home opens with the left cards coming in from the left and the right cards from the right", "runs and opens straight on home, and when you close it and open it again you're back on the page you left", "pc: alt (left or right) opens and closes it, change it in settings > general. the arrow on the side of the screen is only on phones now", "spotify moved into the music player: one player for your songs and spotify, with a whole new look", "lyrics show the line you're on big and the next line under it, plus a full lyrics tab", "new mini player with a lyrics button", "add songs from youtube and other links, they get saved in your music folder and the same song never gets added twice", "music keeps going on phones: if the game or the phone cuts the song off it picks it back up, and spotify stays logged in on phones that can't save files", "tap the dynamic island while a song is on to see it, with nothing playing it opens home", "new editor tab: write scripts, run them, save them, and pop it out into its own window you can move around", "atsuko's own scripts page is called atsuko script now. edit any of them and save your copy, it shows up in scripts > my scripts", "hub size setting, starts at 75%", "pick any color you want for the accent, and the background can take some of it too", "customize home: show, hide and move the cards, and add your own pictures, notes and clocks", "new command bar: suggestions as you type, arrow keys, tab to fill and your recent commands", "new commands: antifling, antivoid, antisit, tpwalk, swim, freecam, hipheight, light, edgejump, fixcam and lay", "running the hub again just tells you it's already running instead of making a second one, same for commands that are already on", "no more double notifications", "say -reload in chat to restart the hub, it tells you if anything broke", "studio dummy: stop really stops it now, none of its commands work until you run it again", "the dynamic island grows right out of the top bar when you tap it and shrinks back into it, same size and smooth", "drag the title to move the hub anywhere, the reset button in the corner (or running it again) puts it back", "home fits everything on the screen instead of scrolling (turn it off in customize home)", "spotify works with free accounts too, through discord: the song, the time, lyrics and the visualizer", "the visualizer bounces on spotify songs too", "hub chat: a server chat with the hub users in your server and a global chat with everyone, in a window you can move and resize. tap someone's picture to block them, bad words get covered up", "the hub's owner gets a purple-to-pink Atsuko tag in chat and above their head, and nobody else can fake it", "tags command: shows a tag above everyone in your server who uses the hub", "commands from 07hub (with permission): smooth fly, fly speed, freeze, orbit, head sit, teleport to a spot, copy position, waypoints, emotes, fps and ping, fps cap, shaders, colored fog, trail, cone hat, sky particles, aurora sky and rain", "video player for testing: youtube (through your converter), webm and mp4 links and roblox video ids, saved in your videos folder" } },
+	{ version = "1.1.0", notes = { "smoother everywhere: switching pages and tabs doesn't snap or jump anymore, things on the left slide in from the left and things on the right slide in from the right", "home opens with the left cards coming in from the left and the right cards from the right", "runs and opens straight on home, and when you close it and open it again you're back on the page you left", "pc: alt (left or right) opens and closes it, change it in settings > general. the arrow on the side of the screen is only on phones now", "spotify moved into the music player: one player for your songs and spotify, with a whole new look", "lyrics show the line you're on big and the next line under it, plus a full lyrics tab", "new mini player with a lyrics button", "add songs from youtube and other links, they get saved in your music folder and the same song never gets added twice", "music keeps going on phones: if the game or the phone cuts the song off it picks it back up, and spotify stays logged in on phones that can't save files", "tap the dynamic island while a song is on to see it, with nothing playing it opens home", "new editor tab: write scripts, run them, save them, and pop it out into its own window you can move around", "atsuko's own scripts page is called atsuko script now. edit any of them and save your copy, it shows up in scripts > my scripts", "hub size setting, starts at 75%", "pick any color you want for the accent, and the background can take some of it too", "customize home: show, hide and move the cards, and add your own pictures, notes and clocks", "new command bar: suggestions as you type, arrow keys, tab to fill and your recent commands", "new commands: antifling, antivoid, antisit, tpwalk, swim, freecam, hipheight, light, edgejump, fixcam and lay", "running the hub again just tells you it's already running instead of making a second one, same for commands that are already on", "no more double notifications", "say -reload in chat to restart the hub, it tells you if anything broke", "studio dummy: stop really stops it now, none of its commands work until you run it again", "the dynamic island grows right out of the top bar when you tap it and shrinks back into it, same size and smooth", "drag the title to move the hub anywhere, the reset button in the corner (or running it again) puts it back", "home fits everything on the screen instead of scrolling (turn it off in customize home)", "spotify works with free accounts too, through discord: the song, the time, lyrics and the visualizer", "the visualizer bounces on spotify songs too", "hub chat: a server chat with the hub users in your server and a global chat with everyone, in a window you can move and resize. tap someone's picture to block them, bad words get covered up", "the hub's owner gets a purple-to-pink Atsuko tag in chat, and nobody else can fake it", "commands from 07hub (with permission): smooth fly, fly speed, freeze, orbit, head sit, teleport to a spot, copy position, waypoints, emotes, fps and ping, fps cap, colored fog and aurora sky", "video player for testing: youtube (through your converter), webm and mp4 links and roblox video ids, saved in your videos folder" } },
 	{ version = "1.0.8", notes = { "opening a script doesn't lag anymore, works with checks a little at a time in the background and remembers what it found", "works with shows 6 of each kind first, tap show all to see the rest", "studio dummy doesn't freeze the game when it starts anymore" } },
 	{ version = "1.0.7", notes = { "works with: open a script and the hub finds the guns, swords and hats it supports by itself, with the shop name and id, and shows which ones you're wearing or own", "studio dummy: run and stop from the hub only, no more -run / -stop", "studio dummy: works with the full stop rifle, and the align panel remembers each gun on its own (tap A on the touch buttons to open and close it)" } },
 	{ version = "1.0.6", notes = { "tap a script, a player, a playlist or a scriptblox script again to close its info", "scripts with their own run and stop (like studio dummy) show as stopped when they stop by themselves", "no more -run talk in the hub, the run and stop buttons do it all" } },
@@ -12702,480 +12702,8 @@ do
 			end,
 		})
 
-		-- shaders: post effects on your camera only, never the game's own lighting
-		local SHADERS = {
-			cinema = { bloom = { 0.7, 28, 0.85 }, color = { 0.03, 0.18, 0.12, Color3.fromRGB(255, 243, 230) }, rays = { 0.12, 0.85 }, blur = { 0.18, 45, 60 } },
-			vivid = { bloom = { 0.45, 22, 0.9 }, color = { 0.02, 0.12, 0.5 }, rays = { 0.08, 0.6 } },
-			warm = { bloom = { 0.5, 24, 0.9 }, color = { 0.02, 0.1, 0.15, Color3.fromRGB(255, 224, 192) }, rays = { 0.18, 0.9 } },
-			cold = { bloom = { 0.4, 24, 0.9 }, color = { 0, 0.15, 0.05, Color3.fromRGB(204, 224, 255) }, rays = { 0.06, 0.5 } },
-			noir = { bloom = { 0.3, 20, 0.9 }, color = { -0.02, 0.35, -1 } },
-		}
-		local SH = { fx = {} }
-		function SH.apply()
-			local cam = workspace.CurrentCamera
-			if not cam then return end
-			local pre = SHADERS[Cmd.val("shaders", "preset", "cinema")] or SHADERS.cinema
-			local a = math.clamp(Cmd.val("shaders", "power", 70) / 100, 0, 1)
-			local W = Color3.new(1, 1, 1)
-			local fx = SH.fx
-			fx.bloom = fx.bloom or Instance.new("BloomEffect")
-			fx.bloom.Intensity, fx.bloom.Size, fx.bloom.Threshold = pre.bloom[1] * a, pre.bloom[2], pre.bloom[3]
-			fx.color = fx.color or Instance.new("ColorCorrectionEffect")
-			fx.color.Brightness, fx.color.Contrast, fx.color.Saturation = pre.color[1] * a, pre.color[2] * a, pre.color[3] * a
-			fx.color.TintColor = W:Lerp(pre.color[4] or W, a)
-			fx.rays = fx.rays or Instance.new("SunRaysEffect")
-			fx.rays.Intensity, fx.rays.Spread = (pre.rays and pre.rays[1] or 0) * a, pre.rays and pre.rays[2] or 0.5
-			fx.blur = fx.blur or Instance.new("DepthOfFieldEffect")
-			fx.blur.Enabled = pre.blur ~= nil
-			if pre.blur then
-				fx.blur.FarIntensity, fx.blur.FocusDistance, fx.blur.InFocusRadius, fx.blur.NearIntensity = pre.blur[1] * a, pre.blur[2], pre.blur[3], 0
-			end
-			for _, e in pairs(fx) do
-				e.Name = "AtsukoShader"
-				e.Parent = cam
-			end
-		end
-		Cmd.add({
-			id = "shaders", name = "Shaders", icon = "sun", cat = "Visual", kind = "toggle",
-			usage = "shaders [cinema|vivid|warm|cold|noir]", aliases = { "shader" }, offNames = { "unshaders", "unshader" },
-			desc = "Makes the game look nicer: glow, color and sun rays, only on your screen.",
-			label = function() return "On  ·  " .. Cmd.val("shaders", "preset", "cinema") end,
-			start = function(arg)
-				local a = string.lower(Util.trim(tostring(arg or "")))
-				if a ~= "" then
-					if not SHADERS[a] then return false, "Try cinema, vivid, warm, cold or noir" end
-					Cmd.setVal("shaders", "preset", a)
-				end
-				SH.apply()
-				bind("shaders", workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(SH.apply))
-				return true
-			end,
-			update = function(arg)
-				local a = string.lower(Util.trim(tostring(arg or "")))
-				if SHADERS[a] then Cmd.setVal("shaders", "preset", a) end
-				SH.apply()
-			end,
-			stop = function()
-				for _, e in pairs(SH.fx) do
-					pcall(function() e:Destroy() end)
-				end
-				SH.fx = {}
-			end,
-			opts = function(w, body, order)
-				slider(w, body, order, "shaders", "power", "Strength", 0, 100, 5, 70, function(v) return v .. "%" end, function() SH.apply() end)
-				return 1
-			end,
-		})
-
-		-- custom fog: plain lighting fog, or the game's atmosphere when it has one
-		local CF = { saved = {} }
-		function CF.apply()
-			local c = colorOf("customfog", COLORS.purple)
-			local d = math.clamp(Cmd.val("customfog", "density", 35) / 100, 0, 1)
-			local atm = Lighting:FindFirstChildOfClass("Atmosphere")
-			local function hold(o, props)
-				CF.saved[o] = CF.saved[o] or {}
-				for k, v in pairs(props) do
-					if CF.saved[o][k] == nil then CF.saved[o][k] = o[k] end
-					o[k] = v
-				end
-			end
-			if atm then
-				hold(atm, { Density = 0.15 + d * 0.75, Offset = 0, Color = c, Decay = c:Lerp(Color3.new(0, 0, 0), 0.4), Glare = 0, Haze = 2 + d * 6 })
-			else
-				local fe = 60 + 1400 * (1 - d) ^ 2.5
-				hold(Lighting, { FogColor = c, FogStart = fe * 0.05, FogEnd = fe })
-			end
-		end
-		Cmd.add({
-			id = "customfog", name = "Colored fog", icon = "cloud-fog", cat = "Visual", kind = "toggle",
-			usage = "customfog [color] [density]", aliases = { "cfog" }, offNames = { "uncustomfog", "uncfog" }, excl = { "nofog" },
-			desc = "Fog in any color, like customfog purple 60. Only you see it.",
-			start = function(arg)
-				local a = Util.trim(tostring(arg or ""))
-				local col, dens = string.match(a, "^(.-)%s*(%d+)$")
-				if not col then col = a end
-				if dens then Cmd.setVal("customfog", "density", math.clamp(tonumber(dens), 0, 100)) end
-				if col ~= "" and not colorArg("customfog", col) then return false, "That isn't a color, try purple or #ff8fc8" end
-				CF.apply()
-				return true
-			end,
-			update = function(arg)
-				local a = Util.trim(tostring(arg or ""))
-				local col, dens = string.match(a, "^(.-)%s*(%d+)$")
-				if not col then col = a end
-				if dens then Cmd.setVal("customfog", "density", math.clamp(tonumber(dens), 0, 100)) end
-				if col ~= "" then colorArg("customfog", col) end
-				CF.apply()
-			end,
-			stop = function()
-				for o, props in pairs(CF.saved) do
-					for k, v in pairs(props) do
-						pcall(function() o[k] = v end)
-					end
-				end
-				CF.saved = {}
-			end,
-			opts = function(w, body, order)
-				slider(w, body, order, "customfog", "density", "Thickness", 0, 100, 5, 35, function(v) return v .. "%" end, function() CF.apply() end)
-				return 1
-			end,
-		})
-		if Cmd.by.nofog then Cmd.by.nofog.excl = { "customfog" } end
 		if Cmd.by.fly then Cmd.by.fly.excl = { "smoothfly", "orbit", "headsit" } end
 		if Cmd.by.follow then Cmd.by.follow.excl = { "orbit", "headsit" } end
-
-		-- trail behind you
-		local TR = {}
-		local function trailColor()
-			if Cmd.val("trail", "rainbow", false) then return ColorSequence.new(rainbow(0), rainbow(0.18)) end
-			local c = colorOf("trail", Color3.fromRGB(200, 168, 255))
-			return ColorSequence.new(c, c:Lerp(Color3.new(1, 1, 1), 0.35))
-		end
-		function TR.build()
-			for _, o in ipairs(TR.objs or {}) do
-				pcall(function() o:Destroy() end)
-			end
-			TR.objs, TR.trail = {}, nil
-			local r = root()
-			if not r then return end
-			local half = Cmd.val("trail", "width", 4) * 0.15
-			local a0, a1 = Instance.new("Attachment"), Instance.new("Attachment")
-			a0.Name, a1.Name = "AtsukoTrail", "AtsukoTrail"
-			a0.Position, a1.Position = Vector3.new(0, half, 0), Vector3.new(0, -half, 0)
-			a0.Parent, a1.Parent = r, r
-			local t = Instance.new("Trail")
-			t.Name = "AtsukoTrail"
-			t.Attachment0, t.Attachment1 = a0, a1
-			t.Lifetime = Cmd.val("trail", "length", 6) / 10
-			t.MinLength = 0.05
-			t.LightEmission, t.LightInfluence = 0.6, 0
-			t.Color = trailColor()
-			t.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.1), NumberSequenceKeypoint.new(1, 1) })
-			t.WidthScale = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0.3) })
-			t.Parent = r
-			TR.trail, TR.objs = t, { t, a0, a1 }
-		end
-		Cmd.add({
-			id = "trail", name = "Trail", icon = "sparkles", cat = "Visual", kind = "toggle", char = true,
-			usage = "trail [color|rainbow]", offNames = { "untrail" },
-			desc = "A glowing trail behind you, any color or rainbow. Only you see it.",
-			start = function(arg)
-				if not colorArg("trail", arg) then return false, "That isn't a color, try pink, rainbow or #ff8fc8" end
-				if not root() then return false, "No character right now" end
-				TR.build()
-				bind("trail", RunService.RenderStepped:Connect(function()
-					if TR.trail and Cmd.val("trail", "rainbow", false) then TR.trail.Color = trailColor() end
-				end))
-				return true
-			end,
-			update = function(arg)
-				colorArg("trail", arg)
-				if TR.trail then TR.trail.Color = trailColor() end
-			end,
-			stop = function()
-				for _, o in ipairs(TR.objs or {}) do
-					pcall(function() o:Destroy() end)
-				end
-				TR.objs, TR.trail = {}, nil
-			end,
-			opts = function(w, body, order)
-				slider(w, body, order, "trail", "length", "Length", 1, 30, 1, 6, nil, function() TR.build() end)
-				slider(w, body, order + 1, "trail", "width", "Width", 1, 12, 1, 4, nil, function() TR.build() end)
-				return 2
-			end,
-		})
-
-		-- a little cone hat drawn on your head
-		local HT = {}
-		local function hatColor()
-			return Cmd.val("hat", "rainbow", false) and rainbow(0) or colorOf("hat", Color3.fromRGB(255, 255, 255))
-		end
-		Cmd.add({
-			id = "hat", name = "Cone hat", icon = "sparkles", cat = "Visual", kind = "toggle", char = true,
-			usage = "hat [color|rainbow]", aliases = { "chinahat" }, offNames = { "unhat" },
-			desc = "A flat cone hat floating on your head. Only you see it.",
-			start = function(arg)
-				if not colorArg("hat", arg) then return false, "That isn't a color, try pink, rainbow or #ff8fc8" end
-				local c = LP.Character
-				local head = c and c:FindFirstChild("Head")
-				if not head then return false, "No character right now" end
-				local f = Instance.new("Folder")
-				f.Name = "AtsukoHat"
-				f.Parent = Gui
-				local base = CFrame.new(0, head.Size.Y / 2 + 0.15, 0) * CFrame.Angles(math.rad(90), 0, 0)
-				local cone = Instance.new("ConeHandleAdornment")
-				cone.Adornee, cone.CFrame, cone.Height, cone.Radius, cone.Transparency, cone.Color3 = head, base, 0.75, 1.75, 0.45, hatColor()
-				cone.Parent = f
-				local rim = Instance.new("CylinderHandleAdornment")
-				rim.Adornee, rim.CFrame, rim.Height, rim.Radius, rim.InnerRadius, rim.Transparency, rim.Color3 = head, base, 0.05, 1.78, 1.66, 0.05, hatColor()
-				rim.Parent = f
-				HT.f, HT.cone, HT.rim, HT.head = f, cone, rim, head
-				bind("hat", RunService.RenderStepped:Connect(function()
-					local cam = workspace.CurrentCamera
-					if not (cam and head.Parent) then return end
-					local vis = (cam.CFrame.Position - head.Position).Magnitude > 1.6
-					cone.Visible, rim.Visible = vis, vis
-					if Cmd.val("hat", "rainbow", false) then
-						local col = hatColor()
-						cone.Color3, rim.Color3 = col, col
-					end
-				end))
-				return true
-			end,
-			update = function(arg)
-				colorArg("hat", arg)
-				if HT.cone then HT.cone.Color3, HT.rim.Color3 = hatColor(), hatColor() end
-			end,
-			stop = function()
-				if HT.f then pcall(function() HT.f:Destroy() end) end
-				HT.f, HT.cone, HT.rim = nil, nil, nil
-			end,
-		})
-
-		-- things falling from the sky around you
-		local STYLES = {
-			snow = { tex = "rbxassetid://104478542820031", size = { 0.6, 1 }, speed = { 5, 9 }, life = { 9, 13 }, spread = 20, spin = 60, light = 0.3, wind = Vector3.new(1.5, 0, 0.6) },
-			stars = { tex = "rbxassetid://78868362140764", size = { 0.5, 0.9 }, speed = { 1.5, 3 }, life = { 8, 12 }, spread = 40, spin = 20, light = 1, twinkle = true },
-			hearts = { tex = "rbxassetid://130667117695899", size = { 0.6, 1 }, speed = { 2.5, 4.5 }, life = { 9, 12 }, spread = 30, spin = 30, light = 0.5 },
-			sparks = { tex = "rbxasset://textures/particles/sparkles_main.dds", size = { 0.6, 1.2 }, speed = { 1, 2.5 }, life = { 6, 10 }, spread = 60, spin = 0, light = 1, twinkle = true },
-		}
-		local PT = {}
-		function PT.style()
-			local e = PT.em
-			if not e then return end
-			local st = STYLES[Cmd.val("particles", "style", "snow")] or STYLES.snow
-			local sz, sp = (st.size[1] + st.size[2]) / 2, (st.size[2] - st.size[1]) / 2
-			e.Texture = st.tex
-			e.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, sz, sp), NumberSequenceKeypoint.new(1, sz, sp) })
-			e.Speed = NumberRange.new(st.speed[1], st.speed[2])
-			e.Lifetime = NumberRange.new(st.life[1], st.life[2])
-			e.SpreadAngle = Vector2.new(st.spread, st.spread)
-			e.Rotation = NumberRange.new(0, 360)
-			e.RotSpeed = NumberRange.new(-st.spin, st.spin)
-			e.LightEmission = st.light
-			e.Acceleration = st.wind or Vector3.zero
-			if st.twinkle then
-				e.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.1, 0.1), NumberSequenceKeypoint.new(0.3, 0.6), NumberSequenceKeypoint.new(0.5, 0.05), NumberSequenceKeypoint.new(0.7, 0.6), NumberSequenceKeypoint.new(0.9, 0.1), NumberSequenceKeypoint.new(1, 1) })
-			else
-				e.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.1, 0.1), NumberSequenceKeypoint.new(0.85, 0.1), NumberSequenceKeypoint.new(1, 1) })
-			end
-			e.Color = ColorSequence.new(colorOf("particles", Color3.new(1, 1, 1)))
-			e.Rate = Cmd.val("particles", "rate", 40)
-		end
-		Cmd.add({
-			id = "particles", name = "Sky particles", icon = "sparkles", cat = "Visual", kind = "toggle",
-			usage = "particles [snow|stars|hearts|sparks] [color]", aliases = { "snow" }, offNames = { "unparticles", "unsnow" },
-			desc = "Snow, stars, hearts or sparks falling around you. Only you see them.",
-			label = function() return "On  ·  " .. Cmd.val("particles", "style", "snow") end,
-			start = function(arg)
-				local a = string.lower(Util.trim(tostring(arg or "")))
-				local style, rest = string.match(a, "^(%a+)%s*(.-)$")
-				if style and STYLES[style] then
-					Cmd.setVal("particles", "style", style)
-					if rest ~= "" and not colorArg("particles", rest) then return false, "That isn't a color" end
-				elseif a ~= "" and not colorArg("particles", a) then
-					return false, "Try snow, stars, hearts or sparks"
-				end
-				local part = localPart("AtsukoSky", Vector3.new(160, 1, 160))
-				local e = Instance.new("ParticleEmitter")
-				e.Shape = Enum.ParticleEmitterShape.Box
-				e.ShapeStyle = Enum.ParticleEmitterShapeStyle.Surface
-				e.EmissionDirection = Enum.NormalId.Bottom
-				e.LockedToPart = false
-				e.Parent = part
-				PT.part, PT.em = part, e
-				PT.style()
-				bind("particles", RunService.RenderStepped:Connect(function()
-					if part.Parent then part.CFrame = CFrame.new(camPos() + Vector3.new(0, 35, 0)) end
-				end))
-				return true
-			end,
-			update = function(arg)
-				local a = string.lower(Util.trim(tostring(arg or "")))
-				local style, rest = string.match(a, "^(%a+)%s*(.-)$")
-				if style and STYLES[style] then
-					Cmd.setVal("particles", "style", style)
-					if rest ~= "" then colorArg("particles", rest) end
-				elseif a ~= "" then
-					colorArg("particles", a)
-				end
-				PT.style()
-			end,
-			stop = function()
-				if PT.part then pcall(function() PT.part:Destroy() end) end
-				PT.part, PT.em = nil, nil
-			end,
-			opts = function(w, body, order)
-				slider(w, body, order, "particles", "rate", "How many", 5, 150, 5, 40, nil, function() PT.style() end)
-				return 1
-			end,
-		})
-
-		-- aurora: glowing ribbons high in the sky that sway and shift color
-		local AU = { ribbons = {} }
-		local LAYERS = { { 220, 0.95 }, { 170, 0.93 }, { 120, 0.9 }, { 75, 0.86 }, { 35, 0.8 } }
-		local function fade(a)
-			return NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.2, a), NumberSequenceKeypoint.new(0.5, a * 0.9), NumberSequenceKeypoint.new(0.8, a), NumberSequenceKeypoint.new(1, 1) })
-		end
-		Cmd.add({
-			id = "aurora", name = "Aurora sky", icon = "sparkles", cat = "Visual", kind = "toggle",
-			usage = "aurora [color]", aliases = { "northernlights" }, offNames = { "unaurora" },
-			desc = "Northern lights across the sky, green by default or any color. Only you see it, and it makes it night for you.",
-			start = function(arg)
-				if not colorArg("aurora", arg) then return false, "That isn't a color, try green or purple" end
-				local part = localPart("AtsukoAurora", Vector3.one)
-				AU.part, AU.ribbons = part, {}
-				for i = 1, 4 do
-					local turn = CFrame.Angles(0, math.rad(90), 0)
-					local rb = { x = 900 + i * 80, y = 320 + i * 60, z = -700 - i * 150, seed = i * 1.37, beams = {} }
-					rb.a0 = Instance.new("Attachment")
-					rb.a0.CFrame = CFrame.new(-rb.x, rb.y, rb.z) * turn
-					rb.a0.Parent = part
-					rb.a1 = Instance.new("Attachment")
-					rb.a1.CFrame = CFrame.new(rb.x, rb.y, rb.z) * turn
-					rb.a1.Parent = part
-					for _, layer in ipairs(LAYERS) do
-						local b = Instance.new("Beam")
-						b.Attachment0, b.Attachment1 = rb.a0, rb.a1
-						b.FaceCamera, b.Segments = true, 48
-						b.Width0, b.Width1 = layer[1], layer[1] * 0.8
-						b.LightEmission, b.LightInfluence = 1, 0
-						b.Transparency = fade(layer[2])
-						b.Parent = part
-						rb.beams[#rb.beams + 1] = b
-					end
-					AU.ribbons[i] = rb
-				end
-				AU.clock = Lighting.ClockTime
-				if not Cmd.isOn("time") then Lighting.ClockTime = 0 end
-				bind("aurora", RunService.RenderStepped:Connect(function()
-					part.CFrame = CFrame.new(camPos())
-					local t = os.clock() * (0.2 + Cmd.val("aurora", "speed", 10) / 50)
-					local h, sat, val = colorOf("aurora", Color3.fromRGB(90, 255, 160)):ToHSV()
-					for _, rb in ipairs(AU.ribbons) do
-						local sd = rb.seed
-						rb.a0.Position = Vector3.new(-rb.x, rb.y + math.sin(t * 0.5 + sd) * 25, rb.z)
-						rb.a1.Position = Vector3.new(rb.x, rb.y + math.cos(t * 0.45 + sd) * 25, rb.z)
-						local drift = math.sin(t * 0.4 + sd) * 0.06
-						local cols = ColorSequence.new({
-							ColorSequenceKeypoint.new(0, Color3.fromHSV((h - 0.08 + drift) % 1, sat, val)),
-							ColorSequenceKeypoint.new(0.5, Color3.fromHSV((h + drift) % 1, sat, val)),
-							ColorSequenceKeypoint.new(1, Color3.fromHSV((h + 0.12 + drift) % 1, sat * 0.9, val)),
-						})
-						local c0, c1 = math.sin(t * 0.35 + sd) * 160, math.cos(t * 0.28 + sd * 2) * 160
-						for _, b in ipairs(rb.beams) do
-							b.CurveSize0, b.CurveSize1, b.Color = c0, c1, cols
-						end
-					end
-				end))
-				return true
-			end,
-			update = function(arg) colorArg("aurora", arg) end,
-			stop = function()
-				if AU.part then pcall(function() AU.part:Destroy() end) end
-				AU.part, AU.ribbons = nil, {}
-				if AU.clock and not Cmd.isOn("time") then pcall(function() Lighting.ClockTime = AU.clock end) end
-				AU.clock = nil
-			end,
-		})
-
-		-- rain: streaks from above, splashes on the ground, a grey look and the sound of it
-		local RN = {}
-		function RN.tune()
-			local k = math.clamp(Cmd.val("rain", "power", 50) / 100, 0.05, 1)
-			if RN.streaks then RN.streaks.Rate = 300 + 2200 * k end
-			if RN.splash then RN.splash.Rate = 80 + 520 * k end
-			if RN.sound then RN.sound.Volume = Cmd.val("rain", "sound", true) and (0.15 + 0.45 * k) or 0 end
-		end
-		Cmd.add({
-			id = "rain", name = "Rain", icon = "cloud-fog", cat = "Visual", kind = "toggle",
-			usage = "rain [1-100]", aliases = { "storm" }, offNames = { "unrain" },
-			desc = "Rain around you with splashes and the sound of it. Only you see and hear it.",
-			start = function(arg)
-				local v = tonumber(arg)
-				if v then Cmd.setVal("rain", "power", math.clamp(math.floor(v), 1, 100)) end
-				local top = localPart("AtsukoRain", Vector3.new(150, 1, 150))
-				local floor = localPart("AtsukoRain", Vector3.new(60, 0.2, 60))
-				local e = Instance.new("ParticleEmitter")
-				e.Texture = "rbxassetid://133760664135962"
-				e.Shape = Enum.ParticleEmitterShape.Box
-				e.ShapeStyle = Enum.ParticleEmitterShapeStyle.Surface
-				e.EmissionDirection = Enum.NormalId.Bottom
-				e.Orientation = Enum.ParticleOrientation.VelocityParallel
-				e.Speed = NumberRange.new(95, 115)
-				e.SpreadAngle = Vector2.new(3, 3)
-				e.Acceleration = Vector3.new(4, 0, 1.5)
-				e.Lifetime = NumberRange.new(0.75, 0.95)
-				e.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 2.2, 0.5), NumberSequenceKeypoint.new(1, 2.2, 0.5) })
-				e.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.1, 0.45), NumberSequenceKeypoint.new(0.9, 0.45), NumberSequenceKeypoint.new(1, 1) })
-				e.Color = ColorSequence.new(Color3.fromRGB(196, 210, 226))
-				e.LightEmission, e.LightInfluence, e.LockedToPart = 0.1, 0.6, false
-				e.Parent = top
-				local sp = Instance.new("ParticleEmitter")
-				sp.Texture = "rbxassetid://81617548732200"
-				sp.Shape = Enum.ParticleEmitterShape.Box
-				sp.ShapeStyle = Enum.ParticleEmitterShapeStyle.Surface
-				sp.EmissionDirection = Enum.NormalId.Top
-				sp.Speed = NumberRange.new(3, 7)
-				sp.SpreadAngle = Vector2.new(55, 55)
-				sp.Acceleration = Vector3.new(0, -45, 0)
-				sp.Lifetime = NumberRange.new(0.15, 0.3)
-				sp.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.12), NumberSequenceKeypoint.new(1, 0.28) })
-				sp.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.35), NumberSequenceKeypoint.new(1, 1) })
-				sp.Color = ColorSequence.new(Color3.fromRGB(205, 218, 232))
-				sp.LightInfluence, sp.LockedToPart = 0.8, false
-				sp.Parent = floor
-				local grade = Instance.new("ColorCorrectionEffect")
-				grade.Name = "AtsukoRain"
-				grade.Brightness, grade.Contrast, grade.Saturation = -0.05, 0.06, -0.28
-				grade.TintColor = Color3.fromRGB(214, 224, 238)
-				grade.Parent = workspace.CurrentCamera
-				local snd = Instance.new("Sound")
-				snd.Name = "AtsukoRain"
-				snd.SoundId = "rbxassetid://1516791621"
-				snd.Looped = true
-				snd.Volume = 0
-				snd.Parent = Core.SoundService
-				Core.OWN_SOUNDS[snd] = true
-				snd:Play()
-				RN.objs = { top, floor, grade, snd }
-				RN.streaks, RN.splash, RN.sound = e, sp, snd
-				RN.tune()
-				local params = RaycastParams.new()
-				params.FilterType = Enum.RaycastFilterType.Exclude
-				local acc, ground = 0, nil
-				bind("rain", RunService.RenderStepped:Connect(function(dt)
-					local pos = camPos()
-					top.CFrame = CFrame.new(pos + Vector3.new(0, 45, 0))
-					acc += dt
-					if acc >= 0.2 then
-						acc = 0
-						params.FilterDescendantsInstances = { LP.Character, workspace.CurrentCamera }
-						local hit = workspace:Raycast(pos, Vector3.new(0, -300, 0), params)
-						ground = hit and hit.Position.Y or nil
-					end
-					sp.Enabled = ground ~= nil
-					if ground then floor.CFrame = CFrame.new(pos.X, ground + 0.1, pos.Z) end
-				end))
-				return true
-			end,
-			update = function(arg)
-				local v = tonumber(arg)
-				if v then Cmd.setVal("rain", "power", math.clamp(math.floor(v), 1, 100)) end
-				RN.tune()
-			end,
-			stop = function()
-				for _, o in ipairs(RN.objs or {}) do
-					pcall(function() o:Destroy() end)
-				end
-				RN.objs, RN.streaks, RN.splash, RN.sound = nil, nil, nil, nil
-			end,
-			opts = function(w, body, order)
-				slider(w, body, order, "rain", "power", "How hard", 1, 100, 5, 50, nil, function() RN.tune() end)
-				return 1
-			end,
-		})
 	end)()
 end
 
@@ -13286,6 +12814,13 @@ function Cmd.pal.build()
 	P2.box:GetPropertyChangedSignal("Text"):Connect(function()
 		if string.find(P2.box.Text, "\t", 1, true) then
 			P2.box.Text = string.gsub(P2.box.Text, "\t", "")
+			return
+		end
+		-- the key that opened the bar can land in the box a frame or two late, take it back out once
+		local ch = P2.stripChar
+		if ch and os.clock() < (P2.stripUntil or 0) and string.sub(P2.box.Text, 1, #ch) == ch then
+			P2.stripChar = nil
+			P2.box.Text = string.sub(P2.box.Text, #ch + 1)
 			return
 		end
 		P2.sel = 1
@@ -13523,7 +13058,7 @@ function Cmd.pal.layout()
 	P2.frame.Position = UDim2.new(0.5, 0, 0, math.max(top, math.floor(L.H * 0.14)))
 end
 
-function Cmd.openBar(focus)
+function Cmd.openBar(focus, byKey)
 	local P2 = Cmd.pal
 	P2.build()
 	if Core.island and Core.island.open then Core.island.hide() end
@@ -13546,13 +13081,19 @@ function Cmd.openBar(focus)
 		P2.frame.ZIndex = 4401
 	end
 	Cmd.pal.suggest()
+	P2.stripChar = byKey and Core.keyChar(byKey) or nil
+	P2.stripUntil = os.clock() + 0.4
 	if focus ~= false then
 		task.defer(function()
 			if Cmd.pal.open then
 				P2.box:CaptureFocus()
 				task.wait(0.05)
-				-- the key that opened it can sneak in
-				if Cmd.pal.open and string.find(P2.box.Text, "^[;:]") then P2.box.Text = "" end
+				-- the key that opened it can sneak into the box, take just that one character back out
+				local ch = P2.stripChar
+				if Cmd.pal.open and ch and string.sub(P2.box.Text, 1, #ch) == ch then
+					P2.stripChar = nil
+					P2.box.Text = string.sub(P2.box.Text, #ch + 1)
+				end
 			end
 		end)
 	end
@@ -14339,18 +13880,89 @@ end
 
 -- Alt, Ctrl and Shift count on both sides of the keyboard
 Core.PAIRS = { LeftAlt = "Alt", RightAlt = "Alt", LeftControl = "Ctrl", RightControl = "Ctrl", LeftShift = "Shift", RightShift = "Shift" }
-Core.KEY_NAMES = { Semicolon = ";", Quote = "'", Comma = ",", Period = ".", Slash = "/", BackSlash = "\\", Minus = "-", Equals = "=", LeftBracket = "[", RightBracket = "]", Backquote = "`", Return = "Enter", Insert = "Ins", Delete = "Del" }
+Core.KEY_NAMES = { Semicolon = ";", Quote = "'", Comma = ",", Period = ".", Slash = "/", BackSlash = "\\", Minus = "-", Equals = "=", LeftBracket = "[", RightBracket = "]", Backquote = "`", Return = "Enter", Insert = "Ins", Delete = "Del",
+	One = "1", Two = "2", Three = "3", Four = "4", Five = "5", Six = "6", Seven = "7", Eight = "8", Nine = "9", Zero = "0" }
+-- what these keys type with Shift held, so Shift + ; can be bound as ":" (and ! ? @ # and the rest)
+Core.SHIFTED = { Semicolon = ":", Quote = "\"", Comma = "<", Period = ">", Slash = "?", BackSlash = "|", Minus = "_", Equals = "+", LeftBracket = "{", RightBracket = "}", Backquote = "~",
+	One = "!", Two = "@", Three = "#", Four = "$", Five = "%", Six = "^", Seven = "&", Eight = "*", Nine = "(", Zero = ")" }
+Core.MOD_ORDER = { "Ctrl", "Alt", "Shift" }
 function Core.keyBind(name)
 	return Core.PAIRS[name] or name
 end
+-- "Shift+Semicolon" -> { Shift = true }, "Semicolon"
+function Core.splitBind(bind)
+	local mods = {}
+	local key = bind
+	while true do
+		local m, rest = string.match(key, "^(%a+)%+(.+)$")
+		if not m or not (m == "Ctrl" or m == "Alt" or m == "Shift") then break end
+		mods[m] = true
+		key = rest
+	end
+	return mods, key
+end
+function Core.heldMods()
+	local function down(a, b)
+		local ok, r = pcall(function() return UserInputService:IsKeyDown(Enum.KeyCode[a]) or UserInputService:IsKeyDown(Enum.KeyCode[b]) end)
+		return ok and r == true
+	end
+	return { Ctrl = down("LeftControl", "RightControl"), Alt = down("LeftAlt", "RightAlt"), Shift = down("LeftShift", "RightShift") }
+end
+-- the key you just pressed plus whatever Ctrl / Alt / Shift you're holding
+function Core.comboOf(name)
+	local held = Core.heldMods()
+	local out = {}
+	for _, m in ipairs(Core.MOD_ORDER) do
+		if held[m] then out[#out + 1] = m end
+	end
+	out[#out + 1] = name
+	return table.concat(out, "+")
+end
 function Core.keyMatch(bind, name)
 	if bind == nil or bind == "" then return false end
-	return bind == name or Core.PAIRS[name] == bind
+	local mods, key = Core.splitBind(bind)
+	if not (key == name or Core.PAIRS[name] == key) then return false end
+	-- Alt, Ctrl or Shift on their own
+	if Core.PAIRS[name] then return next(mods) == nil end
+	local held = Core.heldMods()
+	if (mods.Ctrl or false) ~= held.Ctrl or (mods.Alt or false) ~= held.Alt then return false end
+	if mods.Shift then return held.Shift end
+	-- ";" and ":" are different keys to you, so Shift turns ";" into something else. letters don't care
+	if held.Shift and Core.SHIFTED[key] then return false end
+	return true
+end
+function Core.keyShort(bind)
+	if bind == nil or bind == "" then return "None" end
+	local mods, key = Core.splitBind(bind)
+	if mods.Shift and not mods.Ctrl and not mods.Alt and Core.SHIFTED[key] then return Core.SHIFTED[key] end
+	local out = {}
+	for _, m in ipairs(Core.MOD_ORDER) do
+		if mods[m] then out[#out + 1] = m end
+	end
+	out[#out + 1] = Core.KEY_NAMES[key] or key
+	return table.concat(out, "+")
 end
 function Core.keyLabel(bind)
 	if bind == nil or bind == "" then return "None" end
 	if bind == "Alt" or bind == "Ctrl" or bind == "Shift" then return bind .. " (left or right)" end
-	return Core.KEY_NAMES[bind] or bind
+	local mods, key = Core.splitBind(bind)
+	if mods.Shift and not mods.Ctrl and not mods.Alt and Core.SHIFTED[key] then return Core.SHIFTED[key] .. "  (Shift + " .. (Core.KEY_NAMES[key] or key) .. ")" end
+	return Core.keyShort(bind)
+end
+-- the character a key types into a text box, so it can be taken back out when it opened the command bar
+function Core.keyChar(bind)
+	if bind == nil or bind == "" then return nil end
+	local mods, key = Core.splitBind(bind)
+	if mods.Ctrl or mods.Alt then return nil end
+	if mods.Shift then
+		if Core.SHIFTED[key] then return Core.SHIFTED[key] end
+		if #key == 1 then return string.upper(key) end
+		return nil
+	end
+	local sym = Core.KEY_NAMES[key]
+	if sym and #sym == 1 then return sym end
+	if #key == 1 then return string.lower(key) end
+	return nil
 end
 
 local function keyRow(parent, order, title, key)
@@ -14375,16 +13987,28 @@ local function keyRow(parent, order, title, key)
 				drawKey()
 			end
 		end)
-		waitingKey = function(kc)
+		-- a key on its own, a key with Ctrl / Alt / Shift held (Shift + ; is ":"), or Alt / Ctrl / Shift on their own
+		local pendingMod = nil
+		local function finish(value)
+			waitingKey = nil
 			keyWait += 1
-			if kc == Enum.KeyCode.Escape then
-			elseif kc == Enum.KeyCode.Backspace or kc == Enum.KeyCode.Delete then
-				S[key] = ""
-			else
-				S[key] = Core.keyBind(kc.Name)
-			end
+			if value ~= nil then S[key] = value end
 			saveSettings()
 			drawKey()
+		end
+		waitingKey = function(phase, name)
+			if phase == "ended" then
+				if pendingMod and Core.PAIRS[name] == pendingMod then finish(pendingMod) end
+				return
+			end
+			if name == "Escape" then return finish(nil) end
+			if name == "Backspace" or name == "Delete" then return finish("") end
+			if Core.PAIRS[name] then
+				pendingMod = Core.PAIRS[name]
+				kb.Text = pendingMod .. " + ..."
+				return
+			end
+			finish(Core.comboOf(name))
 		end
 	end)
 	UI.pressable(kb, 0.94)
@@ -17736,6 +17360,7 @@ end)()
 Core.OWNER_ID = 10959525032
 Core.OWNER_KEY = Sec.key("c5ff08836c68110de3950cf3a096bcff76c54a120555dd0b54ba42cd753c8727c73f9bde92e3cae8b84ef1cc487657350351fc178c9fdf38c390d6db760c2b54ce6638ea898902be6fc48b84ea45f2bd3398eb3928bb90c3340dca2886843463fc13284ce66e1a5d699b35ffeee7b9840f406e7de5a4e8c4bf6727f0f4f9b52f", 20017, "46b47750b097d54ea90d60907a84179bdde5902c2f5a674a1548ddb13aa7b385a52afcba0ddb9d91085fe148961724f3987f6994749c6c22450ed5c4766ef8a3c2221c1d944fa8b273f098d7328ceaf0c253fe35c5bc940fd6262eec6d693d543799178863a2969e4d75b4d1c04db949dde1c37eedfe5b2ae9b96d7dcc3dacf6", 43)
 Core.OWNER_FILE = LOCAL_DIR .. "/owner.key"
+Core.OWNER_TAG = "Atsuko Hakari"
 local Chat = {
 	msgs = { s = {}, g = {} },
 	seen = {},
@@ -17757,7 +17382,6 @@ local Chat = {
 	keyHex = nil,
 	keyState = "none",
 	notifyAt = 0,
-	tags = {},
 	nonce = 0,
 }
 Core.Chat = Chat
@@ -17853,11 +17477,11 @@ function Chat.useKey(raw, save)
 			if save then
 				local line = "atsuko-owner-key:v1:" .. hex
 				if not FS.write(Core.OWNER_FILE, line) then GENV.__AtsukoOwnerKey = line end
-				notify("Atsuko tag", "Your key works, your messages carry the Atsuko tag now", "ok", 3)
+				notify("Owner tag", "Your key works, your messages carry the " .. Core.OWNER_TAG .. " tag now", "ok", 3)
 			end
 		else
 			Chat.keyHex, Chat.keyState = nil, "bad"
-			if save then notify("Atsuko tag", "That key doesn't match, check you copied all of it", "error", 3) end
+			if save then notify("Owner tag", "That key doesn't match, check you copied all of it", "error", 3) end
 		end
 		Bus.fire("chat")
 	end)
@@ -17962,7 +17586,6 @@ function Chat.receive(p, ch)
 		local was = Chat.online[u]
 		Chat.online[u] = { n = p.n, d = p.d, at = os.clock(), owner = owner }
 		if p.k == "hi" and (not was or os.clock() - was.at > 300) then Chat.sayHiSoon() end
-		Chat.syncTags()
 	end
 	if p.k ~= "msg" then
 		Bus.fire("chatStatus")
@@ -18015,7 +17638,7 @@ function Chat.popup(m)
 	if want == "off" or (want == "server" and m.ch ~= "s") then return end
 	if os.clock() - Chat.notifyAt < 2.5 then return end
 	Chat.notifyAt = os.clock()
-	local who = m.owner and "Atsuko" or m.d
+	local who = m.owner and Core.OWNER_TAG or m.d
 	notify(who .. (m.ch == "s" and "  ·  server chat" or "  ·  global chat"), m.t, "info", 4)
 end
 
@@ -18163,7 +17786,6 @@ function Chat.stop()
 	Chat.ws = nil
 	Chat.state = "off"
 	table.clear(Chat.online)
-	Chat.syncTags()
 	Bus.fire("chatStatus")
 end
 
@@ -18210,7 +17832,7 @@ function Chat.send(text)
 	return true
 end
 
--- tags above hub users' heads -----------------------------------------------------------------------
+-- the owner's colors ----------------------------------------------------------------------------------
 Chat.PURPLE, Chat.PINK = Color3.fromRGB(205, 170, 255), Color3.fromRGB(255, 182, 222)
 function Chat.ownerGradient(parent, animate)
 	local g = UI.new("UIGradient", { Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Chat.PURPLE), ColorSequenceKeypoint.new(1, Chat.PINK) }) }, parent)
@@ -18222,60 +17844,6 @@ function Chat.ownerGradient(parent, animate)
 		end)
 	end
 	return g
-end
-
-function Chat.tagFolder()
-	if Chat.folder and Chat.folder.Parent then return Chat.folder end
-	local f = Instance.new("Folder")
-	f.Name = "AtsukoTags"
-	local ok = pcall(function() f.Parent = Gui.Parent or game:GetService("CoreGui") end)
-	if not ok or not f.Parent then f.Parent = Gui end
-	Chat.folder = f
-	return f
-end
-
-function Chat.syncTags()
-	local want = {}
-	if HUB.alive and Cmd.isOn("tags") then
-		for _, o in ipairs(Chat.onlineList()) do
-			local ch = o.player.Character
-			local head = ch and ch:FindFirstChild("Head")
-			if head then want[o.u] = { head = head, owner = o.owner } end
-		end
-	end
-	for u, t in pairs(Chat.tags) do
-		local w = want[u]
-		if not w or w.head ~= t.head or w.owner ~= t.owner then
-			pcall(function() t.gui:Destroy() end)
-			Chat.tags[u] = nil
-		end
-	end
-	for u, w in pairs(want) do
-		if not Chat.tags[u] then
-			local bb = Instance.new("BillboardGui")
-			bb.Name = "Tag" .. u
-			bb.Adornee = w.head
-			bb.Size = UDim2.fromOffset(120, 26)
-			bb.StudsOffsetWorldSpace = Vector3.new(0, 2.6, 0)
-			bb.AlwaysOnTop = true
-			bb.LightInfluence = 0
-			bb.MaxDistance = 150
-			bb.ResetOnSpawn = false
-			local pill = UI.new("Frame", { Name = "Pill", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(0, 22), AutomaticSize = Enum.AutomaticSize.X, BackgroundColor3 = Color3.fromRGB(22, 20, 30), BackgroundTransparency = 0.15 }, bb)
-			UI.corner(pill, 11)
-			UI.pad(pill, 10, 10, 0, 0)
-			local st = UI.stroke(pill, w.owner and Chat.PURPLE or T.stroke, 1.4, 0.15)
-			local lab = UI.new("TextLabel", { BackgroundTransparency = 1, Size = UDim2.fromOffset(0, 22), AutomaticSize = Enum.AutomaticSize.X, Font = FONT_B, TextSize = 13, TextColor3 = Color3.new(1, 1, 1), Text = w.owner and "Atsuko" or "Atsuko Hub" }, pill)
-			if w.owner then
-				Chat.ownerGradient(lab, true)
-				Chat.ownerGradient(st, true)
-			else
-				lab.TextColor3 = Color3.fromRGB(220, 215, 235)
-			end
-			bb.Parent = Chat.tagFolder()
-			Chat.tags[u] = { gui = bb, head = w.head, owner = w.owner }
-		end
-	end
 end
 
 -- the window ---------------------------------------------------------------------------------------
@@ -18362,7 +17930,7 @@ function Chat.appendRow(m)
 			UI.corner(tag, 8)
 			UI.pad(tag, 6, 6, 0, 0)
 			Chat.ownerGradient(tag, true)
-			UI.label(tag, { Text = "Atsuko", Font = FONT_B, TextSize = 9, TextColor3 = Color3.fromRGB(46, 28, 66), Size = UDim2.fromOffset(0, 15), AutomaticSize = Enum.AutomaticSize.X })
+			UI.label(tag, { Text = Core.OWNER_TAG, Font = FONT_B, TextSize = 9, TextColor3 = Color3.fromRGB(46, 28, 66), Size = UDim2.fromOffset(0, 15), AutomaticSize = Enum.AutomaticSize.X })
 		elseif m.d ~= m.n then
 			UI.label(head, { Name = "User", Text = "@" .. m.n, TextSize = 10, TextColor3 = T.dim, Size = UDim2.fromOffset(0, 16), AutomaticSize = Enum.AutomaticSize.X, LayoutOrder = 3 })
 		end
@@ -18398,7 +17966,6 @@ function Chat.appendRow(m)
 					Chat.msgs[c] = keep
 				end
 				Chat.online[m.u] = nil
-				Chat.syncTags()
 				Chat.renderList()
 			end)
 			chip("copy", "Copy @" .. m.n, T.text, function()
@@ -18473,7 +18040,7 @@ function Chat.drawStatus()
 				local names = {}
 				for i, o in ipairs(on) do
 					if i > 3 then break end
-					names[#names + 1] = o.owner and "Atsuko" or o.d
+					names[#names + 1] = o.owner and Core.OWNER_TAG or o.d
 				end
 				bits[1] = (#on == 1 and "1 hub user here: " or (#on .. " hub users here: ")) .. table.concat(names, ", ") .. (#on > 3 and "..." or "")
 			end
@@ -18533,9 +18100,6 @@ function Chat.settingsView(parent)
 		S.chatFilter = x
 		saveSettings()
 	end)
-	Ctl.toggle(parent, 5, "Tags above hub users", "Shows who uses the hub in your server, the owner gets the Atsuko tag", function() return Cmd.isOn("tags") end, function(x)
-		Cmd.set("tags", x, nil, true)
-	end)
 	local blocked = {}
 	for id, name in pairs(S.chatBlocked) do
 		blocked[#blocked + 1] = { id = id, name = tostring(name) }
@@ -18553,7 +18117,7 @@ function Chat.settingsView(parent)
 		end
 	end
 	if LP.UserId == Core.OWNER_ID then
-		section(parent, "Your Atsuko tag", 60)
+		section(parent, "Your " .. Core.OWNER_TAG .. " tag", 60)
 		local st = ({ ok = "Your tag is on, everyone sees it next to your name", checking = "Checking your key...", bad = "That key doesn't match", missing = "Paste your owner key to turn your tag on" })[Chat.keyState] or "Paste your owner key to turn your tag on"
 		Ctl.note(parent, 61, st)
 		Ctl.input(parent, 62, "Owner key", "atsuko-owner-key:v1:...", function() return "" end, function(x, enter)
@@ -18733,22 +18297,9 @@ if Core.fitHead then Core.fitHead() end
 hubConn(Players.PlayerRemoving:Connect(function(pl)
 	if Chat.online[pl.UserId] then
 		Chat.online[pl.UserId] = nil
-		Chat.syncTags()
 		Bus.fire("chatStatus")
 	end
 end))
-hubConn(Players.PlayerAdded:Connect(function(pl)
-	hubConn(pl.CharacterAdded:Connect(function()
-		task.wait(0.5)
-		if HUB.alive and Chat.online[pl.UserId] then Chat.syncTags() end
-	end))
-end))
-for _, pl in ipairs(Players:GetPlayers()) do
-	hubConn(pl.CharacterAdded:Connect(function()
-		task.wait(0.5)
-		if HUB.alive and Chat.online[pl.UserId] then Chat.syncTags() end
-	end))
-end
 
 Cmd.add({
 	id = "chat", name = "Hub chat", icon = "message-circle", cat = "Utility", kind = "action",
@@ -18765,23 +18316,6 @@ Cmd.add({
 		end
 		Chat.open()
 		return true
-	end,
-})
-Cmd.add({
-	id = "tags", name = "Hub user tags", icon = "users", cat = "Visual", kind = "toggle",
-	usage = "tags", aliases = { "tag" }, offNames = { "untag" },
-	desc = "Shows a tag above everyone in your server who uses Atsuko Hub (they show up once chat sees them).",
-	start = function()
-		if not S.chatOn then
-			S.chatOn = true
-			saveSettings()
-		end
-		Chat.start()
-		task.defer(Chat.syncTags)
-		return true
-	end,
-	stop = function()
-		task.defer(Chat.syncTags)
 	end,
 })
 
@@ -19230,7 +18764,7 @@ function Core.hotkey(name)
 	if Core.keyMatch(S.toggleKey, name) then
 		Panel.toggleAll()
 	elseif Core.keyMatch(S.cmdKey, name) then
-		Cmd.openBar(true)
+		Cmd.openBar(true, S.cmdKey)
 	elseif Core.keyMatch(S.playerKey, name) then
 		Player.toggle()
 	elseif Core.keyMatch(S.playerNextKey, name) then
@@ -19248,10 +18782,8 @@ hubConn(UserInputService.InputBegan:Connect(function(input, gpe)
 	end
 	if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
 	if waitingKey then
-		local f = waitingKey
-		waitingKey = nil
 		Core.held = nil
-		f(input.KeyCode)
+		waitingKey("began", input.KeyCode.Name)
 		return
 	end
 	local name = input.KeyCode.Name
@@ -19260,12 +18792,20 @@ hubConn(UserInputService.InputBegan:Connect(function(input, gpe)
 		Core.held = { name = name, at = os.clock(), clean = true }
 		return
 	end
-	if gpe then return end
+	-- some games grab keys for themselves, the hub's keys still work unless you're typing or in the Roblox menu
+	if gpe then
+		local ok, menu = pcall(function() return game:GetService("GuiService").MenuIsOpen end)
+		if ok and menu then return end
+	end
 	Core.hotkey(name)
 end))
 
 hubConn(UserInputService.InputEnded:Connect(function(input)
 	if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+	if waitingKey then
+		waitingKey("ended", input.KeyCode.Name)
+		return
+	end
 	local held = Core.held
 	if not held or held.name ~= input.KeyCode.Name then return end
 	Core.held = nil
@@ -19294,7 +18834,6 @@ function HUB.Destroy()
 	pcall(PlayersPage.clearFx)
 	pcall(Cmd.pal.close)
 	pcall(Chat.stop)
-	if Chat.folder then pcall(function() Chat.folder:Destroy() end) end
 	HUB.alive = false
 	for _, snd in pairs(Sfx.cache) do
 		pcall(function() snd:Destroy() end)
@@ -19602,7 +19141,7 @@ elseif Core.running > 0 then
 	notify("Atsuko Hub", Core.running .. (Core.running == 1 and " script is" or " scripts are") .. " still running", "ok")
 else
 	local ex = Home.executor ~= "unknown" and (" on " .. Home.executor) or ""
-	local key = (S.toggleKey ~= "" and UserInputService.KeyboardEnabled) and ("  ·  " .. (Core.KEY_NAMES[S.toggleKey] or S.toggleKey) .. " opens and closes it") or ""
+	local key = (S.toggleKey ~= "" and UserInputService.KeyboardEnabled) and ("  ·  " .. Core.keyShort(S.toggleKey) .. " opens and closes it") or ""
 	notify("Atsuko Hub", "v" .. HUB_VERSION .. " loaded" .. ex .. key, "ok")
 end
 
