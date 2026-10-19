@@ -1,5 +1,5 @@
 --[[
-	atsuko hub v1.1.0
+	atsuko hub v1.1.2
 	by atsukohakari
 
 	icons from lucide.dev (ISC), license in Hub/LUCIDE_LICENSE.txt
@@ -9,8 +9,10 @@ local SELF_CHUNK = (type(debug) == "table" and type(debug.info) == "function") a
 if not game:IsLoaded() then game.Loaded:Wait() end
 local Core = {}
 Core.SELF = SELF_CHUNK
+-- the owner's nickname: their chat tag, and the AI's name until someone changes it
+Core.OWNER_TAG = "Atsuko Hakari"
 
-local HUB_VERSION = "1.1.0"
+local HUB_VERSION = "1.1.2"
 local HUB_DIR = "Hub"
 local SRC = { owner = "atsukohakari", repo = "Atsuko", branch = "main" }
 local HOME_REPO = "https://raw.githubusercontent.com/" .. SRC.owner .. "/" .. SRC.repo .. "/" .. SRC.branch .. "/"
@@ -107,7 +109,7 @@ do
 	end
 	if type(old) == "table" and type(old.Destroy) == "function" then pcall(old.Destroy) end
 end
-local HUB = { alive = true, conns = {}, ready = false, version = "1.1.0" }
+local HUB = { alive = true, conns = {}, ready = false, version = "1.1.2" }
 GENV.__AtsukoHubInstance = HUB
 local function hubConn(c)
 	HUB.conns[#HUB.conns + 1] = c
@@ -341,9 +343,13 @@ function Net.request(method, url, headers, body)
 	local opts = { Url = url, Method = method, Headers = headers or {} }
 	if body ~= nil then opts.Body = body end
 	local ok, res = pcall(X.request, opts)
-	if not ok then return 0, Util.firstLine(res), {} end
+	if not ok then return 0, Util.firstLine(tostring(res)), {} end
 	if type(res) ~= "table" then return 0, "no response", {} end
-	return tonumber(res.StatusCode) or 0, type(res.Body) == "string" and res.Body or "", type(res.Headers) == "table" and res.Headers or {}
+	local code = tonumber(res.StatusCode) or 0
+	local resBody = type(res.Body) == "string" and res.Body or ""
+	-- some executors say why a request failed in StatusMessage instead of throwing
+	if code == 0 and resBody == "" then resBody = tostring(res.StatusMessage or res.Error or "no response") end
+	return code, resBody, type(res.Headers) == "table" and res.Headers or {}
 end
 
 function Net.header(headers, name)
@@ -449,6 +455,9 @@ local DEFAULTS = {
 	ytApi = "",
 	ytKey = "",
 	ytSearchKey = "",
+	myPic = "",
+	theme = "midnight",
+	themes = {},
 	editorFile = "",
 	editorFontSize = 13,
 	editorHighlight = true,
@@ -464,6 +473,29 @@ local FONT_SETS = {
 }
 local S = {}
 
+-- your own themes: up to 20, each with a name and #rrggbb colors (cards, text and accent can be empty, that means auto)
+function Core.normalizeThemes()
+	local function hex(x)
+		return type(x) == "string" and string.match(x, "^#%x%x%x%x%x%x$") and string.lower(x) or ""
+	end
+	local out, ids = {}, {}
+	for _, d in ipairs(type(S.themes) == "table" and S.themes or {}) do
+		if type(d) == "table" and hex(d.bg) ~= "" and #out < 20 then
+			local id = type(d.id) == "string" and string.match(d.id, "^c%d+_%d+$") and d.id or ("c" .. tostring(os.time()) .. "_" .. tostring(#out + 1))
+			if not ids[id] then
+				ids[id] = true
+				local name = Util.trim((string.gsub(tostring(d.name or ""), "%c", " ")))
+				local len = utf8.len(name)
+				if len and len > 24 then name = string.sub(name, 1, utf8.offset(name, 25) - 1) end
+				if name == "" or not len then name = "My theme" end
+				out[#out + 1] = { id = id, name = name, bg = hex(d.bg), card = hex(d.card), text = hex(d.text), accent = hex(d.accent) }
+			end
+		end
+	end
+	S.themes = out
+	if type(S.theme) ~= "string" or S.theme == "" then S.theme = "midnight" end
+end
+
 function Core.normalizeSettings()
 	S.uiScale = math.clamp(tonumber(S.uiScale) or 0.75, 0.5, 1.5)
 	S.bgTint = math.clamp(tonumber(S.bgTint) or 0.4, 0, 1)
@@ -473,6 +505,8 @@ function Core.normalizeSettings()
 	S.ytApi = Util.trim(tostring(S.ytApi or ""))
 	S.ytKey = Util.trim(tostring(S.ytKey or ""))
 	S.ytSearchKey = Util.trim(tostring(S.ytSearchKey or ""))
+	S.myPic = string.sub(Util.trim(tostring(S.myPic or "")), 1, 500)
+	Core.normalizeThemes()
 	local hist = {}
 	for _, h in ipairs(S.cmdHistory) do
 		if type(h) == "string" and h ~= "" and #hist < 20 and not table.find(hist, h) then hist[#hist + 1] = h end
@@ -4146,43 +4180,161 @@ HUB.gui = Gui
 Core.Stage = UI.new("Frame", { Name = "Stage", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 100 }, Root)
 Core.stageX, Core.stageY = 0, 0
 
--- background tint: every dark surface picks up a bit of the accent color
-local Theme = { list = nil, scanAt = -100, history = {}, size = 0 }
+-- themes: a theme sets the background, the cards, the text and the accent. the background tint then mixes a bit
+-- of the accent into every surface. every color a surface or a text has had is remembered, so a new theme
+-- can find everything on screen and recolor it
+local Theme = { list = nil, scanAt = -100, histS = {}, histT = {}, size = 0, fixed = setmetatable({}, { __mode = "k" }) }
+Core.TEXT_KEYS = { "text", "sub", "dim", "ink" }
+Core.BASE_TEXT = {}
+Core.MIDNIGHT = {}
+for _, k in ipairs(Core.TINTED) do
+	Core.MIDNIGHT[k] = Core.BASE[k]
+end
+for _, k in ipairs(Core.TEXT_KEYS) do
+	Core.MIDNIGHT[k] = T[k]
+	Core.BASE_TEXT[k] = T[k]
+end
+-- built-in themes. light ones get a deeper accent so it still stands out on white
+Core.THEMES = {
+	{ id = "midnight", name = "Midnight", bg = "#101115", card = "#1c1d23", text = "#f4f5f8", accent = "#c8a8ff", tint = 0.4 },
+	{ id = "black", name = "Pure Black", bg = "#000000", card = "#121214", text = "#f5f5f7", accent = "#c8a8ff", tint = 0 },
+	{ id = "sakura", name = "Sakura", bg = "#191016", card = "#2a1b25", text = "#fcf0f6", accent = "#ff98c8", tint = 0 },
+	{ id = "grape", name = "Grape", bg = "#140e1e", card = "#221932", text = "#f4eeff", accent = "#be8cff", tint = 0 },
+	{ id = "ocean", name = "Ocean", bg = "#0a111c", card = "#132030", text = "#ecf4fc", accent = "#60beff", tint = 0 },
+	{ id = "forest", name = "Forest", bg = "#0c1410", card = "#16241c", text = "#ecf7f0", accent = "#6edc96", tint = 0 },
+	{ id = "mocha", name = "Mocha", bg = "#17120f", card = "#28201b", text = "#faf2ea", accent = "#ffb278", tint = 0 },
+	{ id = "cloud", name = "Cloud", bg = "#eaecf2", card = "#fafbfd", text = "#1a1c24", accent = "#765af0", tint = 0 },
+	{ id = "milk", name = "Strawberry Milk", bg = "#faebf0", card = "#fff8fa", text = "#3c1e2d", accent = "#e85c96", tint = 0 },
+}
 function Theme.key(c)
 	return math.floor(c.R * 255 + 0.5) * 65536 + math.floor(c.G * 255 + 0.5) * 256 + math.floor(c.B * 255 + 0.5)
+end
+function Theme.round(c)
+	return Color3.fromRGB(math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
 end
 function Theme.tinted(base, acc, k)
 	if k <= 0 then return base end
 	local h, sat = acc:ToHSV()
 	local _, _, bv = base:ToHSV()
 	local target = Color3.fromHSV(h, math.min(0.85, sat * 0.9 + 0.12), math.min(1, bv * 1.15 + 0.012))
-	local c = base:Lerp(target, k)
-	return Color3.fromRGB(math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
+	return Theme.round(base:Lerp(target, k))
+end
+function Theme.light(c)
+	return 0.2126 * c.R + 0.7152 * c.G + 0.0722 * c.B > 0.5
+end
+function Theme.find(id)
+	for _, d in ipairs(Core.THEMES) do
+		if d.id == id then return d end
+	end
+	for _, d in ipairs(S.themes) do
+		if d.id == id then return d end
+	end
+	return nil
+end
+-- everything a theme needs, worked out from its background, cards and text (cards and text can be left on auto)
+function Theme.colors(def)
+	if def.id == "midnight" then return table.clone(Core.MIDNIGHT) end
+	local B = Core.hexColor(def.bg) or Core.MIDNIGHT.panel
+	local light = Theme.light(B)
+	local white, black = Color3.new(1, 1, 1), Color3.new(0, 0, 0)
+	local C = Core.hexColor(def.card) or B:Lerp(white, light and 0.7 or 0.07)
+	local X = Core.hexColor(def.text) or (light and Color3.fromRGB(26, 28, 36) or Color3.fromRGB(244, 245, 248))
+	local edge = light and white or black
+	local out = {
+		panel = B,
+		side = B:Lerp(C, 0.15),
+		head = B:Lerp(edge, 0.5),
+		pillBg = B:Lerp(edge, 0.45),
+		card = C,
+		card2 = C:Lerp(X, 0.055),
+		tabBg = C:Lerp(X, 0.014),
+		tabSel = C:Lerp(X, 0.14),
+		line = C:Lerp(X, 0.074),
+		text = X,
+		sub = X:Lerp(C, 0.4),
+		dim = X:Lerp(C, 0.65),
+		ink = light and Color3.fromRGB(250, 250, 252) or Color3.fromRGB(14, 15, 19),
+	}
+	-- no two parts may share the exact same color, or recoloring couldn't tell them apart
+	local seen = {}
+	for _, k in ipairs({ "panel", "side", "head", "pillBg", "card", "card2", "tabBg", "tabSel", "line", "text", "sub", "dim", "ink" }) do
+		local c = Theme.round(out[k])
+		local n = 0
+		while seen[Theme.key(c)] and n < 40 do
+			n += 1
+			local r, g, b = math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5)
+			b = b < 255 and b + 1 or b - 1
+			if n % 2 == 0 then g = g < 255 and g + 1 or g - 1 end
+			c = Color3.fromRGB(r, g, b)
+		end
+		seen[Theme.key(c)] = true
+		out[k] = c
+	end
+	out.stroke = out.tabSel
+	return out
+end
+function Theme.setBase(def)
+	local cols = Theme.colors(def)
+	for _, k in ipairs(Core.TINTED) do
+		Core.BASE[k] = cols[k]
+	end
+	for _, k in ipairs(Core.TEXT_KEYS) do
+		Core.BASE_TEXT[k] = cols[k]
+	end
 end
 function Theme.remember()
-	-- every color a surface has had, so we can always tell which surface it is
 	if Theme.size > 4000 then
-		Theme.history, Theme.size = {}, 0
+		Theme.histS, Theme.histT, Theme.size = {}, {}, 0
 	end
 	for _, name in ipairs(Core.TINTED) do
-		for _, c in ipairs({ Core.BASE[name], T[name] }) do
-			local k = Theme.key(c)
-			if not Theme.history[k] then
-				Theme.history[k] = name
-				Theme.size += 1
-			end
+		local k = Theme.key(Core.BASE[name])
+		if not Theme.histS[k] then
+			Theme.histS[k] = name
+			Theme.size += 1
 		end
 	end
+	for _, name in ipairs(Core.TINTED) do
+		Theme.histS[Theme.key(T[name])] = name
+		Theme.size += 1
+	end
+	for _, name in ipairs(Core.TEXT_KEYS) do
+		Theme.histT[Theme.key(T[name])] = name
+		Theme.size += 1
+	end
 end
-Theme.remember()
 function Theme.scan()
 	local list = {}
-	local hist = Theme.history
+	local hs, ht = Theme.histS, Theme.histT
+	local function both(o, prop)
+		local k = Theme.key(o[prop])
+		if hs[k] then
+			list[#list + 1] = { o, prop, hs }
+		elseif ht[k] then
+			list[#list + 1] = { o, prop, ht }
+		end
+	end
+	local function text(o, prop)
+		if ht[Theme.key(o[prop])] then list[#list + 1] = { o, prop, ht } end
+	end
+	-- theme pictures (Theme.fixed) keep their own colors
+	local fixed = Theme.fixed
 	for _, o in ipairs(Gui:GetDescendants()) do
-		if o:IsA("GuiObject") then
-			if hist[Theme.key(o.BackgroundColor3)] then list[#list + 1] = { o, "BackgroundColor3" } end
-		elseif o:IsA("UIStroke") then
-			if hist[Theme.key(o.Color)] then list[#list + 1] = { o, "Color" } end
+		if not fixed[o] then
+			if o:IsA("GuiObject") then
+				both(o, "BackgroundColor3")
+				if o:IsA("TextLabel") or o:IsA("TextButton") then
+					text(o, "TextColor3")
+				elseif o:IsA("TextBox") then
+					text(o, "TextColor3")
+					text(o, "PlaceholderColor3")
+				elseif o:IsA("ImageLabel") or o:IsA("ImageButton") then
+					text(o, "ImageColor3")
+				elseif o:IsA("ScrollingFrame") then
+					text(o, "ScrollBarImageColor3")
+				end
+			elseif o:IsA("UIStroke") then
+				both(o, "Color")
+			end
 		end
 	end
 	Theme.list = list
@@ -4196,13 +4348,17 @@ function Theme.apply(force)
 		if Theme.key(T[name]) ~= Theme.key(new) then changed = true end
 		T[name] = new
 	end
+	for _, name in ipairs(Core.TEXT_KEYS) do
+		local new = Core.BASE_TEXT[name]
+		if Theme.key(T[name]) ~= Theme.key(new) then changed = true end
+		T[name] = new
+	end
 	if not changed and not force then return end
 	if force or not Theme.list or os.clock() - Theme.scanAt > 3 then Theme.scan() end
 	Theme.remember()
-	local hist = Theme.history
 	local keep = {}
 	for _, it in ipairs(Theme.list) do
-		local o, prop = it[1], it[2]
+		local o, prop, hist = it[1], it[2], it[3]
 		if o.Parent then
 			keep[#keep + 1] = it
 			local name = hist[Theme.key(o[prop])]
@@ -4216,6 +4372,9 @@ function Theme.apply(force)
 	Bus.fire("theme")
 end
 Core.Theme = Theme
+if not Theme.find(S.theme) then S.theme = "midnight" end
+Theme.setBase(Theme.find(S.theme) or Core.THEMES[1])
+Theme.remember()
 Theme.apply(true)
 
 local PANEL_W = 292
@@ -5241,6 +5400,8 @@ do
 end
 
 Core.CHANGELOG = {
+	{ version = "1.1.2", notes = { "themes: a new themes tab in settings with 9 themes: midnight, pure black, sakura, grape, ocean, forest, mocha, and two light ones, cloud and strawberry milk", "a theme changes the whole hub: the background, the cards and buttons, the text and the accent", "make your own themes in the theme maker: pick the background and everything else follows it, or set the cards, text and accent yourself", "the hub changes as you pick colors in the theme maker, and closing it without saving puts everything back", "light backgrounds get dark text by themselves, dark ones get light text", "share themes: copy a theme's code and anyone can add it in settings > themes", "new theme command: say theme and a name, or just theme for the next one", "your themes come along in copy my settings, and resetting settings keeps them", "the ai is talkative now: it chats with you about anything, not just scripts, and it's still great at scripting", "new personality setting in ai settings > preferences: chatty, balanced or scripts only", "new thinking setting: quick answers faster, deep thinks longer on hard scripts", "fixed the ai saying to check your internet: it tries again by itself when a message gets dropped, answers faster, and tells you the real reason when something goes wrong", "test the connection button in ai settings > ai key" } },
+	{ version = "1.1.1", notes = { "new ai tab: ask for a script or how to fix one and it writes it for you, with copy and open in editor buttons on the code", "the ai can read the script in your editor: tap the code button next to the box and it goes with your message", "the ai is called Atsuko Hakari and has its own picture. its name is the big title on the ai tab, change the name and picture whenever you want", "personal preferences: tell the ai about you and how you want your answers, in settings > ai or in the ai's own settings. it reads them before every answer", "recent chats: your last 30 chats are saved, search them, open one to keep going or delete it (the clock button at the top of the ai tab)", "ai settings with 4 tabs: profile, preferences, ai key and chats. answer length, creativity, reply language, chat memory, remember chats and a heads-up when an answer is ready", "clean chat look: your messages on the right with your picture, answers with the ai's picture, copy and retry under each answer, and ideas to start with", "the ai works with a free google gemini key, or any openai-style service (openrouter, groq and more). your keys stay on your device", "the ai lives in its own file and only downloads when you open the tab, so the hub doesn't get bigger. an old copy of that file never opens on a newer hub, the tab tells you to update it", "pick your own profile picture in settings > general (a roblox image id or a picture link), it shows on home and in the ai chat", "search youtube for songs in music > add, then add them with one tap (needs a free youtube key, songs go through your converter)", "the command bar opens as soon as you press ; (or your own key), and the key doesn't end up in the box", "keys can be combos now: shift + ; makes : and the other shift symbols work too (! ? @ and more), plus ctrl + any key", "hub keys work even when the game uses the same key, just not while you're typing or in the roblox menu", "your converter and youtube keys are never in copy my settings", "the owner's chat tag says Atsuko Hakari now", "removed the colored fog and aurora sky commands" } },
 	{ version = "1.1.0", notes = { "smoother everywhere: switching pages and tabs doesn't snap or jump anymore, things on the left slide in from the left and things on the right slide in from the right", "home opens with the left cards coming in from the left and the right cards from the right", "runs and opens straight on home, and when you close it and open it again you're back on the page you left", "pc: alt (left or right) opens and closes it, change it in settings > general. the arrow on the side of the screen is only on phones now", "spotify moved into the music player: one player for your songs and spotify, with a whole new look", "lyrics show the line you're on big and the next line under it, plus a full lyrics tab", "new mini player with a lyrics button", "add songs from youtube and other links, they get saved in your music folder and the same song never gets added twice", "music keeps going on phones: if the game or the phone cuts the song off it picks it back up, and spotify stays logged in on phones that can't save files", "tap the dynamic island while a song is on to see it, with nothing playing it opens home", "new editor tab: write scripts, run them, save them, and pop it out into its own window you can move around", "atsuko's own scripts page is called atsuko script now. edit any of them and save your copy, it shows up in scripts > my scripts", "hub size setting, starts at 75%", "pick any color you want for the accent, and the background can take some of it too", "customize home: show, hide and move the cards, and add your own pictures, notes and clocks", "new command bar: suggestions as you type, arrow keys, tab to fill and your recent commands", "new commands: antifling, antivoid, antisit, tpwalk, swim, freecam, hipheight, light, edgejump, fixcam and lay", "running the hub again just tells you it's already running instead of making a second one, same for commands that are already on", "no more double notifications", "say -reload in chat to restart the hub, it tells you if anything broke", "studio dummy: stop really stops it now, none of its commands work until you run it again", "the dynamic island grows right out of the top bar when you tap it and shrinks back into it, same size and smooth", "drag the title to move the hub anywhere, the reset button in the corner (or running it again) puts it back", "home fits everything on the screen instead of scrolling (turn it off in customize home)", "spotify works with free accounts too, through discord: the song, the time, lyrics and the visualizer", "the visualizer bounces on spotify songs too", "hub chat: a server chat with the hub users in your server and a global chat with everyone, in a window you can move and resize. tap someone's picture to block them, bad words get covered up", "the hub's owner gets a purple-to-pink Atsuko tag in chat, and nobody else can fake it", "commands from 07hub (with permission): smooth fly, fly speed, freeze, orbit, head sit, teleport to a spot, copy position, waypoints, emotes, fps and ping, fps cap, colored fog and aurora sky", "video player for testing: youtube (through your converter), webm and mp4 links and roblox video ids, saved in your videos folder" } },
 	{ version = "1.0.8", notes = { "opening a script doesn't lag anymore, works with checks a little at a time in the background and remembers what it found", "works with shows 6 of each kind first, tap show all to see the rest", "studio dummy doesn't freeze the game when it starts anymore" } },
 	{ version = "1.0.7", notes = { "works with: open a script and the hub finds the guns, swords and hats it supports by itself, with the shop name and id, and shows which ones you're wearing or own", "studio dummy: run and stop from the hub only, no more -run / -stop", "studio dummy: works with the full stop rifle, and the align panel remembers each gun on its own (tap A on the touch buttons to open and close it)" } },
@@ -7880,8 +8041,10 @@ do
 		Size = UDim2.fromOffset(56, 56),
 		Position = UDim2.fromOffset(3, 3),
 		Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(LP.UserId) .. "&w=150&h=150",
+		ScaleType = Enum.ScaleType.Crop,
 	}, ring)
 	UI.corner(av, 28)
+	Core.myPicTargets = { av }
 	UI.label(w, { Name = "Name", Text = LP.DisplayName, Font = FONT_B, TextSize = 16, Position = UDim2.fromOffset(88, 22), Size = UDim2.new(1, -160, 0, 20), TextTruncate = Enum.TextTruncate.AtEnd })
 	UI.label(w, { Name = "User", Text = "@" .. LP.Name, TextSize = 11, TextColor3 = T.sub, Position = UDim2.fromOffset(88, 44), Size = UDim2.new(1, -100, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
 	local chip = UI.new("Frame", { Name = "Version", BackgroundColor3 = T.card2, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 16), Size = UDim2.fromOffset(56, 20) }, w)
@@ -8144,6 +8307,56 @@ function Core.imageSource(src, cb)
 	return nil
 end
 
+-- your own picture (Settings > General): a Roblox image ID or a link, or your Roblox avatar when it's empty
+Core.myPicState = { src = nil, id = nil, busy = false, err = nil }
+function Core.myPic()
+	local head = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(LP.UserId) .. "&w=150&h=150"
+	local src = S.myPic
+	if src == "" then return head, false end
+	local st = Core.myPicState
+	if st.src ~= src then st.src, st.id, st.busy, st.err = src, nil, false, nil end
+	if st.id then return st.id, true end
+	if not st.busy and not st.err then
+		st.busy = true
+		local id = Core.imageSource(src, function(got, why)
+			if st.src ~= src then return end
+			st.busy = false
+			if got then
+				st.id = got
+			else
+				st.err = why or "Couldn't load that picture"
+			end
+			Core.applyMyPic()
+		end)
+		if id then
+			st.id, st.busy = id, false
+			return id, true
+		elseif st.id then
+			return st.id, true
+		elseif st.err then
+			return head, false
+		elseif not string.find(src, "^https?://") then
+			st.busy, st.err = false, "That isn't a picture ID or link"
+		elseif not (HAS_FS and X.getcustomasset) then
+			st.busy, st.err = false, "Your executor can't show pictures from links, try a Roblox image ID"
+		end
+	end
+	return head, false
+end
+function Core.applyMyPic()
+	local id = Core.myPic()
+	local keep = {}
+	for _, img in ipairs(Core.myPicTargets) do
+		if img.Parent then
+			keep[#keep + 1] = img
+			img.Image = id
+		end
+	end
+	Core.myPicTargets = keep
+	Bus.fire("mypic")
+end
+Core.applyMyPic()
+
 Home.KINDS = {
 	picture = { name = "Picture", icon = "image" },
 	note = { name = "Note", icon = "notebook-text" },
@@ -8206,7 +8419,7 @@ function Home.buildCustom(e)
 			holder.Visible = false
 		elseif Util.trim(tostring(d.image or "")) == "" then
 			status.Text = "No picture yet, tap Customize"
-		else
+		elseif img.Image == "" and status.Text == "" then
 			status.Text = string.find(tostring(d.image), "^https?://") and "Loading..." or "That isn't a picture ID or link"
 		end
 		if d.caption and Util.trim(d.caption) ~= "" then
@@ -10292,6 +10505,13 @@ end
 -- it loads the first time you open the tab, and a saved copy covers you when GitHub can't be reached
 Core.AI_CACHE = LOCAL_DIR .. "/ai_module.lua"
 Core.AI_URL = HOME_REPO .. HUB_DIR .. "/AtsukoAI.lua"
+Core.AI_FILE = LOCAL_DIR .. "/ai.json"
+-- the AI file says which version of the hub's hooks it was made for, an older copy never runs on a newer hub
+Core.AI_LEVEL = 2
+function Core.aiLevel(src)
+	if type(src) ~= "string" or #src < 500 or not string.find(src, "^%s*return function%(ctx%)") then return 0 end
+	return tonumber(string.match(src, "AI%.level = (%d+)")) or 1
+end
 local AIPage = newPage({ id = "ai", title = "AI", icon = "sparkles" })
 AIPage.state = "idle"
 AIPage.head = function()
@@ -10337,6 +10557,16 @@ function Core.aiContext()
 		hubConn = hubConn,
 		LP = LP,
 		UserInputService = UserInputService,
+		ownerName = Core.OWNER_TAG,
+		aiPicUrl = HOME_REPO .. HUB_DIR .. "/ai.png",
+		asset = function(path)
+			if not X.getcustomasset then return nil end
+			local ok, id = pcall(X.getcustomasset, path)
+			if ok and type(id) == "string" and id ~= "" then return id end
+			return nil
+		end,
+		imageSource = Core.imageSource,
+		myPic = function() return Core.myPic() end,
 		refreshHead = function()
 			if Panel.open and Panel.page == "ai" then Panel.header(AIPage) end
 		end,
@@ -10367,14 +10597,22 @@ function Core.loadAI(force)
 	end
 	task.spawn(function()
 		if not X.loadstring then return fail("Your executor has no loadstring, so the AI can't load") end
-		local ok, src = Net.get(Core.AI_URL .. "?t=" .. os.time())
-		if ok and type(src) == "string" and #src > 500 and string.find(src, "AtsukoAI", 1, true) then
+		local ok, got = Net.get(Core.AI_URL .. "?t=" .. os.time())
+		local src
+		if ok and Core.aiLevel(got) >= Core.AI_LEVEL then
+			src = got
 			FS.write(Core.AI_CACHE, src)
 		else
-			src = FS.read(Core.AI_CACHE)
+			local saved = FS.read(Core.AI_CACHE)
+			if Core.aiLevel(saved) >= Core.AI_LEVEL then src = saved end
 		end
 		if not HUB.alive then return end
-		if type(src) ~= "string" or src == "" then return fail("Couldn't download the AI part (Hub/AtsukoAI.lua). Check your internet and try again.") end
+		if not src then
+			if ok and Core.aiLevel(got) > 0 or (ok and type(got) == "string" and string.find(got, "AtsukoAI", 1, true)) then
+				return fail("The AI file on GitHub (Hub/AtsukoAI.lua) is older than this hub. Upload the new one, wait a few minutes for GitHub to update, then try again.")
+			end
+			return fail("Couldn't download the AI part (Hub/AtsukoAI.lua). Check your internet and try again.")
+		end
 		local f, err = X.loadstring(src, "=AtsukoAI")
 		if type(f) ~= "function" then return fail("The AI part has a mistake in it: " .. Util.firstLine(err or "?")) end
 		local okRun, build = pcall(f)
@@ -10383,6 +10621,8 @@ function Core.loadAI(force)
 		if not okBuild then return fail("The AI part broke while opening: " .. Util.firstLine(e)) end
 		AIPage.state = "ready"
 		AIPage.loadingBox.Visible = false
+		if AIPage.wantSettings and AIPage.api and AIPage.api.toggleSettings then pcall(AIPage.api.toggleSettings, true) end
+		AIPage.wantSettings = nil
 		if Panel.open and Panel.page == "ai" then Panel.header(AIPage) end
 	end)
 end
@@ -13911,9 +14151,9 @@ Bus.on("playerFx", function()
 	if Panel.open and Panel.page == "players" then PlayersPage.render(PlayersPage.tab) end
 end)
 
-local Settings = newPage({ id = "settings", title = "Settings", icon = "settings", tabs = { "General", "Scripts", "Commands", "About" } })
+local Settings = newPage({ id = "settings", title = "Settings", icon = "settings", tabs = { "General", "Themes", "AI", "Scripts", "Commands", "About" } })
 Settings.head = function() return "Settings", "Atsuko Hub v" .. HUB_VERSION .. "  ·  make it yours" end
-Settings.views = { newScroll(Settings.frame, 0, true), newScroll(Settings.frame, 0, false), newScroll(Settings.frame, 0, false), newScroll(Settings.frame, 0, false) }
+Settings.views = { newScroll(Settings.frame, 0, true), newScroll(Settings.frame, 0, false), newScroll(Settings.frame, 0, false), newScroll(Settings.frame, 0, false), newScroll(Settings.frame, 0, false), newScroll(Settings.frame, 0, false) }
 Settings.controls = {}
 local waitingKey = nil
 
@@ -13950,6 +14190,11 @@ function Settings.applyAll()
 	if S.fpsCap > 0 then Core.applyFpsCap() end
 	UI.setFont(S.font)
 	Home.buildQuick()
+	Core.applyMyPic()
+	if not Theme.find(S.theme) then S.theme = "midnight" end
+	Theme.setBase(Theme.find(S.theme))
+	Theme.apply(true)
+	Bus.fire("themes")
 	for _, c in ipairs(Settings.controls) do
 		c.render(false)
 	end
@@ -14127,6 +14372,47 @@ end
 
 do
 	local v = Settings.views[1]
+	section(v, "You", -4)
+	local me = card(v, 76, -3)
+	me.Name = "MyPicture"
+	local ring = UI.new("Frame", { Name = "Ring", Size = UDim2.fromOffset(52, 52), Position = UDim2.fromOffset(12, 12) }, me)
+	UI.corner(ring, 26)
+	UI.accent(ring, "BackgroundColor3")
+	local av = UI.new("ImageLabel", { Name = "Avatar", BackgroundColor3 = T.card2, Size = UDim2.fromOffset(48, 48), Position = UDim2.fromOffset(2, 2), ScaleType = Enum.ScaleType.Crop, Image = Core.myPic() }, ring)
+	UI.corner(av, 24)
+	Core.myPicTargets[#Core.myPicTargets + 1] = av
+	UI.label(me, { Name = "Name", Text = LP.DisplayName, Font = FONT_B, TextSize = 13, Position = UDim2.fromOffset(76, 19), Size = UDim2.new(1, -88, 0, 18), TextTruncate = Enum.TextTruncate.AtEnd })
+	local status = UI.label(me, { Name = "Status", Text = "", TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(76, 39), Size = UDim2.new(1, -88, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+	local function drawStatus()
+		local st = Core.myPicState
+		local text, col = "Your Roblox avatar", T.sub
+		if S.myPic ~= "" then
+			if st.src == S.myPic and st.id then
+				text = "Your own picture"
+			elseif st.src == S.myPic and st.err then
+				text, col = st.err, T.yellow
+			else
+				text = "Loading your picture..."
+			end
+		end
+		status.Text = text
+		status.TextColor3 = col
+	end
+	Bus.on("mypic", drawStatus)
+	drawStatus()
+	reg(Ctl.input(v, -2, "Your picture", "Roblox image ID or a picture link", function() return S.myPic end, function(x)
+		x = string.sub(x, 1, 500)
+		if x == S.myPic then return end
+		if x ~= "" and not (string.match(x, "^%d+$") or string.find(x, "^https?://") or string.find(x, "^rbxassetid://") or string.find(x, "^rbxthumb://")) then
+			notify("Your picture", "That isn't a picture ID or link", "error", 2.5)
+			return
+		end
+		S.myPic = x
+		Core.myPicState.err = nil
+		saveSettings()
+		Core.applyMyPic()
+	end))
+	Ctl.note(v, -1, "Shows on Home and in the AI chat. Leave it empty to use your Roblox avatar.")
 	section(v, "Look", 1)
 	local sw = card(v, 76, 2)
 	sw.Name = "Accent"
@@ -14457,8 +14743,616 @@ do
 	end
 end
 
+-- Themes ---------------------------------------------------------------------------------------------
+-- switching the whole hub to a theme. a built-in theme brings its own accent and tint, your own themes
+-- keep the exact colors you picked (no tint), and keep your accent unless you gave the theme one
+function Core.setAccentColor(c)
+	for _, a in ipairs(Core.ACCENTS) do
+		if Theme.key(a[2]) == Theme.key(c) then
+			S.accent = a[1]
+			S.rainbow = false
+			rainbowColor = nil
+			return
+		end
+	end
+	S.accent = "Custom"
+	S.accentHex = Util.hex(c)
+	S.rainbow = false
+	rainbowColor = nil
+end
+function Core.applyThemeDef(def, final)
+	Theme.setBase(def)
+	local acc = Core.hexColor(def.accent)
+	if acc then Core.setAccentColor(acc) end
+	S.bgTint = def.tint or 0
+	UI.applyAccent(not final)
+	Theme.apply(final)
+	if final then
+		for _, c in ipairs(Settings.controls) do
+			pcall(c.render, false)
+		end
+	end
+end
+function Core.setTheme(id, quiet)
+	local def = Theme.find(id) or Core.THEMES[1]
+	S.theme = def.id
+	Core.applyThemeDef(def, true)
+	saveSettings()
+	Bus.fire("themes")
+	if not quiet then notify("Theme", def.name, "ok", 1.5) end
+	return def
+end
+function Core.allThemes()
+	local out = {}
+	for _, d in ipairs(Core.THEMES) do
+		out[#out + 1] = d
+	end
+	for _, d in ipairs(S.themes) do
+		out[#out + 1] = d
+	end
+	return out
+end
+-- a theme as text you can share, and back
+function Core.themeCode(def)
+	return jsonEncode({ atsukoTheme = 1, name = def.name, bg = def.bg, card = def.card or "", text = def.text or "", accent = def.accent or "" })
+end
+function Core.addThemeFromCode(code)
+	local d = jsonDecode(Util.trim(tostring(code or "")))
+	if type(d) ~= "table" or type(d.bg) ~= "string" or not Core.hexColor(d.bg) then return nil, "That isn't a theme code" end
+	if #S.themes >= 20 then return nil, "You have 20 themes already, delete one first" end
+	local def = { id = "c" .. tostring(os.time()) .. "_" .. tostring(math.random(100, 999)), name = tostring(d.name or "Shared theme"), bg = d.bg, card = d.card, text = d.text, accent = d.accent }
+	S.themes[#S.themes + 1] = def
+	Core.normalizeThemes()
+	return S.themes[#S.themes]
+end
+
+-- a color picker you can put anywhere: drag in the square for the shade, the bar for the color, or type a hex code
+function Core.colorPicker(parent, order, getColor, onPick)
+	local P = {}
+	local pc = card(parent, 196, order)
+	pc.Name = "Picker"
+	P.frame = pc
+	P.h, P.s, P.v = getColor():ToHSV()
+	local sq = UI.new("Frame", { Name = "Square", BackgroundColor3 = Color3.fromHSV(P.h, 1, 1), Position = UDim2.fromOffset(12, 12), Size = UDim2.new(1, -24, 0, 110), ClipsDescendants = true, Active = true }, pc)
+	UI.corner(sq, 10)
+	local white = UI.new("Frame", { Name = "White", BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, Size = UDim2.fromScale(1, 1) }, sq)
+	UI.corner(white, 10)
+	UI.new("UIGradient", { Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1) }) }, white)
+	local black = UI.new("Frame", { Name = "Black", BackgroundColor3 = Color3.new(0, 0, 0), BorderSizePixel = 0, Size = UDim2.fromScale(1, 1) }, sq)
+	UI.corner(black, 10)
+	UI.new("UIGradient", { Rotation = 90, Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0) }) }, black)
+	local dot = UI.new("Frame", { Name = "Dot", AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(14, 14), ZIndex = 3 }, sq)
+	UI.corner(dot, 7)
+	UI.stroke(dot, Color3.new(1, 1, 1), 2, 0)
+	local hue = UI.new("Frame", { Name = "Hue", BackgroundColor3 = Color3.new(1, 1, 1), Position = UDim2.fromOffset(12, 132), Size = UDim2.new(1, -24, 0, 12), Active = true }, pc)
+	UI.corner(hue, 6)
+	local hseq = {}
+	for k = 0, 6 do
+		hseq[#hseq + 1] = ColorSequenceKeypoint.new(k / 6, Color3.fromHSV(k / 6 % 1, 1, 1))
+	end
+	UI.new("UIGradient", { Color = ColorSequence.new(hseq) }, hue)
+	local hknob = UI.new("Frame", { Name = "Knob", AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(16, 16), ZIndex = 3 }, hue)
+	UI.corner(hknob, 8)
+	UI.stroke(hknob, Color3.new(1, 1, 1), 2, 0)
+	local preview = UI.new("Frame", { Name = "Preview", Position = UDim2.fromOffset(12, 156), Size = UDim2.fromOffset(28, 28) }, pc)
+	UI.corner(preview, 8)
+	UI.stroke(preview, T.stroke, 1, 0.3)
+	local hexBox = UI.new("TextBox", {
+		Name = "Hex",
+		BackgroundColor3 = T.card2,
+		Position = UDim2.fromOffset(46, 156),
+		Size = UDim2.new(0.5, -40, 0, 28),
+		Font = Enum.Font.Code,
+		TextSize = 12,
+		TextColor3 = T.text,
+		PlaceholderText = "#101115",
+		PlaceholderColor3 = T.dim,
+		Text = "",
+		ClearTextOnFocus = false,
+	}, pc)
+	UI.corner(hexBox, 8)
+	local rgb = UI.label(pc, { Name = "RGB", Text = "", TextSize = 10, TextColor3 = T.sub, TextXAlignment = Enum.TextXAlignment.Right, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 156), Size = UDim2.new(0.5, -20, 0, 28), TextTruncate = Enum.TextTruncate.AtEnd })
+	for _, o in ipairs({ sq, dot, hknob, preview }) do
+		Theme.fixed[o] = true
+	end
+	local last = 0
+	function P.draw()
+		local c = Color3.fromHSV(P.h, P.s, P.v)
+		sq.BackgroundColor3 = Color3.fromHSV(P.h, 1, 1)
+		dot.Position = UDim2.fromScale(P.s, 1 - P.v)
+		dot.BackgroundColor3 = c
+		hknob.Position = UDim2.fromScale(P.h, 0.5)
+		hknob.BackgroundColor3 = Color3.fromHSV(P.h, 1, 1)
+		preview.BackgroundColor3 = c
+		if UserInputService:GetFocusedTextBox() ~= hexBox then hexBox.Text = Util.hex(c) end
+		rgb.Text = string.format("R %d  G %d  B %d", math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
+		return c
+	end
+	function P.set(c)
+		P.h, P.s, P.v = c:ToHSV()
+		P.draw()
+	end
+	local function live(final)
+		local c = P.draw()
+		if final or os.clock() - last > 0.12 then
+			last = os.clock()
+			onPick(Theme.round(c), final)
+		end
+	end
+	local function dragOn(target, onPos)
+		target.InputBegan:Connect(function(input)
+			if input.UserInputType ~= MOUSE1 and input.UserInputType ~= TOUCH then return end
+			if Drag.cur then return end
+			local scroller = target:FindFirstAncestorOfClass("ScrollingFrame")
+			if scroller then scroller.ScrollingEnabled = false end
+			local function update(pos)
+				local ap, as = target.AbsolutePosition, target.AbsoluteSize
+				if as.X <= 0 or as.Y <= 0 then return end
+				onPos(math.clamp((pos.X - ap.X) / as.X, 0, 1), math.clamp((pos.Y - ap.Y) / as.Y, 0, 1))
+				live(false)
+			end
+			update(input.Position)
+			Drag.start(input, update, function()
+				if scroller and scroller.Parent then scroller.ScrollingEnabled = true end
+				live(true)
+			end)
+		end)
+	end
+	dragOn(sq, function(x, y)
+		P.s, P.v = x, 1 - y
+	end)
+	dragOn(hue, function(x)
+		P.h = math.min(x, 0.999)
+	end)
+	hexBox.FocusLost:Connect(function()
+		local c = Core.hexColor(Util.trim(hexBox.Text))
+		if not c then
+			hexBox.Text = Util.hex(Color3.fromHSV(P.h, P.s, P.v))
+			notify("That isn't a color", "Use six hex digits, like #ff8fc8", "error", 2.5)
+			return
+		end
+		P.set(c)
+		onPick(c, true)
+	end)
+	P.draw()
+	return P
+end
+
+-- a little picture of a theme: its background, a card with text on it and the accent
+function Theme.tile(parent, def, pos, size, selected)
+	local cols = Theme.colors(def)
+	local acc = Core.hexColor(def.accent) or Core.baseAccent()
+	local b = UI.button(parent, { Name = "Theme_" .. def.id, BackgroundColor3 = T.card, Position = pos, Size = size })
+	UI.corner(b, 14)
+	if selected then
+		local st = UI.stroke(b, accentColor(), 2, 0)
+		UI.accent(st, "Color")
+	end
+	local pv = UI.new("Frame", { Name = "Preview", BackgroundColor3 = cols.panel, Position = UDim2.fromOffset(6, 6), Size = UDim2.new(1, -12, 0, 60) }, b)
+	UI.corner(pv, 10)
+	local cardF = UI.new("Frame", { Name = "Card", BackgroundColor3 = cols.card, Position = UDim2.fromOffset(8, 8), Size = UDim2.new(1, -40, 1, -16) }, pv)
+	UI.corner(cardF, 7)
+	local l1 = UI.new("Frame", { BackgroundColor3 = cols.text, BorderSizePixel = 0, Position = UDim2.fromOffset(8, 9), Size = UDim2.new(0.62, 0, 0, 5) }, cardF)
+	UI.corner(l1, 3)
+	local l2 = UI.new("Frame", { BackgroundColor3 = cols.sub, BorderSizePixel = 0, Position = UDim2.fromOffset(8, 19), Size = UDim2.new(0.42, 0, 0, 4) }, cardF)
+	UI.corner(l2, 2)
+	local pill = UI.new("Frame", { BackgroundColor3 = acc, BorderSizePixel = 0, Position = UDim2.fromOffset(8, 29), Size = UDim2.fromOffset(24, 7) }, cardF)
+	UI.corner(pill, 4)
+	local dotF = UI.new("Frame", { BackgroundColor3 = acc, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 8), Size = UDim2.fromOffset(16, 16) }, pv)
+	UI.corner(dotF, 8)
+	local sq2 = UI.new("Frame", { BackgroundColor3 = cols.card2, AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -8, 1, -8), Size = UDim2.fromOffset(16, 16) }, pv)
+	UI.corner(sq2, 5)
+	for _, o in ipairs({ pv, cardF, l1, l2, pill, dotF, sq2 }) do
+		Theme.fixed[o] = true
+	end
+	UI.label(b, { Name = "ThemeName", Text = def.name, Font = FONT_B, TextSize = 11, TextColor3 = T.text, Position = UDim2.fromOffset(10, 70), Size = UDim2.new(1, selected and -36 or -20, 0, 18), TextTruncate = Enum.TextTruncate.AtEnd })
+	if selected then
+		local ic = UI.icon("check", 13, accentColor(), b, { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -10, 0, 72) })
+		UI.accent(ic, "ImageColor3")
+	end
+	UI.pressable(b, 0.96)
+	return b
+end
+
+-- the theme maker: pick colors and the whole hub changes as you go. closing it without saving puts things back
+Core.QUICK_COLORS = {
+	bg = { "#000000", "#101115", "#0a111c", "#140e1e", "#191016", "#0c1410", "#eaecf2", "#faebf0" },
+	card = { "#121214", "#1c1d23", "#132030", "#221932", "#2a1b25", "#16241c", "#fafbfd", "#fff8fa" },
+	text = { "#ffffff", "#f4f5f8", "#ecf4fc", "#fcf0f6", "#d8dae2", "#1a1c24", "#2a2140", "#3c1e2d" },
+	accent = { "#c8a8ff", "#ff98c8", "#7ac4ff", "#70e4b4", "#ffb482", "#ffd264", "#765af0", "#e85c96" },
+}
+Core.THEME_SLOTS = {
+	{ "bg", "Background", "the color behind everything" },
+	{ "card", "Cards and buttons", "auto picks one from the background" },
+	{ "text", "Text", "auto picks light or dark text" },
+	{ "accent", "Accent", "empty keeps your accent" },
+}
+function Core.themeMaker(editId)
+	local custom = nil
+	for _, d in ipairs(S.themes) do
+		if editId and d.id == editId then custom = d end
+	end
+	local base = custom or Theme.find(S.theme) or Core.THEMES[1]
+	local editing = custom ~= nil
+	-- a new theme starts from the background you have now, with cards and text on auto and your accent
+	local draft = { id = "__draft", name = "My theme", bg = base.bg, card = "", text = "", accent = "" }
+	if editing then
+		draft = { id = "__draft", name = custom.name, bg = custom.bg, card = custom.card or "", text = custom.text or "", accent = custom.accent or "" }
+	end
+	local open = Win.get("thememaker")
+	if open then open:close(true) end
+	local before = { theme = S.theme, accent = S.accent, accentHex = S.accentHex, rainbow = S.rainbow, tint = S.bgTint }
+	local done = false
+	local slot = "bg"
+	local function current()
+		local cols = Theme.colors(draft)
+		if slot == "accent" then return Core.hexColor(draft.accent) or Core.baseAccent() end
+		if slot == "bg" then return cols.panel end
+		if slot == "card" then return cols.card end
+		return cols.text
+	end
+	local function revert()
+		S.theme = before.theme
+		S.accent, S.accentHex, S.rainbow, S.bgTint = before.accent, before.accentHex, before.rainbow, before.tint
+		Theme.setBase(Theme.find(S.theme) or Core.THEMES[1])
+		UI.applyAccent(true)
+		Theme.apply(true)
+		for _, c in ipairs(Settings.controls) do
+			pcall(c.render, false)
+		end
+		Bus.fire("themes")
+	end
+	return Win.show("thememaker", {
+		title = editing and ("Edit " .. base.name) or "Theme maker",
+		sub = "the hub changes as you pick",
+		icon = "palette",
+		w = 300,
+		h = 520,
+		minW = 260,
+		maxW = 400,
+		minH = 300,
+		maxH = 700,
+		onClose = function()
+			if not done then revert() end
+		end,
+		build = function(w, body)
+			local rows, picker, autoBtn, autoHolder, quick = {}, nil, nil, nil, nil
+			local function preview(final)
+				if draft.accent == "" then
+					S.accent, S.accentHex, S.rainbow = before.accent, before.accentHex, before.rainbow
+				end
+				Core.applyThemeDef({ id = draft.id, bg = draft.bg, card = draft.card, text = draft.text, accent = draft.accent, tint = 0 }, final)
+			end
+			local function drawRows()
+				local cols = Theme.colors(draft)
+				for _, r in ipairs(rows) do
+					local key = r.key
+					local val = draft[key]
+					local shown = key == "bg" and cols.panel or key == "card" and cols.card or key == "text" and cols.text or (Core.hexColor(val) or Core.baseAccent())
+					r.sw.BackgroundColor3 = shown
+					r.value.Text = val ~= "" and string.upper(val) or (key == "accent" and "Yours" or "Auto")
+					r.stroke.Transparency = key == slot and 0 or 1
+					r.stroke.Color = accentColor()
+				end
+				if autoBtn then
+					autoHolder.Visible = slot ~= "bg"
+					autoBtn.set(nil, slot == "accent" and "Keep my accent" or "Use auto", T.text)
+				end
+				if quick then
+					for i, q in ipairs(quick) do
+						q.BackgroundColor3 = Core.hexColor(Core.QUICK_COLORS[slot][i])
+					end
+				end
+			end
+			local nameBox = Ctl.input(body, 1, "Name", "My theme", function() return draft.name end, function(x)
+				x = Util.trim((string.gsub(x, "%c", " ")))
+				if x ~= "" then draft.name = x end
+			end)
+			nameBox.row.Name = "ThemeName"
+			section(body, "Colors", 2)
+			for i, sl in ipairs(Core.THEME_SLOTS) do
+				local r = { key = sl[1] }
+				local b = UI.button(body, { Name = "Slot_" .. sl[1], BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 46), LayoutOrder = 2 + i })
+				UI.corner(b, 12)
+				r.stroke = UI.stroke(b, accentColor(), 1.5, 1)
+				r.sw = UI.new("Frame", { Name = "Swatch", Position = UDim2.fromOffset(10, 9), Size = UDim2.fromOffset(28, 28) }, b)
+				UI.corner(r.sw, 8)
+				UI.stroke(r.sw, T.stroke, 1, 0.2)
+				Theme.fixed[r.sw] = true
+				UI.label(b, { Text = sl[2], TextSize = 12, Position = UDim2.fromOffset(48, 7), Size = UDim2.new(1, -130, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+				UI.label(b, { Text = sl[3], TextSize = 9, TextColor3 = T.dim, Position = UDim2.fromOffset(48, 24), Size = UDim2.new(1, -130, 0, 13), TextTruncate = Enum.TextTruncate.AtEnd })
+				r.value = UI.label(b, { Name = "Value", Text = "", Font = Enum.Font.Code, TextSize = 11, TextColor3 = T.sub, TextXAlignment = Enum.TextXAlignment.Right, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 0), Size = UDim2.new(0, 76, 1, 0) })
+				Ctl.hoverable(b)
+				b.Activated:Connect(function()
+					slot = sl[1]
+					picker.set(current())
+					drawRows()
+				end)
+				rows[#rows + 1] = r
+			end
+			picker = Core.colorPicker(body, 10, current, function(c, final)
+				draft[slot] = Util.hex(c)
+				drawRows()
+				preview(final)
+			end)
+			local qrow = UI.new("Frame", { Name = "Quick", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 26), LayoutOrder = 11 }, body)
+			quick = {}
+			for i = 1, 8 do
+				local q = UI.button(qrow, { Name = "Quick" .. i, Position = UDim2.new((i - 1) / 8, 2, 0, 0), Size = UDim2.new(1 / 8, -4, 1, 0) })
+				UI.corner(q, 8)
+				UI.stroke(q, T.stroke, 1, 0.2)
+				Theme.fixed[q] = true
+				UI.pressable(q, 0.85)
+				q.Activated:Connect(function()
+					local c = Core.hexColor(Core.QUICK_COLORS[slot][i])
+					if not c then return end
+					draft[slot] = Util.hex(c)
+					picker.set(c)
+					drawRows()
+					preview(true)
+				end)
+				quick[i] = q
+			end
+			local ab, abHolder = Ctl.buttons(body, 12, { { "rotate-ccw", "Use auto", function()
+				if slot == "bg" then return end
+				draft[slot] = ""
+				picker.set(current())
+				drawRows()
+				preview(true)
+			end } }, 34)
+			autoBtn, autoHolder = ab[1], abHolder
+			Ctl.note(body, 13, "Pick the background and the rest follows it, or set each one yourself. Background tint and opacity are in Settings > General.")
+			local btns = { { "check", editing and "Save changes" or "Save theme", function()
+				local name = Util.trim(draft.name)
+				if name == "" then name = "My theme" end
+				local def
+				if editing then
+					def = Theme.find(editId)
+				end
+				if not def then
+					if #S.themes >= 20 then return notify("Theme", "You have 20 themes already, delete one first", "error", 3) end
+					def = { id = "c" .. tostring(os.time()) .. "_" .. tostring(math.random(100, 999)) }
+					S.themes[#S.themes + 1] = def
+				end
+				def.name, def.bg, def.card, def.text, def.accent = name, draft.bg, draft.card, draft.text, draft.accent
+				Core.normalizeThemes()
+				done = true
+				Core.setTheme(def.id, true)
+				notify("Theme saved", name .. " is on now", "ok", 2)
+				w:close()
+			end, T.ink } }
+			local saveRow = Ctl.buttons(body, 14, btns, 38)
+			saveRow[1].btn.Name = "Save"
+			UI.accent(saveRow[1].btn, "BackgroundColor3")
+			local more = { { "x", "Cancel", function() w:close() end } }
+			if editing then
+				more[#more + 1] = { "copy", "Copy code", function() copyText(Core.themeCode(draft), "Theme code") end }
+			end
+			Ctl.buttons(body, 15, more, 34)
+			if editing then
+				Ctl.action(body, 16, "Delete this theme", "trash-2", true, function()
+					for i, d in ipairs(S.themes) do
+						if d.id == editId then
+							table.remove(S.themes, i)
+							break
+						end
+					end
+					done = true
+					if before.theme == editId then
+						Core.setTheme("midnight", true)
+					else
+						revert()
+						saveSettings()
+					end
+					notify("Theme", "Deleted", "ok", 1.5)
+					w:close()
+				end, true)
+			end
+			drawRows()
+			preview(true)
+		end,
+	})
+end
+
 do
 	local v = Settings.views[2]
+	local Themes = {}
+	Settings.themes = Themes
+	function Themes.grid(order, list, mine)
+		local items = {}
+		for _, d in ipairs(list) do
+			items[#items + 1] = d
+		end
+		if mine and #list < 20 then items[#items + 1] = "make" end
+		local rowF
+		for i, d in ipairs(items) do
+			if i % 2 == 1 then rowF = UI.new("Frame", { Name = "ThemeRow", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 96), LayoutOrder = order + (i - 1) // 2 }, v) end
+			local pos = UDim2.new(((i - 1) % 2) * 0.5, ((i - 1) % 2) * 4, 0, 0)
+			local size = UDim2.new(0.5, -4, 1, 0)
+			if d == "make" then
+				local b = UI.button(rowF, { Name = "MakeTheme", BackgroundColor3 = T.card, Position = pos, Size = size })
+				UI.corner(b, 14)
+				local st = UI.stroke(b, accentColor(), 1, 0.5)
+				UI.accent(st, "Color")
+				local ic = UI.icon("plus", 18, accentColor(), b, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, -10) })
+				UI.accent(ic, "ImageColor3")
+				UI.label(b, { Text = "Make a theme", Font = FONT_B, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.new(0, 0, 0.5, 6), Size = UDim2.new(1, 0, 0, 16) })
+				Ctl.hoverable(b)
+				b.Activated:Connect(function() Core.themeMaker(nil) end)
+			else
+				local b = Theme.tile(rowF, d, pos, size, S.theme == d.id)
+				b.Activated:Connect(function()
+					if S.theme ~= d.id then Core.setTheme(d.id) end
+				end)
+				if mine then
+					local ed = UI.button(b, { Name = "Edit", BackgroundColor3 = T.card, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -10, 0, 10), Size = UDim2.fromOffset(26, 26), ZIndex = 3 })
+					UI.corner(ed, 13)
+					UI.icon("pencil", 12, T.text, ed, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), ZIndex = 3 })
+					UI.pressable(ed, 0.85)
+					ed.Activated:Connect(function() Core.themeMaker(d.id) end)
+				end
+			end
+		end
+	end
+	function Themes.render()
+		clearList(v)
+		local hero = card(v, 64, 1)
+		hero.Name = "ThemeHero"
+		local box = UI.new("Frame", { BackgroundTransparency = 0.82, Size = UDim2.fromOffset(36, 36), Position = UDim2.fromOffset(12, 14) }, hero)
+		UI.corner(box, 18)
+		UI.accent(box, "BackgroundColor3")
+		UI.accent(UI.icon("palette", 17, accentColor(), box, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) }), "ImageColor3")
+		local cur = Theme.find(S.theme) or Core.THEMES[1]
+		UI.label(hero, { Text = cur.name, Font = FONT_B, TextSize = 14, Position = UDim2.fromOffset(58, 13), Size = UDim2.new(1, -150, 0, 18), TextTruncate = Enum.TextTruncate.AtEnd })
+		UI.label(hero, { Text = "Your theme right now", TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(58, 33), Size = UDim2.new(1, -150, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+		local mk = UI.button(hero, { Name = "Make", AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.5, 0), Size = UDim2.fromOffset(84, 30) })
+		UI.corner(mk, 15)
+		UI.accent(mk, "BackgroundColor3")
+		iconText(mk, "plus", "Make one", T.ink, 10)
+		UI.pressable(mk, 0.92)
+		mk.Activated:Connect(function() Core.themeMaker(nil) end)
+		section(v, "Themes", 2)
+		Themes.grid(3, Core.THEMES, false)
+		section(v, "Your themes", 20)
+		Themes.grid(21, S.themes, true)
+		Ctl.note(v, 40, "Your own themes keep the exact colors you pick. Tap the pencil to change one, share it with Copy code. Up to 20.")
+		section(v, "Add a shared theme", 41)
+		local imp
+		imp = Ctl.input(v, 42, "Theme code", "paste a theme code here", function() return "" end, nil, { raw = true })
+		Ctl.buttons(v, 43, { { "download", "Add theme", function()
+			local def, why = Core.addThemeFromCode(imp.box.Text)
+			if not def then return notify("Theme", why, "error", 2.5) end
+			imp.box.Text = ""
+			Core.setTheme(def.id, true)
+			notify("Theme added", def.name .. " is on now", "ok", 2)
+		end } })
+		section(v, "More", 50)
+		Ctl.action(v, 51, "Accent, tint and opacity", "sliders-horizontal", false, function() Panel.setTab(Settings, 1) end)
+		Ctl.action(v, 52, "Back to Midnight", "rotate-ccw", false, function() Core.setTheme("midnight") end)
+	end
+	Bus.on("themes", function() Themes.render() end)
+	Themes.render()
+end
+
+Cmd.add({
+	id = "theme",
+	name = "Theme",
+	icon = "palette",
+	cat = "Visual",
+	kind = "action",
+	usage = "theme [name]",
+	desc = "Switches the hub's theme. Say a theme's name, or nothing for the next one.",
+	run = function(arg)
+		local list = Core.allThemes()
+		arg = string.lower(Util.trim(tostring(arg or "")))
+		local pick
+		if arg == "" then
+			local at = 0
+			for i, d in ipairs(list) do
+				if d.id == S.theme then at = i end
+			end
+			pick = list[at % #list + 1]
+		else
+			for _, d in ipairs(list) do
+				if string.lower(d.name) == arg or d.id == arg then pick = d end
+			end
+			if not pick then
+				for _, d in ipairs(list) do
+					if not pick and string.find(string.lower(d.name), arg, 1, true) then pick = d end
+				end
+			end
+		end
+		if not pick then
+			notify("Theme", "No theme called " .. arg, "error", 2)
+			return false
+		end
+		Core.setTheme(pick.id)
+		return true
+	end,
+})
+
+-- Settings > AI: personal preferences and the AI's name and picture. they live in ai.json with the rest of the AI settings,
+-- so they work the same whether the AI tab has been opened yet or not
+function Core.aiGet(field)
+	local api = AIPage.api
+	if api and api.cfg then return api.cfg[field] end
+	local data = jsonDecode(FS.read(Core.AI_FILE) or "")
+	if type(data) ~= "table" then data = GENV.__AtsukoAIConfig end
+	return type(data) == "table" and data[field] or nil
+end
+function Core.aiSet(field, value)
+	local api = AIPage.api
+	if api and api.set then return api.set(field, value) end
+	if field == "botPic" and value ~= "" and not (string.match(value, "^%d+$") or string.find(value, "^https?://") or string.find(value, "^rbxassetid://") or string.find(value, "^rbxthumb://")) then
+		return false, "That isn't a picture ID or link"
+	end
+	local data = jsonDecode(FS.read(Core.AI_FILE) or "")
+	if type(data) ~= "table" then data = type(GENV.__AtsukoAIConfig) == "table" and table.clone(GENV.__AtsukoAIConfig) or {} end
+	data[field] = value
+	GENV.__AtsukoAIConfig = table.clone(data)
+	local enc = jsonEncode(data)
+	if enc then FS.write(Core.AI_FILE, enc) end
+	Bus.fire("aicfg")
+	return true
+end
+
+do
+	local v = Settings.views[3]
+	local inputs = {}
+	local function str(field)
+		local x = Core.aiGet(field)
+		return type(x) == "string" and x or ""
+	end
+	local function cutTo(x, n)
+		local len = utf8.len(x)
+		if not len then return string.sub(x, 1, n) end
+		if len > n then return string.sub(x, 1, utf8.offset(x, n + 1) - 1) end
+		return x
+	end
+	local function setTo(field, x, okText)
+		local before = str(field)
+		local ok, why = Core.aiSet(field, x)
+		if not ok then
+			notify("AI", why or "Couldn't save that", "error", 2.5)
+		elseif okText and str(field) ~= before then
+			notify("AI", okText, "ok", 2)
+		end
+	end
+	section(v, "Personal preferences", 1)
+	inputs[1] = Ctl.input(v, 2, "What should the AI know about you?", "Like: call me Kai, I'm new to scripting, I play on my phone, always add a button to turn it off", function() return str("prefs") end, function(x)
+		setTo("prefs", cutTo(Util.trim((string.gsub(x, "\r", ""))), 1500), "Personal preferences saved")
+	end, { lines = 6, raw = true })
+	Ctl.note(v, 3, "Your personal preferences go with every message you send the AI, like custom instructions. Keep passwords and private stuff out of them.")
+	section(v, "The AI", 4)
+	inputs[2] = Ctl.input(v, 5, "Its name", Core.OWNER_TAG, function() return str("botName") end, function(x)
+		setTo("botName", cutTo(Util.trim((string.gsub(x, "%c", " "))), 24), "Name saved")
+	end)
+	inputs[3] = Ctl.input(v, 6, "Its picture", "Roblox image ID or a picture link", function() return str("botPic") end, function(x)
+		setTo("botPic", x, "Picture saved")
+	end)
+	Ctl.note(v, 7, "Leave the name empty for " .. Core.OWNER_TAG .. " and the picture empty for the first one.")
+	Ctl.action(v, 8, "More AI settings", "sliders-horizontal", false, function()
+		if AIPage.api and AIPage.api.toggleSettings then
+			Panel.go("ai")
+			AIPage.api.toggleSettings(true)
+		else
+			AIPage.wantSettings = true
+			Panel.go("ai")
+		end
+	end)
+	Ctl.action(v, 9, "Open the AI", "sparkles", false, function() Panel.go("ai") end)
+	Bus.on("aicfg", function()
+		for _, inp in ipairs(inputs) do
+			if UserInputService:GetFocusedTextBox() ~= inp.box then inp.render() end
+		end
+	end)
+	for _, inp in ipairs(inputs) do
+		reg(inp)
+	end
+end
+
+do
+	local v = Settings.views[4]
 	section(v, "Run & Stop", 1)
 	reg(Ctl.toggle(v, 2, "Respawn when stopped", "Ends reanimates that can't stop themselves. Each script can change it.", function() return S.respawnOnStop end, function(x)
 		S.respawnOnStop = x
@@ -14504,7 +15398,7 @@ do
 end
 
 do
-	local v = Settings.views[3]
+	local v = Settings.views[5]
 	section(v, "Chat", 1)
 	reg(Ctl.toggle(v, 2, "Chat commands", "Type the prefix in chat to run a command, like ;fly", function() return S.chatCmds end, function(x)
 		S.chatCmds = x
@@ -14540,7 +15434,7 @@ do
 end
 
 do
-	local v = Settings.views[4]
+	local v = Settings.views[6]
 	section(v, "Atsuko Hub", 1)
 	Settings.verInfo = Ctl.info(v, 2, "Version", "v" .. HUB_VERSION)
 	Ctl.action(v, 3, "What's new", "sparkles", false, function() Ver.showNews() end)
@@ -14586,7 +15480,7 @@ do
 
 	section(v, "Reset", 13)
 	Ctl.action(v, 14, "Reset all settings", "rotate-ccw", true, function()
-		local keep = { favorites = S.favorites, recent = S.recent, perScript = S.perScript, cmd = S.cmd, lastVersion = S.lastVersion, sbSaved = S.sbSaved }
+		local keep = { favorites = S.favorites, recent = S.recent, perScript = S.perScript, cmd = S.cmd, lastVersion = S.lastVersion, sbSaved = S.sbSaved, themes = S.themes }
 		for k, d in pairs(DEFAULTS) do
 			S[k] = (type(d) == "table") and {} or d
 		end
@@ -17699,7 +18593,6 @@ end)()
 Core.OWNER_ID = 10959525032
 Core.OWNER_KEY = Sec.key("c5ff08836c68110de3950cf3a096bcff76c54a120555dd0b54ba42cd753c8727c73f9bde92e3cae8b84ef1cc487657350351fc178c9fdf38c390d6db760c2b54ce6638ea898902be6fc48b84ea45f2bd3398eb3928bb90c3340dca2886843463fc13284ce66e1a5d699b35ffeee7b9840f406e7de5a4e8c4bf6727f0f4f9b52f", 20017, "46b47750b097d54ea90d60907a84179bdde5902c2f5a674a1548ddb13aa7b385a52afcba0ddb9d91085fe148961724f3987f6994749c6c22450ed5c4766ef8a3c2221c1d944fa8b273f098d7328ceaf0c253fe35c5bc940fd6262eec6d693d543799178863a2969e4d75b4d1c04db949dde1c37eedfe5b2ae9b96d7dcc3dacf6", 43)
 Core.OWNER_FILE = LOCAL_DIR .. "/owner.key"
-Core.OWNER_TAG = "Atsuko Hakari"
 local Chat = {
 	msgs = { s = {}, g = {} },
 	seen = {},

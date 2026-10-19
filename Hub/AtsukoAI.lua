@@ -20,14 +20,26 @@ return function(ctx)
 		custom = { name = "Other (OpenAI-style)", url = "", model = "" },
 	}
 	AI.LENGTHS = {
-		short = "Keep answers very short: the code, then one or two short lines about it.",
-		normal = "Keep answers short and friendly. Put the whole script in one ```lua code block, then explain it in a few short lines. Mention which keys or buttons it uses.",
-		detailed = "Explain more: put the whole script in one ```lua code block with helpful comments in it, then walk through how it works step by step and mention which keys or buttons it uses.",
+		short = "Keep replies short, a few sentences at most. For a script, give the code and one or two short lines about it.",
+		normal = "Reply at a natural length, like a friend texting, not too long. For a script, put all of it in one ```lua code block, then explain it in a few short lines and mention which keys or buttons it uses.",
+		detailed = "Give fuller answers when it helps. For a script, put all of it in one ```lua code block with helpful comments in it, then walk through how it works step by step and mention which keys or buttons it uses.",
 	}
+	AI.MODES = {
+		chatty = "Be a real chat buddy: talk about anything the user wants, like games, anime, music, school, their day, random questions, jokes or advice, in a warm, playful and natural way. Show real interest, ask a little question back now and then to keep the chat going, and use an emoji sometimes when it fits.",
+		balanced = "You can chat about anything the user brings up in a friendly way, but keep it short and to the point.",
+		scripts = "Stick to Roblox scripting help. If the user talks about something else, answer in a sentence and kindly bring it back to scripting.",
+	}
+	AI.THINKING = { quick = "low", deep = false }
 	AI.MOODS = { careful = 0.2, balanced = 0.5, creative = 0.9 }
 	AI.MEMORY = { 8, 16, 30 }
 	AI.TABS = { { "profile", "Profile" }, { "prefs", "Preferences" }, { "key", "AI key" }, { "chats", "Chats" } }
 	AI.IDEAS = {
+		{ "message-circle", "Let's just talk", "Hi! Let's just talk for a bit. How's your day going?" },
+		{ "sparkles", "Tell me a fun fact", "Tell me a fun fact I probably don't know" },
+		{ "wand", "Fly with E, stop with Q", "Make me fly with E and stop with Q" },
+		{ "code-xml", "Fix my Editor code", "Fix the code in my Editor" },
+	}
+	AI.SCRIPT_IDEAS = {
 		{ "wand", "Fly with E, stop with Q", "Make me fly with E and stop with Q" },
 		{ "rotate-ccw", "A button that resets me", "Make a button on my screen that resets my character" },
 		{ "code-xml", "Fix my Editor code", "Fix the code in my Editor" },
@@ -46,6 +58,8 @@ return function(ctx)
 		prefs = "",
 		length = "normal",
 		mood = "balanced",
+		mode = "chatty",
+		thinking = "quick",
 		language = "",
 		remember = true,
 		memory = 16,
@@ -104,6 +118,8 @@ return function(ctx)
 		if not AI.PROVIDERS[c.provider] then c.provider = "gemini" end
 		if not AI.LENGTHS[c.length] then c.length = "normal" end
 		if not AI.MOODS[c.mood] then c.mood = "balanced" end
+		if not AI.MODES[c.mode] then c.mode = "chatty" end
+		if AI.THINKING[c.thinking] == nil then c.thinking = "quick" end
 		if not table.find(AI.MEMORY, c.memory) then c.memory = 16 end
 		c.botName = cut(c.botName, 24)
 		if c.botName == AI.DEFAULT_NAME then c.botName = "" end
@@ -139,11 +155,12 @@ return function(ctx)
 	function AI.prompt()
 		local c = AI.cfg
 		local lines = {
-			"You are " .. AI.name() .. ", the helper inside Atsuko Hub, a Roblox script hub. If someone asks your name, it's " .. AI.name() .. ".",
-			"You help the user write, fix and understand Luau scripts that they run on their own Roblox client through their executor (LocalScript-style code, game.Players.LocalPlayer).",
-			"Use game:GetService, task.wait, task.spawn and task.delay (not the old wait/spawn/delay). Prefer plain Roblox APIs over executor-only functions.",
-			AI.LENGTHS[c.length] or AI.LENGTHS.normal,
+			"You are " .. AI.name() .. ", the AI friend inside Atsuko Hub, a Roblox script hub. If someone asks your name, it's " .. AI.name() .. ".",
+			AI.MODES[c.mode] or AI.MODES.chatty,
+			"You're also really good at Roblox Luau scripting. When the user asks for a script or help with code, help them write, fix and understand Luau scripts they run on their own Roblox client through their executor (LocalScript-style code, game.Players.LocalPlayer). Use game:GetService, task.wait, task.spawn and task.delay (not the old wait/spawn/delay), and prefer plain Roblox APIs over executor-only functions.",
 			"If the user shares code, point out the bug in one line, then give the fixed version.",
+			AI.LENGTHS[c.length] or AI.LENGTHS.normal,
+			"Keep everything friendly and okay for a Roblox audience, lots of players are young. Never ask for or encourage sharing personal info like real names, addresses, passwords or photos.",
 			"Don't write code that steals accounts, cookies, passwords or personal info, sends people's data to webhooks or servers, damages someone's device, or targets or harasses other players. Say no kindly and offer something fun that only affects the user instead.",
 			c.language ~= "" and ("Always answer in " .. c.language .. ", but keep code and Roblox names in English.") or "Answer in the same language the user writes in.",
 		}
@@ -343,13 +360,24 @@ return function(ctx)
 		if id then AI.customPic[src] = id end
 	end
 
-	function AI.why(code, raw)
+	function AI.why(code, raw, took)
 		local d = json.decode(raw or "")
 		if type(d) == "table" and d[1] ~= nil then d = d[1] end
 		local e = type(d) == "table" and type(d.error) == "table" and d.error or {}
 		local msg = type(e.message) == "string" and e.message or ""
 		local low = string.lower(msg)
-		if code == 0 then return "Couldn't reach the AI, check your internet" end
+		if code == 0 then
+			local said = Util.trim(Util.firstLine(tostring(raw or "")))
+			local r = string.lower(said)
+			local tail = said ~= "" and ("  (" .. string.sub(said, 1, 80) .. ")") or ""
+			if r == "no request function" then return "Your executor can't send web requests, so the AI can't work on it" end
+			if string.find(r, "timed? ?out") or string.find(r, "timeout") or (took or 0) > 25 then
+				return "The AI took too long to answer. Try again, or set Thinking to Quick in AI settings > Preferences" .. tail
+			end
+			if string.find(r, "ssl") or string.find(r, "certificate") then return "Your executor couldn't open a safe connection to the AI service" .. tail end
+			if string.find(r, "dns") or string.find(r, "resolve") or string.find(r, "connect") then return "Couldn't connect to the AI service. Check your internet, then try again" .. tail end
+			return "Couldn't get an answer from the AI service. Try again, or tap Test the connection in AI settings > AI key" .. tail
+		end
 		if code == 401 or code == 403 or string.find(low, "api key not valid", 1, true) or string.find(low, "invalid api key", 1, true) then
 			return "That key doesn't work, check you copied all of it (and that it can use this model)"
 		end
@@ -357,6 +385,39 @@ return function(ctx)
 		if code == 429 then return "Too many messages for now, wait a minute and try again (the free tier only allows a few a minute)" end
 		if code >= 500 then return "The AI service is having a moment, try again soon" end
 		return "The AI said " .. code .. (msg ~= "" and (": " .. Util.firstLine(msg)) or "")
+	end
+
+	function AI.post(url, key, body)
+		local headers = { ["Content-Type"] = "application/json", Authorization = "Bearer " .. key }
+		local t0 = os.clock()
+		local code, raw = ctx.Net.request("POST", url, headers, body)
+		if code == 0 and ctx.hub.alive and os.clock() - t0 < 8 then
+			task.wait(1.5)
+			if not ctx.hub.alive then return 0, raw, os.clock() - t0 end
+			code, raw = ctx.Net.request("POST", url, headers, body)
+		end
+		return code, raw, os.clock() - t0
+	end
+
+	function AI.testConnection(done)
+		if AI.testing then return end
+		local url, key = AI.setup()
+		if url == "" or key == "" then return done(false, "Add your key first") end
+		AI.testing = true
+		task.spawn(function()
+			local t0 = os.clock()
+			local code, raw = ctx.Net.request("GET", url .. "/models", { Authorization = "Bearer " .. key })
+			local took = os.clock() - t0
+			AI.testing = false
+			if not ctx.hub.alive then return end
+			if code == 200 then
+				local d = json.decode(raw)
+				local n = type(d) == "table" and type(d.data) == "table" and #d.data or 0
+				done(true, "Connected, your key works (" .. n .. " models, " .. math.floor(took * 1000 + 0.5) .. " ms)")
+			else
+				done(false, AI.why(code, raw, took))
+			end
+		end)
 	end
 
 	function AI.ask(chat)
@@ -368,11 +429,21 @@ return function(ctx)
 			local m = list[i]
 			if m.role == "user" or m.role == "assistant" then messages[#messages + 1] = { role = m.role, content = m.content } end
 		end
-		local body = json.encode({ model = model, messages = messages, temperature = AI.MOODS[AI.cfg.mood] or 0.5 })
+		local payload = { model = model, messages = messages, temperature = AI.MOODS[AI.cfg.mood] or 0.5 }
+		local effort = AI.THINKING[AI.cfg.thinking]
+		if AI.cfg.provider == "gemini" and effort and not AI.noEffort then payload.reasoning_effort = effort end
+		local body = json.encode(payload)
 		if not body then return nil, "Couldn't pack the message" end
-		local code, raw = ctx.Net.request("POST", url .. "/chat/completions", { ["Content-Type"] = "application/json", Authorization = "Bearer " .. key }, body)
+		local code, raw, took = AI.post(url .. "/chat/completions", key, body)
 		if not ctx.hub.alive then return nil, "closed" end
-		if code ~= 200 then return nil, AI.why(code, raw) end
+		if code == 400 and payload.reasoning_effort and string.find(string.lower(raw or ""), "reasoning", 1, true) then
+			AI.noEffort = true
+			payload.reasoning_effort = nil
+			body = json.encode(payload)
+			code, raw, took = AI.post(url .. "/chat/completions", key, body)
+			if not ctx.hub.alive then return nil, "closed" end
+		end
+		if code ~= 200 then return nil, AI.why(code, raw, took) end
 		local d = json.decode(raw)
 		local choice = type(d) == "table" and type(d.choices) == "table" and d.choices[1] or nil
 		local content = type(choice) == "table" and type(choice.message) == "table" and choice.message.content or nil
@@ -690,7 +761,7 @@ return function(ctx)
 		local top = UI.new("Frame", { Name = "Hello", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 140), LayoutOrder = 1 }, e)
 		ring(AI.avatar(top, "bot", 74, { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 10) }))
 		UI.label(top, { Name = "Hi", Text = "Hi, I'm " .. AI.name(), Font = ctx.fontB(), TextSize = 16, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 94), Size = UDim2.new(1, 0, 0, 20), TextTruncate = Enum.TextTruncate.AtEnd })
-		UI.label(top, { Text = AI.ready() and "What do you want to make?" or "Add your free AI key to start", TextSize = 11, TextColor3 = T.sub, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 116), Size = UDim2.new(1, 0, 0, 16) })
+		UI.label(top, { Text = AI.ready() and (AI.cfg.mode == "scripts" and "What do you want to make?" or "Ask me anything, or let's just talk") or "Add your free AI key to start", TextSize = 11, TextColor3 = T.sub, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 116), Size = UDim2.new(1, 0, 0, 16) })
 		if not AI.ready() then
 			local b = UI.button(e, { Name = "SetUp", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 40), LayoutOrder = 2 })
 			UI.corner(b, 14)
@@ -704,7 +775,7 @@ return function(ctx)
 		for r = 1, 2 do
 			local rowF = UI.new("Frame", { Name = "Ideas", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 64), LayoutOrder = 1 + r }, e)
 			for c = 1, 2 do
-				local idea = AI.IDEAS[(r - 1) * 2 + c]
+				local idea = (AI.cfg.mode == "scripts" and AI.SCRIPT_IDEAS or AI.IDEAS)[(r - 1) * 2 + c]
 				local b = UI.button(rowF, { Name = "Idea", BackgroundColor3 = T.card, Position = UDim2.new((c - 1) * 0.5, (c - 1) * 4, 0, 0), Size = UDim2.new(0.5, -4, 1, 0) })
 				UI.corner(b, 14)
 				UI.accent(UI.icon(idea[1], 14, ctx.accentColor(), b, { Position = UDim2.fromOffset(12, 11) }), "ImageColor3")
@@ -1100,16 +1171,25 @@ return function(ctx)
 		end, { lines = 6, raw = true })
 		Ctl.note(settings, 3, "Your personal preferences go with every message, like custom instructions. Keep passwords and private stuff out of them.")
 		ctx.section(settings, "Answers", 4)
-		Ctl.choice(settings, 5, "Answer length", { { "short", "Short" }, { "normal", "Normal" }, { "detailed", "Detailed" } }, function() return c.length end, function(x)
+		Ctl.choice(settings, 5, "Personality", { { "chatty", "Chatty" }, { "balanced", "Balanced" }, { "scripts", "Scripts only" } }, function() return c.mode end, function(x)
+			c.mode = x
+			AI.save()
+			AI.drawEmpty()
+		end)
+		Ctl.choice(settings, 6, "Answer length", { { "short", "Short" }, { "normal", "Normal" }, { "detailed", "Detailed" } }, function() return c.length end, function(x)
 			c.length = x
 			AI.save()
 		end)
-		Ctl.choice(settings, 6, "Creativity", { { "careful", "Careful" }, { "balanced", "Balanced" }, { "creative", "Creative" } }, function() return c.mood end, function(x)
+		Ctl.choice(settings, 7, "Creativity", { { "careful", "Careful" }, { "balanced", "Balanced" }, { "creative", "Creative" } }, function() return c.mood end, function(x)
 			c.mood = x
 			AI.save()
 		end)
-		Ctl.input(settings, 7, "Reply language", "Same as yours", function() return c.language end, function(x) AI.set("language", x) end)
-		Ctl.note(settings, 8, "Careful sticks to what usually works, Creative tries new ideas. Leave the language empty and it answers in whatever you write in.")
+		Ctl.choice(settings, 8, "Thinking", { { "quick", "Quick" }, { "deep", "Deep" } }, function() return c.thinking end, function(x)
+			c.thinking = x
+			AI.save()
+		end)
+		Ctl.input(settings, 9, "Reply language", "Same as yours", function() return c.language end, function(x) AI.set("language", x) end)
+		Ctl.note(settings, 10, "Chatty talks about anything with you, Scripts only sticks to code. Careful sticks to what usually works, Creative tries new ideas. Quick answers faster, Deep thinks longer on hard scripts. Leave the language empty and it answers in whatever you write in.")
 	end
 
 	local function drawKey()
@@ -1118,6 +1198,7 @@ return function(ctx)
 		Ctl.choice(settings, 2, "Use", { { "gemini", "Gemini (free)" }, { "custom", "Other" } }, function() return c.provider end, function(x)
 			c.provider = x
 			AI.models = nil
+			AI.lastTest = nil
 			AI.save()
 			AI.drawSettings()
 			AI.drawEmpty()
@@ -1133,6 +1214,7 @@ return function(ctx)
 				if x == "" or string.find(x, "^saved") then return end
 				c[field] = x
 				AI.models = nil
+				AI.lastTest = nil
 				AI.save()
 				notify(AI.name(), "Key saved", "ok", 2)
 				AI.drawEmpty()
@@ -1170,7 +1252,20 @@ return function(ctx)
 				AI.drawEmpty()
 			end)
 		end
-		local listBtn = Ctl.action(settings, 7, AI.modelsBusy and "Loading models..." or "Show the models my key can use", "list-start", false, function()
+		Ctl.action(settings, 7, AI.testing and "Testing..." or "Test the connection", "wifi", false, function()
+			AI.testConnection(function(ok, text)
+				AI.lastTest = { ok = ok, text = text }
+				notify(AI.name(), ok and "Connected" or "Connection problem", ok and "ok" or "error", 2)
+				if AI.view == "settings" and AI.tab == "key" then AI.drawSettings() end
+			end)
+			AI.drawSettings()
+		end)
+		if AI.lastTest then
+			local l = Ctl.note(settings, 8, AI.lastTest.text)
+			l.Name = "TestResult"
+			l.TextColor3 = AI.lastTest.ok and T.green or T.yellow
+		end
+		local listBtn = Ctl.action(settings, 9, AI.modelsBusy and "Loading models..." or "Show the models my key can use", "list-start", false, function()
 			AI.fetchModels(function(list, err)
 				if err then return notify(AI.name(), err, "error", 3) end
 				AI.models = list
@@ -1180,11 +1275,11 @@ return function(ctx)
 		end)
 		listBtn.Name = "Models"
 		if AI.models then
-			if #AI.models == 0 then Ctl.note(settings, 8, "No chat models came back for this key.") end
+			if #AI.models == 0 then Ctl.note(settings, 10, "No chat models came back for this key.") end
 			local _, _, cur = AI.setup()
 			for i, id in ipairs(AI.models) do
 				if i > 30 then break end
-				local row = UI.button(settings, { Name = "Model", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 34), LayoutOrder = 8 + i })
+				local row = UI.button(settings, { Name = "Model", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 34), LayoutOrder = 10 + i })
 				UI.corner(row, 10)
 				UI.label(row, { Text = id, Font = Enum.Font.Code, TextSize = 11, TextColor3 = id == cur and ctx.accentColor() or T.text, Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -24, 1, 0), TextTruncate = Enum.TextTruncate.AtEnd })
 				ctx.Ctl.hoverable(row)
