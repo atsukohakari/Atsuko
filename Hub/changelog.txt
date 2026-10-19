@@ -1,3 +1,18 @@
+v1.1.2
+- themes: a new themes tab in settings with 9 themes: midnight, pure black, sakura, grape, ocean, forest, mocha, and two light ones, cloud and strawberry milk
+- a theme changes the whole hub: the background, the cards and buttons, the text and the accent
+- make your own themes in the theme maker: pick the background and everything else follows it, or set the cards, text and accent yourself
+- the hub changes as you pick colors in the theme maker, and closing it without saving puts everything back
+- light backgrounds get dark text by themselves, dark ones get light text
+- share themes: copy a theme's code and anyone can add it in settings > themes
+- new theme command: say theme and a name, or just theme for the next one
+- your themes come along in copy my settings, and resetting settings keeps them
+- the ai is talkative now: it chats with you about anything, not just scripts, and it's still great at scripting
+- new personality setting in ai settings > preferences: chatty, balanced or scripts only
+- new thinking setting: quick answers faster, deep thinks longer on hard scripts
+- fixed the ai saying to check your internet: it tries again by itself when a message gets dropped, answers faster, and tells you the real reason when something goes wrong
+- test the connection button in ai settings > ai key
+
 v1.1.1
 - new ai tab: ask for a script or how to fix one and it writes it for you, with copy and open in editor buttons on the code
 - the ai can read the script in your editor: tap the code button next to the box and it goes with your message
