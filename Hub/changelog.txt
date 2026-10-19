@@ -1,3 +1,12 @@
+Beta v1.1.3
+- spotify works on free accounts now: paste a spotify playlist, album or song link in music > library > spotify and it plays right in the game, no premium
+- search any song there (or in music > add) and play it with one tap
+- free spotify through discord has a play here button, it plays the song you're on in the game from where you are
+- youtube songs don't need a converter or a key anymore, they play straight from youtube (a converter is still there if you want one)
+- tap the heart on a spotify or youtube song to keep it in your library
+- the next song in a spotify list gets ready while the one before it plays
+- the hub says beta now
+
 v1.1.2
 - themes: a new themes tab in settings with 9 themes: midnight, pure black, sakura, grape, ocean, forest, mocha, and two light ones, cloud and strawberry milk
 - a theme changes the whole hub: the background, the cards and buttons, the text and the accent

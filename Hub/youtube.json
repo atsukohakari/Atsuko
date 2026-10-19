@@ -1,0 +1,40 @@
+{
+  "players": [
+    {
+      "name": "VISIONOS",
+      "id": 101,
+      "version": "1.02",
+      "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
+      "ctx": {
+        "deviceMake": "Apple",
+        "deviceModel": "RealityDevice17,1",
+        "osName": "visionOS",
+        "osVersion": "26.5.23O471"
+      }
+    },
+    {
+      "name": "ANDROID_VR",
+      "id": 28,
+      "version": "1.65.10",
+      "ua": "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
+      "ctx": {
+        "deviceMake": "Oculus",
+        "deviceModel": "Quest 3",
+        "androidSdkVersion": 32,
+        "osName": "Android",
+        "osVersion": "12L"
+      }
+    }
+  ],
+  "music": {
+    "name": "WEB_REMIX",
+    "id": 67,
+    "version": "1.20260707.12.00"
+  },
+  "web": {
+    "name": "WEB",
+    "id": 1,
+    "version": "2.20260708.00.00"
+  },
+  "songs": "EgWKAQIIAWoMEA4QChADEAQQCRAF"
+}
