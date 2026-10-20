@@ -1,2159 +1,138 @@
---[[
-	FE SNAKE BANISHER V3  -  FDless conversion
-	Original by MLG Super Killer, converted by Epic, FDless port for you
+-- @desc Snake Banisher V3 with LC Gun 1 and LC Gun 2
 
-]]
+local ALIGNS = (function()
+	local angles, cf = CFrame.Angles, CFrame.new
+	local function cfMul(a, b)
+		return a * b
+	end
+	return {
+
+		{PartName="Head",meshid="11601535857",C0=angles(0,3.141592653589793,0)},
+
+		{PartName="Left Arm",meshid="13831073174",C0=cfMul(cf(0.017,0,-0.23),angles(-1.4835298641951802,-0.15707963267948966,2.199114857512855))},
+		{PartName="Right Arm",meshid="13839903766",C0=cfMul(cf(0,-0.62,-0.01),angles(1.6580627893946132,0.15707963267948966,-2.199114857512855))},
+
+		{PartName="Left Leg",meshid="11159370334",textureid="11159285454",C0=angles(1.5707963267948966,0,1.5707963267948966)},
+
+		{PartName="Right Leg",meshid="12652772399",textureid="12652775021",C0=cf(0,-0.125,0)},
+
+		{PartName="Torso",meshid="14768666349"},
+		{PartName="Torso",meshid="14241018198"},
+		{PartName="Torso",meshid="13421774668"},
+		{PartName="Left Leg",meshid="14255522247",C0=angles(1.5707963267948966,0,1.5707963267948966)},
+		{PartName="Right Leg",meshid="14255522247",C0=angles(-1.5707963267948966,0,1.5707963267948966)},
+		{PartName="Left Arm",meshid="14768684979",C0=angles(0,0,1.5707963267948966)},
+		{PartName="Right Arm",meshid="14768684979",C0=angles(0,0,1.5707963267948966)},
+
+		{PartName="Head",meshid="13953154391"},
+		{PartName="Torso",meshid="13778226115"},
+		{PartName="Left Leg",meshid="11159370334",textureid="11159284657",C0=angles(1.5707963267948966,0,1.5707963267948966)},
+		{PartName="Right Leg",meshid="11263221350",textureid="11263219250",C0=angles(-1.5707963267948966,0,1.5707963267948966)},
+		{PartName="Left Arm",meshid="12344207333",C0=angles(2,0,0)},
+		{PartName="Right Arm",meshid="12344206657",C0=angles(2,0,0)},
+
+		{PartName="Torso",meshid="110684113028749"},
+		{PartName="Head",meshid="13058343355",C0=angles(0,3.141592653589793,0)},
+		{PartName="Left Leg",meshid="139733645770094",C0=angles(0,0,1.5707963267948966)},
+		{PartName="Right Leg",meshid="99608462237958",C0=angles(0,0,1.5707963267948966)},
+		{PartName="Left Arm",meshid="90736849096372",C0=angles(0,0,1.5707963267948966)},
+		{PartName="Right Arm",meshid="105141400603933",C0=angles(0,0,1.5707963267948966)},
+		{PartName="Head",meshid="13953153289"},
+		{PartName="Left Leg",meshid="17387586286",C0=angles(1.5707963267948966,0,1.5707963267948966)},
+		{PartName="Right Leg",meshid="17387586286",C0=angles(-1.5707963267948966,0,1.5707963267948966)},
+		{PartName="Left Arm",meshid="17374767929",C0=angles(1.5707963267948966,0,1.5707963267948966)},
+		{PartName="Right Arm",meshid="17374767929",C0=angles(-1.5707963267948966,0,1.5707963267948966)},
+		{PartName="Left Leg",meshid="125405780718494",C0=angles(1.5707963267948966,0,1.5707963267948966)},
+		{PartName="Right Leg",meshid="125405780718494",C0=angles(-1.5707963267948966,0,1.5707963267948966)},
+		{PartName="Left Arm",meshid="125405780718494",C0=angles(1.5707963267948966,0,1.5707963267948966)},
+		{PartName="Right Arm",meshid="125405780718494",C0=angles(-1.5707963267948966,0,1.5707963267948966)},
+
+		{PartName="Head",meshid="13953094351"},
+		{PartName="Torso",meshid="127552124837034",C0=angles(0,0,1.5707963267948966)},
+		{PartName="Left Leg",meshid="121304376791439"},
+		{PartName="Right Leg",meshid="121304376791439"},
+		{PartName="Left Arm",meshid="117287001096396"},
+		{PartName="Right Arm",meshid="117287001096396"},
+
+		{PartName="Head",meshid="13058309233",C0=angles(0,3.141592653589793,0)},
+		{PartName="Torso",meshid="18640899369"},
+		{PartName="Left Leg",meshid="18640901641"},
+		{PartName="Right Leg",meshid="18640901641"},
+		{PartName="Left Arm",meshid="18640914129"},
+		{PartName="Right Arm",meshid="18640914129"},
+		{PartName="Torso",meshid="126825022897778"},
+		{PartName="Left Leg",textureid="73798034827573",C0=angles(0,0,1.5707963267948966)},
+		{PartName="Right Leg",textureid="73798034827573",C0=angles(0,0,1.5707963267948966)},
+		{PartName="Left Arm",textureid="135650240593878",C0=angles(0,0,1.5707963267948966)},
+		{PartName="Right Arm",textureid="135650240593878",C0=angles(0,0,1.5707963267948966)},
+
+		{PartName="Torso",meshid="126825022897778"},
+
+		{PartName="Torso",meshid="139792224823925"},
+		{PartName="Left Leg",meshid="83395427313429",C0=angles(0,0,1.5707963267948966)},
+		{PartName="Right Leg",meshid="83395427313429",C0=angles(0,0,1.5707963267948966)},
+		{PartName="Left Arm",meshid="105263225400272",C0=angles(0,0,1.5707963267948966)},
+		{PartName="Right Arm",meshid="105263225400272",C0=angles(0,0,1.5707963267948966)},
+
+		{PartName="Head",AccessoryName="Accessory (autorig_Head)"},
+		{PartName="Torso",AccessoryName="Accessory (autorig_Torso)"},
+		{PartName="Left Leg",AccessoryName="Accessory (autorig_LeftLeg)"},
+		{PartName="Right Leg",AccessoryName="Accessory (autorig_RightLeg)"},
+		{PartName="Left Arm",AccessoryName="Accessory (autorig_LeftArm)"},
+		{PartName="Right Arm",AccessoryName="Accessory (autorig_RightArm)"},
+
+		--[[{PartName="Left Arm",meshid="4324138105",textureid="4324138210",C0=angles(-1.6144295580947547,1.5707963267948966,0)*cf(-0.125,0.3,0)},
+		{PartName="Left Arm",meshid="4154474745",textureid="4154474807",C0=angles(1.5271630954950384,-1.5707963267948966,0)*cf(-0.125,-0.3,0)},
+		{PartName="Right Arm",meshid="3030546036",textureid="3650191503",C0=angles(1.5271630954950384,1.5707963267948966,0)*cf(0.125,-0.3,0)},
+		{PartName="Right Arm",meshid="3030546036",textureid="3443321249",C0=angles(-1.6144295580947547,-1.5707963267948966,0)*cf(0.125,0.3,0)},
+		{PartName="Left Leg",meshid="3030546036",textureid="3360974849",C0=angles(1.5271630954950384,1.5707963267948966,0)*cf(-0.125,-0.35,0)},
+		{PartName="Left Leg",meshid="3030546036",textureid="3360978739",C0=angles(-1.6144295580947547,-1.5707963267948966,0)*cf(-0.125,0.3,0)},
+		{PartName="Right Leg",meshid="3030546036",textureid="3033898741",C0=angles(1.5271630954950384,-1.5707963267948966,0)*cf(0.125,-0.35,0)},
+		{PartName="Right Leg",meshid="3030546036",textureid="3409604993",C0=angles(-1.6144295580947547,1.5707963267948966,0)*cf(0.125,0.3,0)},
+		{PartName="Torso",meshid="4819720316",textureid="4819722776",C0=angles(0,0,0.2617993877991494)}]]
+		{PartName="Torso",meshid="4819720316",textureid="4819722776",C0=angles(0,0,0.2617993877991494)},
+		{PartName="Left Leg",meshid="4094864753",textureid="4094881938",C0=angles(0,0,-1.5707963267948966)},
+		{PartName="Right Leg",meshid="4154474745",textureid="4154474807",C0=angles(0,0,1.5707963267948966)},
+		{PartName="Left Arm",meshid="4489232754",textureid="4489233876",C0=angles(0,0,-1.5707963267948966)},
+		{PartName="Right Arm",meshid="4324138105",textureid="4391374782",C0=angles(0,0,1.5707963267948966)},
+	}
+end)()
 
 local FD = (function()
---!optimize 2
---no need to load the whole thing cuz u can use the last one
-if _G.GenesisFDless then 
-	game:FindFirstChildOfClass("StarterGui"):SetCore("SendNotification",{Title="FDLESS",Text="Using FDless loaded by previously executed scripts to prevent reanimate conflicts. Rejoin to update reanimate settings.",Duration=10})
-	return _G.GenesisFDless 
-end
-
---oh you're still here? queue the reanimate
-
---[[
-	FDless Reanimate by MyWorld continued by rqz
-	"var"
-	Patchma Hub Discord: https://discord.com/invite/QMy5f6DrbH
-]]
-
---no need to get and index the library tables with function names every time the script uses them
-local osclock=os.clock
-local tspawn=task.spawn
-local tdelay=task.delay
-local twait=task.wait
-local schar=string.char
-local ssub=string.sub
-local sfind=string.find
-local supper=string.upper
-local mrandom=math.random
-local sin=math.sin
-local cos=math.cos
-local abs=math.abs
-local min=math.min
-local sqrt=math.sqrt
-local clamp=math.clamp
-local tinsert=table.insert
-local tclear=table.clear
-local tclone=table.clone
-local tfind=table.find
-local cyield=coroutine.yield
-local cresume=coroutine.resume
-local crunning=coroutine.running
-local vmagnitude=vector.magnitude --faster than indexing with Magnitude
-local vnormalize=vector.normalize --faster than indexing with Unit
-
---the script doesnt have to read global varaibles every time to get them
---why not have them saved in local varaibles for faster access times
-local next=next
-local pcall=pcall
-local xpcall=xpcall
-local type=type
-local typeof=typeof
-local game=game
-local sethiddenproperty=sethiddenproperty or set_hidden_property or sethiddenprop
-local setscriptable=setscriptable or set_scriptable
-local replicatesignal=replicatesignal or replicate_signal
-
-local i=Instance.new 
-local v2=Vector2.new 
-local v3=Vector3.new
-local c3=Color3.new 
-local cf=CFrame.new
-local cfl=CFrame.lookAt
-local angles=CFrame.fromEulerAngles --faster than .Angles
-local u2=UDim2.new 
-local e=Enum 
-local rp=RaycastParams.new 
-local cs=ColorSequence.new 
-local csk=ColorSequenceKeypoint.new 
-
-local sine=osclock()
-local deltaTime=0
-local v3_0=v3()
-local v3_101=v3(1,0,1)
-local v3_010=v3(0,1,0)
-local cf_0=cf()
-local v3_xz=v3_101*10
-local v3_xzL=v3_101*250.1
-local v3_net=v3_010*25.01
-
-local enumphysics=e.HumanoidStateType.Physics
-local enumragdoll=e.HumanoidStateType.Ragdoll
-local enumrunning=e.HumanoidStateType.Running
-local enumseated=e.HumanoidStateType.Seated
-local enumMD=e.MouseBehavior.Default
-
-local sm=v3_010/2
-local dense=PhysicalProperties.new(100,0,0,100,100)
-local light=PhysicalProperties.new(0.0001,0,0,100,100)
-local humstatesbl=e.HumanoidStateType:GetEnumItems()
-table.remove(humstatesbl,tfind(humstatesbl,enumrunning))
-table.remove(humstatesbl,tfind(humstatesbl,e.HumanoidStateType.None))
-
---not "local function rs" to not assign debug names
-local rs=function()
-	local s=""
-	for i=1,mrandom(8,15) do
-		if mrandom(2)==2 then
-			s=s..schar(mrandom(65,90))
-		else
-			s=s..schar(mrandom(97,122))
-		end
-	end
-	return s
-end
-
---it runs even faster if u call __index and __newindex metamethods directly
-local getMetamethodFromErrorStack=function(userdata,f,test)
-	local ret=nil
-	xpcall(f,function()
-		ret=debug.info(2,"f")
-	end,userdata,nil,0)
-	if (type(ret)~="function") or not test(ret) then
-		return f
-	end
-	return ret
-end
-local insSet=getMetamethodFromErrorStack(game,function(a,b,c) a[b]=c end,function(f) local a=i("Folder") local b=rs() f(a,"Name",b) return a.Name==b end)
-local insGet=getMetamethodFromErrorStack(game,function(a,b) return a[b] end,function(f) local a=i("Folder") local b=rs() a.Name=b return f(a,"Name")==b end)
-local cfGet=getMetamethodFromErrorStack(cf_0,function(a,b) return a[b] end,function(f) return f(cf(1,2,3),"Position")==v3(1,2,3) end)
-local cfMul=getMetamethodFromErrorStack(cf_0,function(a,b) return a*b end,function(f) return angles(1,2,3)*angles(1,2,3)==f(angles(1,2,3),angles(1,2,3)) end)
-local cfAdd=getMetamethodFromErrorStack(cf_0,function(a,b) return a+b end,function(f) return cf(1,2,3)+v3(1,2,3)==f(cf(1,2,3),v3(1,2,3)) end)
-local v3Get=getMetamethodFromErrorStack(v3_0,function(a,b) return a[b] end,function(f) return v3(1,2,3).Unit==f(v3(1,2,3),"Unit") end)
-local v2Get=getMetamethodFromErrorStack(v2(),function(a,b) return a[b] end,function(f) return f(v2(1,2),"Y")==2 end)
---multiplying and adding vector3 is faster if you use the * and + operators
---its faster to multiply X and Y of vector2 than to multiply vector2 and then get X and Y from it
-
---no need to index instances every time to call their functions
-local Clone=insGet(game,"Clone")
-local ClearAllChildren=insGet(game,"ClearAllChildren")
-local Destroy=insGet(game,"Destroy")
-local IsA=insGet(game,"IsA")
-local FindFirstChildOfClass=insGet(game,"FindFirstChildOfClass")
-local FindFirstChildWhichIsA=insGet(game,"FindFirstChildWhichIsA")
-local GetChildren=insGet(game,"GetChildren")
-local IsDescendantOf=insGet(game,"IsDescendantOf")
-local QueryDescendants=insGet(game,"QueryDescendants")
-local GetPropertyChangedSignal=insGet(game,"GetPropertyChangedSignal")
-
---findfirstchildofclass faster than getservice
-local plrs=FindFirstChildOfClass(game,"Players")
-local rus=FindFirstChildOfClass(game,"RunService")
-local ws=FindFirstChildOfClass(game,"Workspace")
-local uis=FindFirstChildOfClass(game,"UserInputService")
-local gs=FindFirstChildOfClass(game,"GuiService")
-local sg=FindFirstChildOfClass(game,"StarterGui")
-local lp=insGet(plrs,"LocalPlayer")
-local pg=FindFirstChildOfClass(lp,"PlayerGui")
-local mouse=insGet(lp,"GetMouse")(lp)
-local preanimation=insGet(rus,"PreAnimation")
-local stepped=insGet(rus,"Stepped")
-local heartbeat=insGet(rus,"Heartbeat")
-local renderstepped=insGet(rus,"RenderStepped")
-
-local GetPlayers=insGet(plrs,"GetPlayers")
-local BreakJoints=insGet(i("Model"),"BreakJoints")
-local ChangeState=insGet(i("Humanoid"),"ChangeState")
-local SetStateEnabled=insGet(i("Humanoid"),"SetStateEnabled")
-local GetJoints=insGet(insGet(ws,"Terrain"),"GetJoints")
-local SetCore=insGet(sg,"SetCore")
-local SetCoreGuiEnabled=insGet(sg,"SetCoreGuiEnabled")
-local GetCoreGuiEnabled=insGet(sg,"GetCoreGuiEnabled")
-local Raycast=insGet(ws,"Raycast")
-local Connect=heartbeat.Connect
-local Disconnect=Connect(GetPropertyChangedSignal(game,"CreatorId"),type).Disconnect
-local Wait=heartbeat.Wait
-local GetMouseLocation=insGet(uis,"GetMouseLocation")
-local GetFocusedTextBox=insGet(uis,"GetFocusedTextBox")
-local GetMouseDelta=insGet(uis,"GetMouseDelta")
-local IsMouseButtonPressed=insGet(uis,"IsMouseButtonPressed")
-local IsKeyDown=insGet(uis,"IsKeyDown")
-
-local Inverse=cfGet(cf_0,"Inverse")
-local Lerp=cfGet(cf_0,"Lerp")
-
-local aligns={
-	--[[
-		example: 
-		{PartName="Right Arm",meshid="123456789",textureid="123456789",AccessoryName="Name",C0=cf(1,2,3)*angles(1,2,3)},
-
-		PartName (required) - the name of the body part you want to align the hat to
-		meshid (optional) - mesh id of the mesh of the accessory you want to align
-		textureid (optional) - texture id of the mesh of the accessory you want to align
-		AccessoryName (optional) - instance name of the accessory you want to align 
-		C0 (optional) - offset from the target body part to the accessory (defaults to cf(0,0,0) if unspecified)
-		
-		accessories will align to the first entry whose criteria they match
-		(unspecified meshid/textureid/accessoryname accepts all accessories)
-		
-		each entry aligns one accessory at most
-	]]
-
-	-- unknown head
-	{PartName="Head",meshid="11601535857",C0=angles(0,3.141592653589793,0)},
-
-	-- patchma gear arms
-	{PartName="Left Arm",meshid="13831073174",C0=cfMul(cf(0.017,0,-0.23),angles(-1.4835298641951802,-0.15707963267948966,2.199114857512855))},
-	{PartName="Right Arm",meshid="13839903766",C0=cfMul(cf(0,-0.62,-0.01),angles(1.6580627893946132,0.15707963267948966,-2.199114857512855))},
-
-	-- patchma yellow leg
-	{PartName="Left Leg",meshid="11159370334",textureid="11159285454",C0=angles(1.5707963267948966,0,1.5707963267948966)},
-
-	-- patchma lego piece leg
-	{PartName="Right Leg",meshid="12652772399",textureid="12652775021",C0=cf(0,-0.125,0)},
-
-	-- offsale white rig
-	-- a ton of offsaled black torso's
-	{PartName="Torso",meshid="14768666349"},
-	{PartName="Torso",meshid="14241018198"},
-	{PartName="Torso",meshid="13421774668"},
-	{PartName="Left Leg",meshid="14255522247",C0=angles(1.5707963267948966,0,1.5707963267948966)},
-	{PartName="Right Leg",meshid="14255522247",C0=angles(-1.5707963267948966,0,1.5707963267948966)},
-	{PartName="Left Arm",meshid="14768684979",C0=angles(0,0,1.5707963267948966)},
-	{PartName="Right Arm",meshid="14768684979",C0=angles(0,0,1.5707963267948966)},
-
-	-- og fur body, r15 arms, smiley legs rig
-	{PartName="Head",meshid="13953154391"},
-	{PartName="Torso",meshid="13778226115"},
-	{PartName="Left Leg",meshid="11159370334",textureid="11159284657",C0=angles(1.5707963267948966,0,1.5707963267948966)},
-	{PartName="Right Leg",meshid="11263221350",textureid="11263219250",C0=angles(-1.5707963267948966,0,1.5707963267948966)},
-	{PartName="Left Arm",meshid="12344207333",C0=angles(2,0,0)},
-	{PartName="Right Arm",meshid="12344206657",C0=angles(2,0,0)},
-
-	-- torso for both "white limbs black torso rig" and "black rig"
-	{PartName="Torso",meshid="110684113028749"},
-	-- white limbs black torso rig
-	{PartName="Head",meshid="13058343355",C0=angles(0,3.141592653589793,0)},
-	{PartName="Left Leg",meshid="139733645770094",C0=angles(0,0,1.5707963267948966)},
-	{PartName="Right Leg",meshid="99608462237958",C0=angles(0,0,1.5707963267948966)},
-	{PartName="Left Arm",meshid="90736849096372",C0=angles(0,0,1.5707963267948966)},
-	{PartName="Right Arm",meshid="105141400603933",C0=angles(0,0,1.5707963267948966)},
-	-- head for black rigs
-	{PartName="Head",meshid="13953153289"},
-	-- lay offsale black rig
-	{PartName="Left Leg",meshid="17387586286",C0=angles(1.5707963267948966,0,1.5707963267948966)},
-	{PartName="Right Leg",meshid="17387586286",C0=angles(-1.5707963267948966,0,1.5707963267948966)},
-	{PartName="Left Arm",meshid="17374767929",C0=angles(1.5707963267948966,0,1.5707963267948966)},
-	{PartName="Right Arm",meshid="17374767929",C0=angles(-1.5707963267948966,0,1.5707963267948966)},
-	-- 7ws offsale black rig
-	{PartName="Left Leg",meshid="125405780718494",C0=angles(1.5707963267948966,0,1.5707963267948966)},
-	{PartName="Right Leg",meshid="125405780718494",C0=angles(-1.5707963267948966,0,1.5707963267948966)},
-	{PartName="Left Arm",meshid="125405780718494",C0=angles(1.5707963267948966,0,1.5707963267948966)},
-	{PartName="Right Arm",meshid="125405780718494",C0=angles(-1.5707963267948966,0,1.5707963267948966)},
-
-	-- meshless rig
-	{PartName="Head",meshid="13953094351"},
-	{PartName="Torso",meshid="127552124837034",C0=angles(0,0,1.5707963267948966)},
-	{PartName="Left Leg",meshid="121304376791439"},
-	{PartName="Right Leg",meshid="121304376791439"},
-	{PartName="Left Arm",meshid="117287001096396"},
-	{PartName="Right Arm",meshid="117287001096396"},
-
-	-- head for noob rig
-	{PartName="Head",meshid="13058309233",C0=angles(0,3.141592653589793,0)},
-	-- lay offsale noob rig
-	{PartName="Torso",meshid="18640899369"},
-	{PartName="Left Leg",meshid="18640901641"},
-	{PartName="Right Leg",meshid="18640901641"},
-	{PartName="Left Arm",meshid="18640914129"},
-	{PartName="Right Arm",meshid="18640914129"},
-	-- 7ws offsale noob rig
-	{PartName="Torso",meshid="126825022897778"},
-	{PartName="Left Leg",textureid="73798034827573",C0=angles(0,0,1.5707963267948966)},
-	{PartName="Right Leg",textureid="73798034827573",C0=angles(0,0,1.5707963267948966)},
-	{PartName="Left Arm",textureid="135650240593878",C0=angles(0,0,1.5707963267948966)},
-	{PartName="Right Arm",textureid="135650240593878",C0=angles(0,0,1.5707963267948966)},
-
-	-- white torso
-	{PartName="Torso",meshid="126825022897778"},
-
-	-- lay onsale gray torso white arm black leg rig
-	{PartName="Torso",meshid="139792224823925"},
-	{PartName="Left Leg",meshid="83395427313429",C0=angles(0,0,1.5707963267948966)},
-	{PartName="Right Leg",meshid="83395427313429",C0=angles(0,0,1.5707963267948966)},
-	{PartName="Left Arm",meshid="105263225400272",C0=angles(0,0,1.5707963267948966)},
-	{PartName="Right Arm",meshid="105263225400272",C0=angles(0,0,1.5707963267948966)},
-
-	-- shownape/geecee auto rig
-	{PartName="Head",AccessoryName="Accessory (autorig_Head)"},
-	{PartName="Torso",AccessoryName="Accessory (autorig_Torso)"},
-	{PartName="Left Leg",AccessoryName="Accessory (autorig_LeftLeg)"},
-	{PartName="Right Leg",AccessoryName="Accessory (autorig_RightLeg)"},
-	{PartName="Left Arm",AccessoryName="Accessory (autorig_LeftArm)"},
-	{PartName="Right Arm",AccessoryName="Accessory (autorig_RightArm)"},
-
-	-- free rig
-	--[[{PartName="Left Arm",meshid="4324138105",textureid="4324138210",C0=angles(-1.6144295580947547,1.5707963267948966,0)*cf(-0.125,0.3,0)},
-	{PartName="Left Arm",meshid="4154474745",textureid="4154474807",C0=angles(1.5271630954950384,-1.5707963267948966,0)*cf(-0.125,-0.3,0)},
-	{PartName="Right Arm",meshid="3030546036",textureid="3650191503",C0=angles(1.5271630954950384,1.5707963267948966,0)*cf(0.125,-0.3,0)},
-	{PartName="Right Arm",meshid="3030546036",textureid="3443321249",C0=angles(-1.6144295580947547,-1.5707963267948966,0)*cf(0.125,0.3,0)},
-	{PartName="Left Leg",meshid="3030546036",textureid="3360974849",C0=angles(1.5271630954950384,1.5707963267948966,0)*cf(-0.125,-0.35,0)},
-	{PartName="Left Leg",meshid="3030546036",textureid="3360978739",C0=angles(-1.6144295580947547,-1.5707963267948966,0)*cf(-0.125,0.3,0)},
-	{PartName="Right Leg",meshid="3030546036",textureid="3033898741",C0=angles(1.5271630954950384,-1.5707963267948966,0)*cf(0.125,-0.35,0)},
-	{PartName="Right Leg",meshid="3030546036",textureid="3409604993",C0=angles(-1.6144295580947547,1.5707963267948966,0)*cf(0.125,0.3,0)},
-	{PartName="Torso",meshid="4819720316",textureid="4819722776",C0=angles(0,0,0.2617993877991494)}]]
-	{PartName="Torso",meshid="4819720316",textureid="4819722776",C0=angles(0,0,0.2617993877991494)},
-	{PartName="Left Leg",meshid="4094864753",textureid="4094881938",C0=angles(0,0,-1.5707963267948966)},
-	{PartName="Right Leg",meshid="4154474745",textureid="4154474807",C0=angles(0,0,1.5707963267948966)},
-	{PartName="Left Arm",meshid="4489232754",textureid="4489233876",C0=angles(0,0,-1.5707963267948966)},
-	{PartName="Right Arm",meshid="4324138105",textureid="4391374782",C0=angles(0,0,1.5707963267948966)},
-}
-
-local makeplaceholder=function(v)
-	if not insGet(v,"Archivable") then
-		insSet(v,"Archivable",true)
-	end
-	v=Clone(v)
-	local mesh=FindFirstChildOfClass(v,"SpecialMesh")
-	if mesh then
-		insSet(mesh,"Parent",nil)
-		ClearAllChildren(v)
-		ClearAllChildren(mesh)
-		insSet(mesh,"Name",rs())
-		insSet(mesh,"Parent",v)
-	else
-		ClearAllChildren(v)
-	end
-	insSet(v,"Name",rs())
-	insSet(v,"Anchored",true)
-	insSet(v,"CanCollide",false)
-	insSet(v,"Transparency",0.25)
-	return v
-end
-local emptyfunction=function() end
-
-local fling=fling~=false
-local allowshiftlock=allowshiftlock~=false
-local ctrltp=ctrltp~=false
---local invisiblekeybind=false --invisiblekeybind~=false
---local invisibleoffset=(type(invisibleoffset)=="number" and v3_010*-invisibleoffset) or v3_010*-100
-local placeholders=placeholders~=false
-local clickfling=clickfling==true
-local flingdirection=(type(flingdirection)=="number" and flingdirection) or 0
-local flingoffset=nil
-local flingvel=nil
-local flingrotvel=nil
-if flingdirection==0 then
-	flingoffset=-v3_010
-	flingvel=v3(0,16000,0)
-	flingrotvel=v3(16000,0,16000)
-elseif flingdirection==1 then
-	flingoffset=v3_010
-	flingvel=v3(0,-16000,0)
-	flingrotvel=v3(16000,0,16000)
-elseif flingdirection==2 then
-	flingoffset=v3(-0.5,0,0)
-	flingvel=v3(16000,0,0)
-	flingrotvel=v3(0,16000,0)
-end
-local flingtargetting=(type(flingtargetting)=="number" and flingtargetting) or 3
-if (flingtargetting==3) and not sethiddenproperty then
-	flingtargetting=2
-end
-if (flingtargetting==2) and not setscriptable then
-	flingtargetting=0
-end	
-local highlightflingtargets=highlightflingtargets~=false
---local rainbowflinghighlights=rainbowflinghighlights~=false
-local discharscripts=discharscripts~=false and function(v) if IsA(v,"Script") then insSet(v,"Disabled",true) end end
-local flingchangestate=(type(flingchangestate)=="number" and flingchangestate) or 3
-local respawntp=(type(respawntp)=="number" and respawntp) or 3
-local disguiscripts=disguiscripts~=false
-local breakjointsmethod=(type(breakjointsmethod)=="number" and breakjointsmethod) or 1
-if (breakjointsmethod==4) and not replicatesignal then
-	SetCore(sg,"SendNotification",{Title="FDLESS SERVERBREAKJOINTS",Text="Your executor does not support ReplicateSignal! Please see #supported-clients channel."})
-	breakjointsmethod=1
-end
-local simrad=simrad~=false
-local hidedeatheffect=hidedeatheffect~=false
-
-local c=nil
-local cons={}
-local cframes={}
-local hrpcon0=nil
-local hrpcon1=nil
-local flingtable={}
-local plrcleanups={}
-local onnewcamera=nil
-local stopreanimate=function() 
-	if c then
-		c=nil
-		for i,v in next,cframes do
-			local p=i.v
-			if p then
-				Destroy(p)
-			end
-		end
-		tclear(cframes)
-		if hrpcon0 then
-			Disconnect(hrpcon0)
-			Disconnect(hrpcon1)
-			hrpcon0=nil
-		end
-		for i,v in next,flingtable do
-			if v then --it could be false
-				Destroy(v)
-			end
-		end
-		tclear(flingtable)
-		for i,v in next,cons do
-			Disconnect(v)
-		end
-		tclear(cons)
-		for i,cleanupfunc in next,plrcleanups do
-			cleanupfunc()
-		end
-		tclear(plrcleanups)
-		insSet(uis,"MouseBehavior",enumMD)
-		onnewcamera()
-		return true
-	end
-	return false
-end
-local reanimate=function()
-	--[[
-		FDless reanimate by MyWorld continued by rqz
-		optimize the optimized
-	]]
-
-	local novoid=true --prevents parts from going under workspace.FallenPartsDestroyHeight if you control them
-	local speedlimit=3000 --makes your parts move slower if the magnitude of their velocity is higher than this
-	local retVelTime=0.51 --time that claimed parts have velocity to reclaim in case u lose them
-	local walkSpeed=16 --your walkspeed (can be changed at runtime)
-	local jumpPower=50 --your jump power (can be changed at runtime)
-	local gravity=196.2 --how fast the characters velocity decreases while falling (can be changed at runtime)
-	local ctrlclicktp=ctrltp --makes you teleport where u point ur mouse cursor at when click and hold ctrl down
-	--local invisible = false --moves your parts underground so you are not visible by pressing "i"
-
-	if stopreanimate() then return end
-
-	local cam=nil
-	--theres a way to have ws.currentcamera nil on heartbeat and still have the game run normally
-	local refcam=function()
-		local newcam=insGet(ws,"CurrentCamera")
-		while not newcam do
-			Wait(GetPropertyChangedSignal(ws,"CurrentCamera"))
-			newcam=insGet(ws,"CurrentCamera")
-		end
-		cam=newcam
-	end
-	refcam()
-	local camcf=insGet(cam,"CFrame")
-	local enumCamS=e.CameraType.Scriptable
-	local camt=insGet(cam,"CameraType")
-	local camcon0=nil
-	local camcon1=nil
-	local camcon2=nil
-	onnewcamera=function()
-		refcam()
-		if camcon0 then 
-			Disconnect(camcon0)
-			Disconnect(camcon1)
-			camcon0=nil
-		end
-		if not c then 
-			if insGet(cam,"CameraType")==enumCamS then
-				insSet(cam,"CameraType",camt)
-			end
-			return Disconnect(camcon2) 
-		end
-		camcon0=Connect(GetPropertyChangedSignal(cam,"CFrame"),function()
-			if insGet(cam,"CFrame")~=camcf then
-				insSet(cam,"CFrame",camcf)
-			end
+	local genv = (typeof(getgenv) == "function" and getgenv()) or _G
+	local R = genv.LumenReanim
+	if type(R) ~= "table" or type(R.rig) ~= "function" then
+		local base = type(genv.AtsukoHubRaw) == "string" and genv.AtsukoHubRaw or "https://raw.githubusercontent.com/atsukohakari/Atsuko/main/"
+		local ok, src = pcall(function()
+			return game:HttpGet(base .. "Hub/Reanimate.lua")
 		end)
-		camcon1=Connect(GetPropertyChangedSignal(cam,"CameraType"),function()
-			if insGet(cam,"CameraType")~=enumCamS then
-				insSet(cam,"CameraType",enumCamS)
-			end
-		end)
-		if insGet(cam,"CameraType")~=enumCamS then
-			insSet(cam,"CameraType",enumCamS)
-		end
-		if insGet(cam,"CFrame")~=camcf then
-			insSet(cam,"CFrame",camcf)
-		end
-	end
-	camcon2=Connect(GetPropertyChangedSignal(ws,"CurrentCamera"),onnewcamera)
-
-	local wsGravity=insGet(ws,"Gravity")
-	tinsert(cons,Connect(GetPropertyChangedSignal(ws,"Gravity"),function()
-		wsGravity=insGet(ws,"Gravity")
-	end))
-
-	local fpdh=insGet(ws,"FallenPartsDestroyHeight")
-	novoid=novoid and (fpdh+1)
-
-	local cfr=nil
-	c=insGet(lp,"Character")
-	if c and IsDescendantOf(c,ws) then
-		cfr=QueryDescendants(c,">BasePart#HumanoidRootPart")[1] or QueryDescendants(c,">BasePart#Torso")[1] or QueryDescendants(c,">BasePart#UpperTorso")[1] or FindFirstChildWhichIsA(c,"BasePart")
-		if cfr then
-			cfr=insGet(cfr,"CFrame")
-		else
-			cfr=cfMul(insGet(cam,"Focus"),cf(0,-1.5,0))
-		end
-	else
-		c=true
-		cfr=cfMul(insGet(cam,"Focus"),cf(0,-1.5,0))
-	end
-
-	onnewcamera()
-
-	local Yvel=0
-	local pos=cfGet(cfr,"Position")
-	cfr=cfl(pos,pos+cfGet(cfr,"LookVector")*v3_101)
-	local primarypart=nil
-	local shiftlock=false
-	local firstperson=false
-	local xzvel=v3_0
-	local v3_0150=v3_010*1.5
-	local camcfLV=cfGet(camcf,"LookVector")
-	local camrot=cfl(v3_0,camcfLV)
-	local camrotX,camrotY=cfGet(camrot,"ToEulerAnglesYXZ")(camrot)
-	local camcfRV=cfGet(camrot,"RightVector")
-	local cammag=-vmagnitude((cfGet(camcf,"Position")-(pos+v3_0150)))
-
-	local R6parts={ 
-		head={Name="Head"},
-		torso={Name="Torso"},
-		root={Name="HumanoidRootPart"},
-		leftArm={Name="Left Arm"},
-		rightArm={Name="Right Arm"},
-		leftLeg={Name="Left Leg"},
-		rightLeg={Name="Right Leg"}
-	}
-	local rootpart=R6parts.root
-	for i,v in next,R6parts do
-		cframes[v]=cfr
-	end
-	local joints={
-		{
-			Name="Neck",
-			Part0=R6parts.torso,Part1=R6parts.head,
-			C0=cf(0,1,0,-1,0,0,0,0,1,0,1,-0),
-			C1=cf(0,-0.5,0,-1,0,0,0,0,1,0,1,-0)
-		},
-		{
-			Name="RootJoint",
-			Part0=rootpart,Part1=R6parts.torso,
-			C0=cf(0,0,0,-1,0,0,0,0,1,0,1,-0),
-			C1=cf(0,0,0,-1,0,0,0,0,1,0,1,-0)
-		},
-		{
-			Name="Right Shoulder",
-			Part0=R6parts.torso,Part1=R6parts.rightArm,
-			C0=cf(1,0.5,0,0,0,1,0,1,-0,-1,0,0),
-			C1=cf(-0.5,0.5,0,0,0,1,0,1,-0,-1,0,0)
-		},
-		{
-			Name="Left Shoulder",
-			Part0=R6parts.torso,Part1=R6parts.leftArm,
-			C0=cf(-1,0.5,0,0,0,-1,0,1,0,1,0,0),
-			C1=cf(0.5,0.5,0,0,0,-1,0,1,0,1,0,0)
-		},
-		{
-			Name="Right Hip",
-			Part0=R6parts.torso,Part1=R6parts.rightLeg,
-			C0=cf(1,-1,0,0,0,1,0,1,-0,-1,0,0),
-			C1=cf(0.5,1,0,0,0,1,0,1,-0,-1,0,0)
-		},
-		{
-			Name="Left Hip",
-			Part0=R6parts.torso,Part1=R6parts.leftLeg,
-			C0=cf(-1,-1,0,0,0,-1,0,1,0,1,0,0),
-			C1=cf(-0.5,1,0,0,0,-1,0,1,0,1,0,0)
-		}
-	}
-
-	local refreshedjoints={}
-	local refreshjointsI=nil
-	refreshjointsI=function(part)
-		refreshedjoints[part]=true
-		for i,v in next,joints do
-			local part0=v.Part0
-			local part1=v.Part1
-			if part1 and (part0==part) then
-				cframes[part1]=cfMul(cframes[part],cfMul(v.C0,Inverse(v.C1)))
-				if not refreshedjoints[part1] then
-					refreshjointsI(part1)
-				end
-			elseif part0 and (part1==part) then
-				cframes[part0]=cfMul(cframes[part],cfMul(v.C1,Inverse(v.C0)))
-				if not refreshedjoints[part0] then
-					refreshjointsI(part0)
-				end
+		local fn = ok and type(src) == "string" and loadstring and loadstring(src, "=Reanimate")
+		if fn then
+			local ok2, r = pcall(fn)
+			if ok2 and type(r) == "table" then
+				R = r
 			end
 		end
 	end
-	refreshjointsI(rootpart)
-	tclear(refreshedjoints)
-
-	local attachments={
-		RightShoulderAttachment={R6parts.rightArm,cf(0,1,0,1,0,0,0,1,0,0,0,1)},
-		RightGripAttachment={R6parts.rightArm,cf(0,-1,0,1,0,0,0,1,0,0,0,1)},
-		LeftFootAttachment={R6parts.leftLeg,cf(0,-1,0,1,0,0,0,1,0,0,0,1)},
-		LeftShoulderAttachment={R6parts.leftArm,cf(0,1,0,1,0,0,0,1,0,0,0,1)},
-		LeftGripAttachment={R6parts.leftArm,cf(0,-1,0,1,0,0,0,1,0,0,0,1)},
-		RootAttachment={rootpart,cf(0,0,0,1,0,0,0,1,0,0,0,1)},
-		RightFootAttachment={R6parts.rightLeg,cf(0,-1,0,1,0,0,0,1,0,0,0,1)},
-		NeckAttachment={R6parts.torso,cf(0,1,0,1,0,0,0,1,0,0,0,1)},
-		BodyFrontAttachment={R6parts.torso,cf(0,0,-0.5,1,0,0,0,1,0,0,0,1)},
-		BodyBackAttachment={R6parts.torso,cf(0,0,0.5,1,0,0,0,1,0,0,0,1)},
-		LeftCollarAttachment={R6parts.torso,cf(-1,1,0,1,0,0,0,1,0,0,0,1)},
-		RightCollarAttachment={R6parts.torso,cf(1,1,0,1,0,0,0,1,0,0,0,1)},
-		WaistFrontAttachment={R6parts.torso,cf(0,-1,-0.5,1,0,0,0,1,0,0,0,1)},
-		WaistCenterAttachment={R6parts.torso,cf(0,-1,0,1,0,0,0,1,0,0,0,1)},
-		WaistBackAttachment={R6parts.torso,cf(0,-1,0.5,1,0,0,0,1,0,0,0,1)},
-		HairAttachment={R6parts.head,cf(0,0.6,0,1,0,0,0,1,0,0,0,1)},
-		HatAttachment={R6parts.head,cf(0,0.6,0,1,0,0,0,1,0,0,0,1)},
-		FaceFrontAttachment={R6parts.head,cf(0,0,-0.6,1,0,0,0,1,0,0,0,1)},
-		FaceCenterAttachment={R6parts.head,cf(0,0,0,1,0,0,0,1,0,0,0,1)}
-	}
-
-	local getPart=function(name,blacklist)
-		if blacklist then
-			for i,v in next,cframes do
-				if (i.Name==name) and not tfind(blacklist,i) then
-					return i
-				end
-			end
-		else
-			for i,v in next,cframes do
-				if i.Name==name then
-					return i
-				end
-			end
-		end
-		return nil
+	if type(R) == "table" and type(R.rig) == "function" then
+		return R.rig({aligns = ALIGNS})
 	end
-
-	local getJoint=function(name)
-		for i,v in next,joints do
-			if v.Name==name then
-				return v
-			end
-		end
-		return {C0=cf_0,C1=cf_0}
-	end
-
-	local getPartFromMesh=function(m,t,blacklist)
-		if blacklist then
-			for v,_ in next,cframes do
-				if v.m and (not tfind(blacklist,v)) and sfind(v.m,m) and sfind(v.t,t) then
-					return v
-				end
-			end
-		else
-			for v,_ in next,cframes do
-				if v.m and sfind(v.m,m) and sfind(v.t,t) then
-					return v
-				end
-			end
-		end
-		local p={m=m,t=t}
-		cframes[p]=cfr
-		local j={C0=cf_0,C1=cf_0,Part0=p}
-		p.j=j
-		return p
-	end
-	local getPartJoint=function(p)
-		if cframes[p] then
-			local j=p.j
-			if j then
-				return j
-			end
-			for i,v in next,joints do
-				if v.Part0==p then
-					return v
-				end
-			end
-			for i,v in next,joints do
-				if v.Part1==p then
-					return v
-				end
-			end
-		end
-		return nil
-	end
-
-	local getAccWeldFromMesh=function(m,t)
-		return getPartJoint(getPartFromMesh(m,t))
-	end
-
-	local raycastparams=rp()
-	raycastparams.FilterType=e.RaycastFilterType.Exclude
-	raycastparams.RespectCanCollide=true
-	local rayfilter={}
-	local characters={}
-	local refreshrayfilter=function()
-		tclear(rayfilter)
-		for i,v in next,characters do
-			tinsert(rayfilter,v)
-		end
-		raycastparams.FilterDescendantsInstances=rayfilter
-	end
-	local rootparts={}
-	for i,v in next,aligns do
-		v.p=getPart(v.PartName)
-		if not v.meshid then
-			v.meshid=""
-		end 
-		if not v.textureid then
-			v.textureid=""
-		end 
-	end
-	local makePartCons=function(p,t)
-		if (t.p==p) and insGet(p,"Anchored") then
-			t.p=nil
-		end
-		local con0=Connect(GetPropertyChangedSignal(p,"Anchored"),function()
-			if insGet(p,"Anchored") then
-				if t.p==p then
-					t.c=nil
-					t.p=nil
-				end
-			elseif not t.p then
-				t.p=p
-			end
-		end)
-		local con1=nil
-		con1=Connect(insGet(p,"AncestryChanged"),function()
-			if not IsDescendantOf(p,ws) then
-				Disconnect(con0)
-				Disconnect(con1)
-				if t.p==p then
-					t.p=nil
-				end
-			end
-		end)
-	end
-	local ondes=function(v)
-		if IsA(v,"Attachment") then
-			local v1=attachments[insGet(v,"Name")]
-			if v1 then
-				local p=insGet(v,"Parent")
-				if insGet(p,"Parent")~=c then
-					local meshid=nil
-					local textureid=nil
-					if IsA(p,"MeshPart") then
-						meshid=insGet(p,"MeshId")
-						textureid=insGet(p,"TextureID")
-					elseif IsA(p,"BasePart") then
-						local sm=FindFirstChildOfClass(p,"SpecialMesh")
-						if sm then
-							meshid=insGet(sm,"MeshId")
-							textureid=insGet(sm,"TextureId")
-						else
-							return
-						end
-					else
-						return
-					end
-					for i,_ in next,cframes do
-						if (meshid==i.m) and (textureid==i.t) then
-							local p1=i.p
-							if p1 then
-								if p1==p then
-									return
-								end
-							else
-								i.p=p
-								makePartCons(p,i)
-								return
-							end
-						else
-							local j=i.j
-							if j and sfind(meshid,i.m) and sfind(textureid,i.t) then
-								i.m=meshid
-								i.t=textureid
-								i.l=insGet(p,"Position")
-								i.p=p
-								makePartCons(p,i)
-								i.j=nil
-								i.Name=insGet(p,"Name")
-								j.C0=insGet(v,"CFrame")
-								j.C1=v1[2]
-								j.Part1=v1[1]
-								tinsert(joints,j)
-								return
-							end
-						end
-					end
-					local n=insGet(insGet(p,"Parent"),"Name")
-					for i,l in next,aligns do
-						if l.p and sfind(meshid,l.meshid) and sfind(textureid,l.textureid) and ((not l.AccessoryName) or (l.AccessoryName==n)) then
-							local t={Name=insGet(p,"Name"),l=insGet(p,"Position"),m=meshid,t=textureid,p=p}
-							makePartCons(p,t)
-							if placeholders then
-								t.v=makeplaceholder(p)
-								t.b=false
-							end
-							cframes[t]=insGet(p,"CFrame")
-							tinsert(joints,{Part0=t,Part1=l.p,C0=l.C0 or cf_0,C1=cf_0})
-							l.p=nil
-							return
-						end
-					end
-					local t={Name=insGet(p,"Name"),l=insGet(p,"Position"),m=meshid,t=textureid,p=p}
-					makePartCons(p,t)
-					if placeholders then
-						t.v=makeplaceholder(p)
-						t.b=false
-					end
-					cframes[t]=insGet(p,"CFrame")
-					tinsert(joints,{Part0=t,Part1=v1[1],C0=insGet(v,"CFrame"),C1=v1[2]})
-				end
-			end
-		end
-	end
-
-	local simradv=1000
-	local enumH=e.CoreGuiType.Health
-	local onplayer=function(v)
-		simradv=simradv+1000
-		local lastc=nil
-		local con0=nil
-		local con1=nil
-		local oncharacter=function()
-			local newc=insGet(v,"Character")
-			if newc and (newc~=lastc) then
-				lastc=newc
-
-				if con0 then
-					Disconnect(con0)
-					Disconnect(con1)
-					con0=nil
-				end
-
-				characters[v]=newc
-				refreshrayfilter()
-
-				local hrp=QueryDescendants(newc,">BasePart#HumanoidRootPart")[1]
-				if hrp then
-					rootparts[v]=hrp
-				else
-					local refresh=true					
-					local threshold=false
-					tdelay(0.5,function()
-						refresh=true
-						threshold=true
-					end)
-					con0=Connect(preanimation,function()
-						if refresh then
-							if threshold then
-								hrp=QueryDescendants(newc,">BasePart#HumanoidRootPart")[1] or QueryDescendants(newc,">BasePart#Torso")[1] or QueryDescendants(newc,">BasePart#UpperTorso")[1] or FindFirstChildWhichIsA(newc,"BasePart")
-							else
-								hrp=QueryDescendants(newc,">BasePart#HumanoidRootPart")[1]
-							end
-							if hrp then
-								rootparts[v]=hrp
-								Disconnect(con0)
-								Disconnect(con1)
-								con0=nil
-								return
-							end
-							refresh=false
-						end
-					end)
-					con1=Connect(insGet(newc,"ChildAdded"),function()
-						refresh=true
-					end)
-				end
-			end
-		end
-
-		local charcon=Connect(GetPropertyChangedSignal(v,"Character"),oncharacter)
-		oncharacter()
-		plrcleanups[v]=function()
-			simradv=simradv-1000
-			characters[v]=nil
-			rootparts[v]=nil
-			if con0 then
-				Disconnect(con0)
-				Disconnect(con1)
-				con0=nil
-			end
-			Disconnect(charcon)
-		end
-	end
-	tinsert(cons,Connect(insGet(plrs,"PlayerRemoving"),function(v)
-		local cleanup=plrcleanups[v]
-		if cleanup then
-			cleanup()
-			plrcleanups[v]=nil
-		end
-	end))
-	for i,v in next,GetPlayers(plrs) do simradv=simradv+1000 if v~=lp then tspawn(onplayer,v) end end
-	tinsert(cons,Connect(insGet(plrs,"PlayerAdded"),onplayer))
-	if disguiscripts then
-		tinsert(cons,Connect(insGet(pg,"DescendantAdded"),function(v)
-			if IsA(v,"Script") then --mind Enum.RunContext.Client
-				insSet(v,"Disabled",true) 
-			end
-		end))
-	end
-
-	local lastc=nil
-	local oncharacter=function()
-		local newc=insGet(lp,"Character")
-		if newc and (newc~=lastc) then
-			lastc=newc
-
-			if hrpcon0 then
-				Disconnect(hrpcon0)
-				Disconnect(hrpcon1)
-				hrpcon0=nil
-			end
-
-			if discharscripts then
-				Connect(insGet(newc,"DescendantAdded"),discharscripts)
-				for i,v in next,QueryDescendants(newc,"Script") do
-					insSet(v,"Disabled",true)
-				end
-			end
-
-			characters[lp]=newc
-			refreshrayfilter()
-
-			local hrp=QueryDescendants(newc,">BasePart#HumanoidRootPart")[1]
-			if not hrp then
-				local refresh=true
-				local threshold=false
-				tdelay(0.5,function()
-					refresh=true
-					threshold=true
-				end)
-				local thread=crunning()
-				hrpcon1=Connect(preanimation,function()
-					if refresh then
-						if threshold then
-							hrp=QueryDescendants(newc,">BasePart#HumanoidRootPart")[1] or QueryDescendants(newc,">BasePart#Torso")[1] or QueryDescendants(newc,">BasePart#UpperTorso")[1] or FindFirstChildWhichIsA(newc,"BasePart")
-						else
-							hrp=QueryDescendants(newc,">BasePart#HumanoidRootPart")[1]
-						end
-						if hrp then
-							Disconnect(hrpcon0)
-							Disconnect(hrpcon1)
-							hrpcon0=nil
-							cresume(thread)
-							return
-						end
-						refresh=false
-					end
-				end)
-				hrpcon0=Connect(insGet(newc,"ChildAdded"),function()
-					refresh=true
-				end)
-				cyield()
-				Wait(stepped)
-			end
-
-			c=newc
-			if next(flingtable) then
-				local hum=FindFirstChildOfClass(c,"Humanoid")
-				if hum then
-					if flingchangestate==3 then
-						ChangeState(hum,enumphysics)
-						SetStateEnabled(hum,enumseated,false)
-					elseif flingchangestate==1 then
-						ChangeState(hum,enumphysics)
-					else
-						if flingchangestate==2 then
-							SetStateEnabled(hum,enumseated,false)
-						end
-						if flingtargetting~=0 then
-							ChangeState(hum,enumragdoll)
-							SetStateEnabled(hum,enumrunning,false)
-						end
-					end
-				end
-				twait(0.25)
-				for i1,v in next,tclone(flingtable) do
-					if not c then
-						return
-					end
-					if flingtargetting==3 then
-						sethiddenproperty(hrp,"PhysicsRepRootPart",i1)
-					elseif flingtargetting==2 then
-						setscriptable(hrp,"PhysicsRepRootPart",true)
-						insSet(hrp,"PhysicsRepRootPart",i1)
-						setscriptable(hrp,"PhysicsRepRootPart",false)
-					elseif flingtargetting==1 then
-						local hrpcpp=insGet(hrp,"CustomPhysicalProperties")
-						local tparent=insGet(i1,"Parent")
-						local tcfr=insGet(i1,"CFrame")
-
-						local model=i("Model")
-						local hum=i("Humanoid",model)
-						for i,v in next,humstatesbl do
-							SetStateEnabled(hum,v,false)
-						end
-
-						local restorejoints={}
-						for i,v in next,GetJoints(hrp) do
-							restorejoints[v]=insGet(v,"Parent")
-							insSet(v,"Parent",nil)
-						end
-						for i,v in next,GetJoints(i1) do
-							restorejoints[v]=insGet(v,"Parent")
-							insSet(v,"Parent",nil)
-						end
-
-						local tcfr1=cf(cfGet(tcfr,"Position")+v3_010*mrandom(10000,20000))
-						insSet(i1,"Parent",ws)
-						insSet(i1,"CFrame",tcfr1)
-						insSet(hrp,"Parent",model)
-						insSet(hrp,"CFrame",tcfr1+(insGet(hrp,"Size")+insGet(i1,"Size"))*sm)
-						insSet(i1,"CustomPhysicalProperties",dense)
-						insSet(hrp,"CustomPhysicalProperties",light)
-						insSet(model,"Parent",ws)
-						ChangeState(hum,enumrunning)
-						if not insGet(i1,"CanCollide") then
-							insSet(i1,"CanCollide",true)
-						end
-						Wait(stepped)
-						for i,v in next,restorejoints do
-							insSet(i,"Parent",v)
-						end
-						insSet(i1,"CFrame",tcfr)
-						insSet(i1,"Parent",tparent)
-						insSet(hrp,"CustomPhysicalProperties",hrpcpp)
-						insSet(hrp,"Parent",newc)
-						Destroy(model)
-					end
-					local startpos=insGet(i1,"Position")
-					local stoptime=sine+(((flingtargetting~=0) and 0.1) or 3)
-					while true do
-						if insGet(i1,"Anchored") or not IsDescendantOf(i1,ws) then
-							break
-						end
-						if vmagnitude(startpos-insGet(i1,"Position"))>200 then
-							break
-						end
-						if flingtargetting~=0 then
-							local tcf=cfAdd(insGet(i1,"CFrame"),flingoffset)
-							if novoid and (cfGet(tcf,"Y")<novoid) then
-								tcf=cfAdd(tcf,v3_010*(novoid-cfGet(tcf,"Y")))
-							end
-							insSet(hrp,"CFrame",tcf)
-							insSet(hrp,"AssemblyLinearVelocity",flingvel)
-						else
-							local tcf=cfAdd(insGet(i1,"CFrame"),insGet(i1,"AssemblyLinearVelocity")*(sin(sine*15)+1)+flingoffset)
-							if novoid and (cfGet(tcf,"Y")<novoid) then
-								tcf=cfAdd(tcf,v3_010*(novoid-cfGet(tcf,"Y")))
-							end
-							insSet(hrp,"CFrame",tcf)
-							insSet(hrp,"AssemblyLinearVelocity",insGet(i1,"AssemblyLinearVelocity")*v3_101*75)
-						end
-						insSet(hrp,"AssemblyAngularVelocity",flingrotvel)
-						if sine>stoptime then
-							break
-						end
-						twait()
-					end
-					if v then
-						Destroy(v)
-					end
-					flingtable[i1]=nil
-				end
-				if flingtargetting==3 then
-					sethiddenproperty(hrp,"PhysicsRepRootPart",nil)
-				elseif flingtargetting==2 then
-					setscriptable(hrp,"PhysicsRepRootPart",true)
-					insSet(hrp,"PhysicsRepRootPart",nil)
-					setscriptable(hrp,"PhysicsRepRootPart",false)
-				elseif flingtargetting==1 then
-					SetStateEnabled(hum,enumrunning,true)
-					ChangeState(hum,enumrunning)
-				end
-				if respawntp==0 then
-					insSet(hrp,"AssemblyLinearVelocity",v3_0)
-					insSet(hrp,"AssemblyAngularVelocity",v3_0)
-					insSet(hrp,"CFrame",cfr)
-					twait(0.3)
-				end
-			end
-			if respawntp==0 then
-				twait()
-			elseif respawntp==1 then
-				local startpos=pos+v3(mrandom(-32,32),0,mrandom(-32,32))
-				local dir=nil
-				local poscheck=true
-				while poscheck do
-					poscheck=false
-					for i,v in next,rootparts do
-						local diff=(startpos-insGet(v,"Position"))*v3_101
-						if vmagnitude(diff)<10 then
-							poscheck=true
-							dir=dir or (vnormalize(diff)*3)
-							startpos=startpos+dir
-						end
-					end
-					local diff=(startpos-pos)*v3_101
-					if vmagnitude(diff)<10 then
-						poscheck=true
-						dir=dir or (vnormalize(diff)*3)
-						startpos=startpos+dir
-					end
-				end
-				startpos=cfAdd(cfGet(cfr,"Rotation"),startpos)
-				insSet(hrp,"CFrame",startpos)
-				insSet(hrp,"AssemblyLinearVelocity",v3_0)
-				insSet(hrp,"AssemblyAngularVelocity",v3_0)
-				twait(0.3)
-			elseif respawntp==2 then
-				insSet(hrp,"CFrame",cfAdd(cfr,cfGet(cfr,"RightVector")*3.5-cfGet(cfr,"LookVector")*3.5))
-				insSet(hrp,"AssemblyLinearVelocity",v3_0)
-				insSet(hrp,"AssemblyAngularVelocity",v3_0)
-				twait(0.3)
-			elseif respawntp==3 then
-				local t=osclock()+0.3
-				local startcf=cfAdd(cfMul(cfGet(cfr,"Rotation"),angles(1.5707963267948966,0,0)),pos*v3_101+v3_010*min(fpdh+30,v3Get(pos,"Y")-5))
-				while twait() do
-					insSet(hrp,"CFrame",startcf)
-					insSet(hrp,"AssemblyLinearVelocity",v3_0)
-					insSet(hrp,"AssemblyAngularVelocity",v3_0)
-					if osclock()>t then
-						break
-					end
-				end
-			end
-			if newc~=c then
-				return
-			end
-			primarypart=insGet(newc,"PrimaryPart") or hrp
-			if hidedeatheffect and GetCoreGuiEnabled(sg,enumH) then
-				SetCoreGuiEnabled(sg,enumH,false)
-			end
-			if breakjointsmethod==4 then
-				local h=FindFirstChildOfClass(newc,"Humanoid")
-				if h then
-					replicatesignal(insGet(h,"ServerBreakJoints"))
-				else
-					BreakJoints(newc)
-				end
-			elseif breakjointsmethod==1 then
-				BreakJoints(newc)
-				local h=FindFirstChildOfClass(newc,"Humanoid")
-				if h then
-					insSet(h,"Health",0)
-				end
-			elseif breakjointsmethod==2 then
-				local h=FindFirstChildOfClass(newc,"Humanoid")
-				if h then
-					insSet(h,"Health",0)
-				else
-					BreakJoints(newc)
-				end
-			else
-				BreakJoints(newc)
-			end
-			cons.ondes=Connect(insGet(newc,"DescendantAdded"),ondes)
-			for i,v in next,QueryDescendants(newc,"Attachment") do
-				ondes(v)
-			end
-		end
-	end
-	tinsert(cons,Connect(GetPropertyChangedSignal(lp,"Character"),oncharacter))
-	oncharacter()
-
-	local setsimrad=emptyfunction
-	if simrad then
-		setsimrad=function()
-			if pcall(insSet,lp,"SimulationRadius",simradv) then
-				setsimrad=function()
-					insSet(lp,"SimulationRadius",simradv)
-				end
-			else
-				setsimrad=emptyfunction
-			end
-		end
-	end
-
-	local mradN05=-0.008726646259971648
-	local pi2=math.pi/2-0.0001
-	local npi2=-pi2
-	local KeyCode=e.KeyCode
-	local enumYXZ=e.RotationOrder.YXZ
-	local enumMB2=e.UserInputType.MouseButton2
-	local enumMLCP=e.MouseBehavior.LockCurrentPosition
-	local enumMLC=(insGet(uis,"TouchEnabled") and enumMLCP) or e.MouseBehavior.LockCenter 
-	local enumMW=e.UserInputType.MouseWheel
-	local enumMM=e.UserInputType.MouseMovement
-
-	local mouseBehavior=insGet(uis,"MouseBehavior")
-	tinsert(cons,Connect(GetPropertyChangedSignal(uis,"MouseBehavior"),function()
-		if insGet(uis,"MouseBehavior")~=mouseBehavior then
-			insSet(uis,"MouseBehavior",mouseBehavior)
-		end
-	end))
-
-	local mode="default"
-	local defaultmode={}
-	local modes={default=defaultmode}
-
-	local lerpsIdle=emptyfunction
-	local lerpsWalk=emptyfunction
-	local lerpsJump=emptyfunction
-	local lerpsFall=emptyfunction
-
-	local addmode=function(key,mode)
-		if (type(key)~="string") or (type(mode)~="table") then
-			return
-		end
-		for i,v in next,mode do
-			if type(v)~="function" then
-				mode[i]=nil
-			end
-		end
-		if key=="default" then
-			defaultmode=mode
-			modes.default=mode
-			lerpsIdle=mode.idle or emptyfunction
-			lerpsWalk=mode.walk or emptyfunction
-			lerpsJump=mode.jump or emptyfunction
-			lerpsFall=mode.fall or emptyfunction
-			if mode.modeEntered then
-				mode.modeEntered()
-			end
-		elseif #key==1 then
-			key=KeyCode[supper(ssub(key,1,1))]
-			modes[key]=mode
-		end
-	end
-
-	local keyW=KeyCode.W
-	local Wpressed=IsKeyDown(uis,keyW)
-	local keyA=KeyCode.A
-	local Apressed=IsKeyDown(uis,keyA)
-	local keyS=KeyCode.S
-	local Spressed=IsKeyDown(uis,keyS)
-	local keyD=KeyCode.D
-	local Dpressed=IsKeyDown(uis,keyD)
-	local keySpace=KeyCode.Space
-	local jumpingInput=IsKeyDown(uis,keySpace)
-
-	local FWmovement=0
-	local RTmovement=0
-	local isWalking=false
-	local refreshKeyboardMovement=function()
-		if Wpressed then if Spressed then if Dpressed then if Apressed then isWalking=false else FWmovement=0 RTmovement=1 isWalking=true end else if Apressed then FWmovement=0 RTmovement=-1 isWalking=true else isWalking=false end end else FWmovement=1 if Dpressed then if Apressed then RTmovement=0 else RTmovement=1 end else if Apressed then RTmovement=-1 else RTmovement=0 end end isWalking=true end else if Spressed then FWmovement=-1 if Dpressed then if Apressed then RTmovement=0 else RTmovement=1 end else if Apressed then RTmovement=-1 else RTmovement=0 end end isWalking=true else if Dpressed then if Apressed then isWalking=false else FWmovement=0 RTmovement=1 isWalking=true end else if Apressed then FWmovement=0 RTmovement=-1 isWalking=true else isWalking=false end end end end
-	end
-	refreshKeyboardMovement()
-
-	local keyShift=KeyCode.LeftShift
-	--local keyI=KeyCode.I
-	tinsert(cons,Connect(insGet(uis,"InputBegan"),function(a)
-		if insGet(gs,"MenuIsOpen") or GetFocusedTextBox(uis) then
-			return
-		end
-		a=insGet(a,"KeyCode")
-		if a==keyW then
-			Wpressed=true
-			refreshKeyboardMovement()
-		elseif a==keyA then
-			Apressed=true
-			refreshKeyboardMovement()
-		elseif a==keyS then
-			Spressed=true
-			refreshKeyboardMovement()
-		elseif a==keyD then
-			Dpressed=true
-			refreshKeyboardMovement()
-		elseif a==keySpace then
-			jumpingInput=true
-		elseif a==keyShift then
-			shiftlock=allowshiftlock and not shiftlock
-			--elseif invisiblekeybind and a==keyI then
-			--invisible=not invisible
-		elseif modes[a] then
-			local modeLeft=modes[mode].modeLeft
-			if modeLeft then
-				modeLeft()
-			end
-			if mode==a then
-				mode="default"
-			else
-				mode=a
-			end
-			local modet=modes[mode]
-			lerpsIdle=modet.idle or defaultmode.idle or emptyfunction
-			lerpsWalk=modet.walk or defaultmode.walk or emptyfunction
-			lerpsJump=modet.jump or defaultmode.jump or emptyfunction
-			lerpsFall=modet.fall or defaultmode.fall or emptyfunction
-			if modes[mode].modeEntered then
-				modes[mode].modeEntered()
-			end
-		end
-	end))
-	tinsert(cons,Connect(insGet(uis,"InputEnded"),function(a)
-		a=insGet(a,"KeyCode")
-		if a==keyW then
-			Wpressed=false
-			refreshKeyboardMovement()
-		elseif a==keyA then
-			Apressed=false
-			refreshKeyboardMovement()
-		elseif a==keyS then
-			Spressed=false
-			refreshKeyboardMovement()
-		elseif a==keyD then
-			Dpressed=false
-			refreshKeyboardMovement()
-		elseif a==keySpace then
-			jumpingInput=false
-		end
-	end))
-
-	local thumbstickEndX=0
-	local thumbstickStartY=0
-
-	local thumbstickSizeMultiplier=0
-
-	local jumpStartX=0
-	local jumpStartY=0
-	local jumpEndX=0
-	local jumpEndY=0
-
-	local thumbstickInputObject=nil
-	local jumpInputObject=nil
-	local cameraRotateInputObject=nil
-	local cameraZoomInputObject=nil
-
-	local thumbstickTouchStart=v3_0
-	local cameraZoomInputMagnitude=0
-
-	tinsert(cons,Connect(insGet(uis,"TouchStarted"),function(inputObject)
-		if insGet(gs,"MenuIsOpen") or GetFocusedTextBox(uis) then
-			return
-		end
-
-		local touchPos=insGet(inputObject,"Position")
-		local touchX=v3Get(touchPos,"X")
-		local touchY=v3Get(touchPos,"Y")
-
-		if (not thumbstickInputObject) and touchX<thumbstickEndX and touchY>thumbstickStartY then
-			thumbstickInputObject=inputObject
-			thumbstickTouchStart=insGet(inputObject,"Position")
-			isWalking=false
-		elseif (not jumpInputObject) and touchY>jumpStartY and touchX>jumpStartX and touchX<jumpEndX and touchY<jumpEndY then
-			jumpInputObject=inputObject
-			jumpingInput=true
-		elseif not cameraRotateInputObject then
-			cameraRotateInputObject=inputObject
-		else
-			cameraZoomInputObject=inputObject
-			cameraZoomInputMagnitude=vmagnitude(insGet(cameraRotateInputObject,"Position")-insGet(cameraZoomInputObject,"Position"))
-		end
-	end))
-	local cameraMoveable=true
-	tinsert(cons,Connect(insGet(uis,"TouchMoved"),function(inputObject)
-		local touchPos=insGet(inputObject,"Position")
-		local touchX=v3Get(touchPos,"X")
-		local touchY=v3Get(touchPos,"Y")
-		if inputObject==thumbstickInputObject then
-			local direction=insGet(inputObject,"Position")-thumbstickTouchStart
-			local directionMag=vmagnitude(direction)/thumbstickSizeMultiplier
-			if directionMag>0.05 then
-				isWalking=true
-				direction=vnormalize(direction)*min(1,(directionMag-0.05)/0.95) 
-				FWmovement=-v3Get(direction,"Y")
-				RTmovement=v3Get(direction,"X")
-			else
-				isWalking=false
-			end
-		elseif inputObject==jumpInputObject then
-			jumpingInput=touchY>jumpStartY and touchX>jumpStartX and touchX<jumpEndX and touchY<jumpEndY
-		else
-			if cameraZoomInputObject then
-				local newMagnitude=vmagnitude(insGet(cameraRotateInputObject,"Position")-insGet(cameraZoomInputObject,"Position"))
-				cammag=cammag+(newMagnitude-cameraZoomInputMagnitude)*0.04*(0.75-cammag/4)
-				cameraZoomInputMagnitude=newMagnitude
-				if cammag<0 then
-					firstperson=false
-				else
-					cammag=0
-					firstperson=true
-				end
-			elseif (inputObject==cameraRotateInputObject) and cameraMoveable then
-				local rotation=GetMouseDelta(uis)
-				camrotX=clamp(v2Get(rotation,"Y")*mradN05+camrotX,npi2,pi2)
-				camrotY=v2Get(rotation,"X")*mradN05+camrotY
-				camrot=angles(camrotX,camrotY,0,enumYXZ)
-				camcfLV=cfGet(camrot,"LookVector")
-				camcfRV=cfGet(camrot,"RightVector")
-			end
-		end
-	end))
-	tinsert(cons,Connect(insGet(uis,"TouchEnded"),function(inputObject)
-		if inputObject==thumbstickInputObject then
-			thumbstickInputObject=nil
-			isWalking=false
-		elseif inputObject==jumpInputObject then
-			jumpInputObject=nil
-			jumpingInput=false
-		elseif inputObject==cameraRotateInputObject then
-			cameraRotateInputObject=nil
-			cameraZoomInputObject=nil
-		elseif inputObject==cameraZoomInputObject then
-			cameraZoomInputObject=nil
-		end
-	end))
-
-	local refreshTouchRegions=function()
-		local sX=insGet(mouse,"ViewSizeX")
-		local sY=insGet(mouse,"ViewSizeY")
-		local isSmallScreen=min(sX,sY)<=500
-
-		sY=sY+insGet(gs,"TopbarInset").Height
-
-		thumbstickEndX=sX*0.4
-		thumbstickStartY=(sY+0)*0.333
-
-		if isSmallScreen then
-			thumbstickSizeMultiplier=35
-			jumpStartX=sX-95
-			jumpStartY=sY-90
-			jumpEndX=jumpStartX+70
-			jumpEndY=jumpStartY+70
-		else
-			thumbstickSizeMultiplier=60
-			jumpStartX=sX-170
-			jumpStartY=sY-210
-			jumpEndX=jumpStartX+120
-			jumpEndY=jumpStartY+120
-		end
-	end
-	tinsert(cons,Connect(GetPropertyChangedSignal(mouse,"ViewSizeX"),refreshTouchRegions))
-	tinsert(cons,Connect(GetPropertyChangedSignal(mouse,"ViewSizeY"),refreshTouchRegions))
-	tinsert(cons,Connect(GetPropertyChangedSignal(gs,"TopbarInset"),refreshTouchRegions))
-	refreshTouchRegions()
-
-	local mouseCameraMove=false
-	tinsert(cons,Connect(insGet(uis,"InputChanged"),function(a,b)
-		if b then return end
-		local inputType=insGet(a,"UserInputType")
-		if mouseCameraMove and (inputType==enumMM) and cameraMoveable then
-			local rotation=GetMouseDelta(uis)
-			camrotX=clamp(v2Get(rotation,"Y")*mradN05+camrotX,npi2,pi2)
-			camrotY=v2Get(rotation,"X")*mradN05+camrotY
-			camrot=angles(camrotX,camrotY,0,enumYXZ)
-			camcfLV=cfGet(camrot,"LookVector")
-			camcfRV=cfGet(camrot,"RightVector")
-		elseif inputType==enumMW then
-			cammag=cammag+v3Get(insGet(a,"Position"),"Z")*(0.75-cammag/4)
-			if cammag<0 then
-				firstperson=false
-			else
-				cammag=0
-				firstperson=true
-			end
-		end
-	end))
-
-	if fling then
-		local guiparent=FindFirstChildOfClass(game,"CoreGui")
-		if not pcall(FindFirstChildOfClass,guiparent,"ScreenGui") then
-			guiparent=pg
-		end
-		fling=function(target)
-			if typeof(target)~="Instance" then 
-				target=insGet(mouse,"Target")
-				if not target then
-					return false
-				end
-			end
-			if not IsDescendantOf(target,ws) then
-				return false
-			end
-			if IsA(target,"BasePart") or IsA(target,"Humanoid") then 
-				target=insGet(target,"Parent") 
-				if IsA(target,"Accoutrement") then
-					target=insGet(target,"Parent")
-				end
-			end
-			if (not IsA(target,"Model")) or (target==c) then
-				return false
-			end
-			local targetpart=QueryDescendants(target,">BasePart#Torso")[1] or QueryDescendants(target,">BasePart#UpperTorso")[1]
-			if (not targetpart) or (flingtable[targetpart]~=nil) then
-				return false
-			end
-			if highlightflingtargets then
-				local h=i("Highlight")
-				insSet(h,"Name",rs())
-				insSet(h,"Adornee",target)
-				insSet(h,"OutlineColor",c3(1,0,0))
-				insSet(h,"Parent",guiparent)
-				flingtable[targetpart]=h
-			else
-				flingtable[targetpart]=false
-			end
-			return true
-		end
-		--[[if highlightflingtargets and rainbowflinghighlights then
-			local c3hsv=Color3.fromHSV
-			tinsert(cons,Connect(insGet(rus,"RenderStepped"),function()
-				local c=c3hsv((sine*0.3)%1,1,1)
-				for i,v in next,flingtable do
-					insSet(v,"OutlineColor",c)
-				end
-			end))
-		end]]
-	else
-		fling=emptyfunction
-	end
-
-	if ctrlclicktp then
-		ctrlclicktp=KeyCode.LeftControl
-		local tpoff=v3_010*3
-		if clickfling then
-			tinsert(cons,Connect(insGet(mouse,"Button1Down"),function()
-				if insGet(mouse,"Target") then
-					if IsKeyDown(uis,ctrlclicktp) then
-						pos=cfGet(insGet(mouse,"Hit"),"Position")+tpoff
-						cfr=cfl(pos,pos+camcfLV*v3_101)
-						xzvel=v3_0
-						Yvel=0
-					else
-						fling()
-					end
-				end
-			end))
-		else
-			tinsert(cons,Connect(insGet(mouse,"Button1Down"),function()
-				if insGet(mouse,"Target") and IsKeyDown(uis,ctrlclicktp) then
-					pos=cfGet(insGet(mouse,"Hit"),"Position")+tpoff
-					cfr=cfl(pos,pos+camcfLV*v3_101)
-					xzvel=v3_0
-					Yvel=0
-				end
-			end))
-		end
-	elseif clickfling then
-		tinsert(cons,Connect(insGet(mouse,"Button1Down"),fling))
-	end
-
-	local hhOff=3
-	local hhOff1=3.01
-	local setHipHeight=function(n)
-		hhOff=n+3
-		hhOff1=n+3.01
-	end
-
-	local noYvelTime=1
-	local lastsine=sine
-	local onground=nil
-	local mainFunction=function()
-		sine=osclock()
-		local delta=sine-lastsine
-		deltaTime=min(delta*10,1)
-		lastsine=sine
-
-		if shiftlock then
-			if allowshiftlock then
-				if mouseBehavior~=enumMLC then
-					mouseBehavior=enumMLC
-					insSet(uis,"MouseBehavior",mouseBehavior)
-				end
-				mouseCameraMove=true
-			else
-				shiftlock=false
-			end
-		elseif firstperson then
-			if mouseBehavior~=enumMLC then
-				mouseBehavior=enumMLC
-				insSet(uis,"MouseBehavior",mouseBehavior)
-			end
-			mouseCameraMove=true
-		elseif IsMouseButtonPressed(uis,enumMB2) then
-			if mouseBehavior~=enumMLCP then
-				mouseBehavior=enumMLCP
-				insSet(uis,"MouseBehavior",mouseBehavior)
-			end
-			mouseCameraMove=true
-		else
-			if mouseBehavior~=enumMD then
-				mouseBehavior=enumMD
-				insSet(uis,"MouseBehavior",mouseBehavior)
-			end
-			mouseCameraMove=false
-		end
-
-		local raycastresult=Raycast(ws,pos,v3_010*(fpdh-v3Get(pos,"Y")),raycastparams)
-		if raycastresult then
-			onground=raycastresult.Distance<hhOff1
-			if onground then
-				Yvel=0
-				pos=pos+v3_010*(v3Get(raycastresult.Position,"Y")+hhOff-v3Get(pos,"Y"))*min(delta*20,1)
-				if jumpingInput and (jumpPower>0) then
-					Yvel=jumpPower
-					onground=false
-				end
-			else
-				Yvel=Yvel-gravity*delta
-				raycastresult=v3Get(raycastresult.Position,"Y")
-				if v3Get(pos,"Y")+Yvel*delta<raycastresult then
-					Yvel=0
-					pos=pos+v3_010*(raycastresult+hhOff-v3Get(pos,"Y"))
-				end
-			end
-		else
-			Yvel=0
-			onground=false
-		end
-
-		if firstperson then
-			if isWalking then
-				if walkSpeed==0 then
-					xzvel=v3_0
-					if onground then
-						cfr=cfl(pos,pos+camcfLV*v3_101)
-						camcf=cfAdd(camrot,pos+v3_0150)
-						cframes[rootpart]=cfr
-						insSet(cam,"CFrame",camcf)
-						lerpsIdle()
-						noYvelTime=min(noYvelTime+delta*0.3,1)
-						xzvel=xzvel*(1-noYvelTime)
-					elseif Yvel>0 then
-						pos=pos+v3_010*Yvel*delta
-						cfr=cfl(pos,pos+camcfLV*v3_101)
-						camcf=cfAdd(camrot,pos+v3_0150)
-						cframes[rootpart]=cfr
-						insSet(cam,"CFrame",camcf)
-						lerpsJump()
-						noYvelTime=0
-					else
-						pos=pos+v3_010*Yvel*delta
-						cfr=cfl(pos,pos+camcfLV*v3_101)
-						camcf=cfAdd(camrot,pos+v3_0150)
-						cframes[rootpart]=cfr
-						insSet(cam,"CFrame",camcf)
-						lerpsFall()
-						noYvelTime=0
-					end
-				else
-					xzvel=vnormalize(vnormalize(camcfLV*v3_101)*FWmovement+vnormalize(camcfRV*v3_101)*RTmovement)*walkSpeed
-					if onground then
-						pos=pos+xzvel*delta
-						cfr=cfl(pos,pos+camcfLV*v3_101)
-						camcf=cfAdd(camrot,pos+v3_0150)
-						cframes[rootpart]=cfr
-						insSet(cam,"CFrame",camcf)
-						lerpsWalk()
-						noYvelTime=min(noYvelTime+delta*0.3,1)
-						xzvel=xzvel*(1-noYvelTime)
-					elseif Yvel>0 then
-						pos=pos+(xzvel+v3_010*Yvel)*delta
-						cfr=cfl(pos,pos+camcfLV*v3_101)
-						camcf=cfAdd(camrot,pos+v3_0150)
-						cframes[rootpart]=cfr
-						insSet(cam,"CFrame",camcf)
-						lerpsJump()
-						noYvelTime=0
-					else 
-						pos=pos+(xzvel+v3_010*Yvel)*delta
-						cfr=cfl(pos,pos+camcfLV*v3_101)
-						camcf=cfAdd(camrot,pos+v3_0150)
-						cframes[rootpart]=cfr
-						insSet(cam,"CFrame",camcf)
-						lerpsFall()
-						noYvelTime=0
-					end
-				end
-			else
-				xzvel=v3_0
-				if onground then
-					cfr=cfl(pos,pos+camcfLV*v3_101)
-					camcf=cfAdd(camrot,pos+v3_0150)
-					cframes[rootpart]=cfr
-					insSet(cam,"CFrame",camcf)
-					lerpsIdle()
-					noYvelTime=min(noYvelTime+delta*0.3,1)
-					xzvel=xzvel*(1-noYvelTime)
-				elseif Yvel>0 then
-					pos=pos+v3_010*Yvel*delta
-					cfr=cfl(pos,pos+camcfLV*v3_101)
-					camcf=cfAdd(camrot,pos+v3_0150)
-					cframes[rootpart]=cfr
-					insSet(cam,"CFrame",camcf)
-					lerpsJump()
-					noYvelTime=0
-				else
-					pos=pos+v3_010*Yvel*delta
-					cfr=cfl(pos,pos+camcfLV*v3_101)
-					camcf=cfAdd(camrot,pos+v3_0150)
-					cframes[rootpart]=cfr
-					insSet(cam,"CFrame",camcf)
-					lerpsFall()
-					noYvelTime=0
-				end
-			end
-		elseif shiftlock then	
-			if isWalking then
-				if walkSpeed==0 then
-					xzvel=v3_0
-					if onground then
-						cfr=cfl(pos,pos+camcfLV*v3_101)
-						camcf=cfAdd(camrot,pos+v3_0150+camcfRV*1.75+camcfLV*cammag)
-						cframes[rootpart]=cfr
-						insSet(cam,"CFrame",camcf)
-						lerpsIdle()
-						noYvelTime=min(noYvelTime+delta*0.3,1)
-						xzvel=xzvel*(1-noYvelTime)
-					elseif Yvel>0 then
-						pos=pos+v3_010*Yvel*delta
-						cfr=cfl(pos,pos+camcfLV*v3_101)
-						camcf=cfAdd(camrot,pos+v3_0150+camcfRV*1.75+camcfLV*cammag)
-						cframes[rootpart]=cfr
-						insSet(cam,"CFrame",camcf)
-						lerpsJump()
-						noYvelTime=0
-					else
-						pos=pos+v3_010*Yvel*delta
-						cfr=cfl(pos,pos+camcfLV*v3_101)
-						camcf=cfAdd(camrot,pos+v3_0150+camcfRV*1.75+camcfLV*cammag)
-						cframes[rootpart]=cfr
-						insSet(cam,"CFrame",camcf)
-						lerpsFall()
-						noYvelTime=0
-					end
-				else
-					xzvel=vnormalize(vnormalize(camcfLV*v3_101)*FWmovement+vnormalize(camcfRV*v3_101)*RTmovement)*walkSpeed
-					if onground then
-						pos=pos+xzvel*delta
-						cfr=cfl(pos,pos+camcfLV*v3_101)
-						camcf=cfAdd(camrot,pos+v3_0150+camcfRV*1.75+camcfLV*cammag)
-						cframes[rootpart]=cfr
-						insSet(cam,"CFrame",camcf)
-						lerpsWalk()
-						noYvelTime=min(noYvelTime+delta*0.3,1)
-						xzvel=xzvel*(1-noYvelTime)
-					elseif Yvel>0 then
-						pos=pos+(xzvel+v3_010*Yvel)*delta
-						cfr=cfl(pos,pos+camcfLV*v3_101)
-						camcf=cfAdd(camrot,pos+v3_0150+camcfRV*1.75+camcfLV*cammag)
-						cframes[rootpart]=cfr
-						insSet(cam,"CFrame",camcf)
-						lerpsJump()
-						noYvelTime=0
-					else
-						pos=pos+(xzvel+v3_010*Yvel)*delta
-						cfr=cfl(pos,pos+camcfLV*v3_101)
-						camcf=cfAdd(camrot,pos+v3_0150+camcfRV*1.75+camcfLV*cammag)
-						cframes[rootpart]=cfr
-						insSet(cam,"CFrame",camcf)
-						lerpsFall()
-						noYvelTime=0
-					end
-				end
-			else
-				xzvel=v3_0
-				if onground then
-					cfr=cfl(pos,pos+camcfLV*v3_101)
-					camcf=cfAdd(camrot,pos+v3_0150+camcfRV*1.75+camcfLV*cammag)
-					cframes[rootpart]=cfr
-					insSet(cam,"CFrame",camcf)
-					lerpsIdle()
-					noYvelTime=min(noYvelTime+delta*0.3,1)
-					xzvel=xzvel*(1-noYvelTime)
-				elseif Yvel>0 then
-					pos=pos+v3_010*Yvel*delta
-					cfr=cfl(pos,pos+camcfLV*v3_101)
-					camcf=cfAdd(camrot,pos+v3_0150+camcfRV*1.75+camcfLV*cammag)
-					cframes[rootpart]=cfr
-					insSet(cam,"CFrame",camcf)
-					lerpsJump()
-					noYvelTime=0
-				else
-					pos=pos+v3_010*Yvel*delta
-					cfr=cfl(pos,pos+camcfLV*v3_101)
-					camcf=cfAdd(camrot,pos+v3_0150+camcfRV*1.75+camcfLV*cammag)
-					cframes[rootpart]=cfr
-					insSet(cam,"CFrame",camcf)
-					lerpsFall()
-					noYvelTime=0
-				end
-			end
-		else
-			if isWalking then
-				if walkSpeed==0 then
-					xzvel=v3_0
-					if onground then
-						cfr=cfAdd(cfGet(cfr,"Rotation"),pos)
-						camcf=cfAdd(camrot,pos+v3_0150+camcfLV*cammag)
-						cframes[rootpart]=cfr
-						insSet(cam,"CFrame",camcf)
-						lerpsIdle()
-						noYvelTime=min(noYvelTime+delta*0.3,1)
-						xzvel=xzvel*(1-noYvelTime)
-					elseif Yvel>0 then
-						pos=pos+v3_010*Yvel*delta
-						cfr=cfAdd(cfGet(cfr,"Rotation"),pos)
-						camcf=cfAdd(camrot,pos+v3_0150+camcfLV*cammag)
-						cframes[rootpart]=cfr
-						insSet(cam,"CFrame",camcf)
-						lerpsJump()
-						noYvelTime=0
-					else
-						pos=pos+v3_010*Yvel*delta
-						cfr=cfAdd(cfGet(cfr,"Rotation"),pos)
-						camcf=cfAdd(camrot,pos+v3_0150+camcfLV*cammag)
-						cframes[rootpart]=cfr
-						insSet(cam,"CFrame",camcf)
-						lerpsFall()
-						noYvelTime=0
-					end
-				else
-					xzvel=vnormalize(vnormalize(camcfLV*v3_101)*FWmovement+vnormalize(camcfRV*v3_101)*RTmovement)*walkSpeed
-					if onground then
-						pos=pos+xzvel*delta
-						cfr=cfAdd(Lerp(cfGet(cfr,"Rotation"),cfl(v3_0,xzvel),deltaTime),pos)
-						camcf=cfAdd(camrot,pos+v3_0150+camcfLV*cammag)
-						cframes[rootpart]=cfr
-						insSet(cam,"CFrame",camcf)
-						lerpsWalk()
-						noYvelTime=min(noYvelTime+delta*0.3,1)
-						xzvel=xzvel*(1-noYvelTime)
-					elseif Yvel>0 then
-						pos=pos+(xzvel+(v3_010*Yvel))*delta
-						cfr=cfAdd(Lerp(cfGet(cfr,"Rotation"),cfl(v3_0,xzvel),deltaTime),pos)
-						camcf=cfAdd(camrot,pos+v3_0150+camcfLV*cammag)
-						cframes[rootpart]=cfr
-						insSet(cam,"CFrame",camcf)
-						lerpsJump()
-						noYvelTime=0
-					else
-						pos=pos+(xzvel+(v3_010*Yvel))*delta
-						cfr=cfAdd(Lerp(cfGet(cfr,"Rotation"),cfl(v3_0,xzvel),deltaTime),pos)
-						camcf=cfAdd(camrot,pos+v3_0150+camcfLV*cammag)
-						cframes[rootpart]=cfr
-						insSet(cam,"CFrame",camcf)
-						lerpsFall()
-						noYvelTime=0
-					end
-				end
-			else
-				xzvel=v3_0
-				if onground then
-					cfr=cfAdd(cfGet(cfr,"Rotation"),pos)
-					camcf=cfAdd(camrot,pos+v3_0150+camcfLV*cammag)
-					cframes[rootpart]=cfr
-					insSet(cam,"CFrame",camcf)
-					lerpsIdle()
-					noYvelTime=min(noYvelTime+delta*0.3,1)
-					xzvel=xzvel*(1-noYvelTime)
-				elseif Yvel>0 then
-					pos=pos+v3_010*Yvel*delta
-					cfr=cfAdd(cfGet(cfr,"Rotation"),pos)
-					camcf=cfAdd(camrot,pos+v3_0150+camcfLV*cammag)
-					cframes[rootpart]=cfr
-					insSet(cam,"CFrame",camcf)
-					lerpsJump()
-					noYvelTime=0
-				else
-					pos=pos+v3_010*Yvel*delta
-					cfr=cfAdd(cfGet(cfr,"Rotation"),pos)
-					camcf=cfAdd(camrot,pos+v3_0150+camcfLV*cammag)
-					cframes[rootpart]=cfr
-					insSet(cam,"CFrame",camcf)
-					lerpsFall()
-					noYvelTime=0
-				end
-			end
-		end
-
-		refreshjointsI(rootpart)
-		tclear(refreshedjoints)
-
-		local sine15=sine*15
-		local idlerv=v3(sin(sine15),sin(sine15+1.0471975511965976),sin(sine15+2.0943951023931953))
-		local idleoff=idlerv*0.003910064697265625 --0.0156402587890625/4
-
-		local claimpos=insGet(primarypart,"Position")
-
-		for i,v in next,cframes do
-			local part=i.p
-			--if invisible then
-			--v=cfAdd(v,invisibleoffset)
-			--end
-			if part then
-				if (insGet(part,"ReceiveAge")==0) and not GetJoints(part)[1] then
-					local placeholder=i.v
-					local vpos=cfGet(v,"Position")
-					if novoid and (v3Get(vpos,"Y")<novoid) then
-						v=cfAdd(v,v3_010*(novoid-v3Get(vpos,"Y")))
-					end
-					local lastpos=i.l
-					local vel=(vpos-lastpos)/delta
-					local mag=vmagnitude(vel)
-					if mag<0.11730194091796875 then --0.0156402587890625*15/2
-						if placeholder and i.b then
-							insSet(placeholder,"Parent",nil)
-							i.b=false
-						end
-						i.l=cfGet(v,"Position")
-						v=cfAdd(v,idleoff)
-					elseif mag>speedlimit then
-						if placeholder then
-							insSet(placeholder,"CFrame",v)
-							if not i.b then
-								insSet(placeholder,"Parent",ws)
-								i.b=true
-							end
-						end
-						vel=vnormalize(vel)*speedlimit
-						local newpos=lastpos+vel*delta
-						v=cfAdd(cfGet(v,"Rotation"),newpos)
-						i.l=newpos
-					else
-						if placeholder and i.b then
-							insSet(placeholder,"Parent",nil)
-							i.b=false
-						end
-						i.l=cfGet(v,"Position")
-					end
-					local claimtime=i.c
-					if claimtime then
-						if (sine-claimtime)<retVelTime then
-							local offsetToPrimaryPart=claimpos-cfGet(v,"Position")
-							local a=625.5001+wsGravity*-2*v3Get(offsetToPrimaryPart,"Y")
-							if a>0 then --part can reach primary part
-								insSet(part,"AssemblyLinearVelocity",v3_net+offsetToPrimaryPart*v3_101/((25.01+sqrt(a))/wsGravity))
-							else --part cant reach primary part so at least aim for closest point
-								insSet(part,"AssemblyLinearVelocity",v3_net+offsetToPrimaryPart*v3_101/(30.010999900019996/wsGravity))
-							end
-						else
-							local vel1=vel*noYvelTime+xzvel
-							if vmagnitude(vel1)>25.01 then
-								insSet(part,"AssemblyLinearVelocity",vnormalize(vel1)*v3_xzL+v3_net)
-							else
-								insSet(part,"AssemblyLinearVelocity",vel1*v3_xz+v3_net)
-							end
-						end
-					else
-						i.c=sine
-						local vel1=vel*noYvelTime+xzvel
-						if vmagnitude(vel1)>25.01 then
-							insSet(part,"AssemblyLinearVelocity",vnormalize(vel1)*v3_xzL+v3_net)
-						else
-							insSet(part,"AssemblyLinearVelocity",vel1*v3_xz+v3_net)
-						end
-					end
-					insSet(part,"CFrame",v)
-					insSet(part,"AssemblyAngularVelocity",idlerv)
-				else
-					i.c=nil
-					i.l=insGet(part,"Position")
-					local placeholder=i.v
-					if placeholder then
-						insSet(placeholder,"CFrame",v)
-						if not i.b then
-							insSet(placeholder,"Parent",ws)
-							i.b=true
-						end
-					end
-				end
-			else
-				local placeholder=i.v
-				if placeholder then
-					insSet(placeholder,"CFrame",v)
-					if not i.b then
-						insSet(placeholder,"Parent",ws)
-						i.b=true
-					end
-				end
-			end
-		end
-
-		setsimrad()
-	end
-
-	sine=osclock()
-	lastsine=sine
-	tinsert(cons,Connect(heartbeat,mainFunction))
-	mainFunction()
-
-	local refreshjoints=function(v) --use this on the main part if u have parts that
-		refreshjointsI(v) --are connected with each other but arent connected to rootpart
-		tclear(refreshedjoints)
-	end
-
-	local legcfR=cf(1,-1,0)
-	local legcfL=cf(-1,-1,0)
-	local raydir=v3_010*-2
-	local raycastlegs=function() --this returns 2 values: right leg raycast offset, left leg raycast offset
-		local rY=Raycast(ws,cfGet(cfMul(cfr,legcfR),"Position"),raydir,raycastparams)
-		local lY=Raycast(ws,cfGet(cfMul(cfr,legcfL),"Position"),raydir,raycastparams)
-		if rY then
-			if lY then
-				return v3Get(rY.Position,"Y")-(v3Get(pos,"Y")-3),v3Get(lY.Position,"Y")-(v3Get(pos,"Y")-3)
-			else
-				return v3Get(rY.Position,"Y")-(v3Get(pos,"Y")-3),0
-			end
-		elseif lY then
-			return 0,v3Get(lY.Position,"Y")-(v3Get(pos,"Y")-3)
-		else
-			return 0,0
-		end
-	end
-
-	local velbycfrvec=function() --this returns 2 values: forward/backwards movement (from -1 to 1), right/left movement (from -1 to 1)
-		local fw=cfGet(cfr,"LookVector")*xzvel/walkSpeed
-		local rt=cfGet(cfr,"RightVector")*xzvel/walkSpeed
-		return v3Get(fw,"X")+v3Get(fw,"Z"),v3Get(rt,"X")+v3Get(rt,"Z")
-	end
-
-	local lastvel=v3_0
-	local velchg1=v3_0
-	local velchgbycfrvec=function() --this returns 2 values: forward/backwards velocity change, right/left velocity change
-		velchg1=velchg1+(lastvel-xzvel) --i recommend setting velchg1 to v3_0 when u start using this function or it will look worse
-		lastvel=xzvel
-		velchg1=velchg1-velchg1*(deltaTime/2)
-		local fw=cfGet(cfr,"LookVector")*velchg1/32
-		local rt=cfGet(cfr,"RightVector")*velchg1/32
-		return v3Get(fw,"X")+v3Get(fw,"Z"),v3Get(rt,"X")+v3Get(rt,"Z")
-	end
-
-	local lastYvel=0
-	local velYchg1=0
-	local velYchg=function() --this returns Y axis velocity change
-		velYchg1=clamp(velYchg1+(lastYvel-Yvel),-50,50) --i recommend setting velYchg1 to 0 when u start using this function or it will look worse
-		lastYvel=Yvel
-		velYchg1=velYchg1-velYchg1*(deltaTime/2)
-		return velYchg1
-	end
-
-	local rotToMouse=function(alpha) --this rotates ur character towards your mouse hit position
-		local pos1=pos*v3_010+cfGet(insGet(mouse,"Hit"),"Position")*v3_101
-		if pos~=pos1 then --could make nan rotation
-			cfr=Lerp(cfr,cfl(pos,pos1),alpha or deltaTime)
-		end
-	end
-
-	local glitchJoint=function(joint,targetGlitchTime,delayFrom,delayTo,radiansFrom,radiansTo) 
-		if sine>targetGlitchTime then --example usage: local glitchtime=0 addMode("x",{idle=function() glitchtime=glitchJoint(joint,glitchtime,0.2,0.4,-0.1,0.1) end})
-			radiansFrom=radiansFrom*100
-			radiansTo=radiansTo*100
-			joint.C0=cfMul(joint.C0,angles(mrandom(radiansFrom,radiansTo)/100,mrandom(radiansFrom,radiansTo)/100,mrandom(radiansFrom,radiansTo)/100)) 
-			return sine+mrandom(delayFrom*100,delayTo*100)/100
-		end
-		return targetGlitchTime
-	end
-
-	local setWalkSpeed=function(n)
-		if type(n)~="number" then
-			n=16
-		end
-		walkSpeed=n
-	end
-	local setJumpPower=function(n)
-		if type(n)~="number" then
-			n=50
-		end
-		jumpPower=n
-	end
-	local setGravity=function(n)
-		if type(n)~="number" then
-			n=196.2
-		end
-		gravity=n
-	end
-	local setCfr=function(v) --sets character cframe
-		if typeof(v)=="CFrame" then
-			local newpos=cfGet(v,"Position")
-			camcf=cfAdd(camcf,newpos-pos)
-			insSet(cam,"CFrame",camcf)
-			cfr=v
-			pos=newpos
-		elseif typeof(v)=="Vector3" then
-			camcf=cfAdd(camcf,v-pos)
-			insSet(cam,"CFrame",camcf)
-			cfr=cfAdd(cfGet(cfr,"Rotation"),v)
-			pos=v
-		end
-	end
-	local getVel=function() --returns character velocity
-		return xzvel+v3_010*Yvel --important: use only in lerps or it might not work
-	end
-	local getCamCF=function() --returns camera cframe
-		return camcf
-	end
-	local isFirstPerson=function() --returns true if user is in first person camera mode
-		return firstperson
-	end
-	local setCameraMoveable=function(b) --prevents the player from moving his camera
-		cameraMoveable=b
-	end
-	local isOnGround=function()
-		return onground
-	end
-	local isWalking=function()
-		return isWalking
-	end
-	local YvelSign=function()
-		return Yvel>0
-	end
-
+	warn("[Snake Banisher] couldn't load Reanimate")
 	return {
-		cframes=cframes,
-		joints=joints,
-		fling=fling,
-		predictionfling=fling,
-		refreshjoints=refreshjoints,
-		raycastlegs=raycastlegs,
-		velbycfrvec=velbycfrvec,
-		velchgbycfrvec=velchgbycfrvec,
-		velYchg=velYchg,
-		addmode=addmode,
-		getPart=getPart,
-		getPartFromMesh=getPartFromMesh,
-		getAccWeldFromMesh=getAccWeldFromMesh,
-		getJoint=getJoint,
-		getPartJoint=getPartJoint,
-		rotToMouse=rotToMouse,
-		glitchJoint=glitchJoint,
-		setWalkSpeed=setWalkSpeed,
-		setJumpPower=setJumpPower,
-		setGravity=setGravity,
-		setCfr=setCfr,
-		getVel=getVel,
-		getCamCF=getCamCF,
-		isFirstPerson=isFirstPerson,
-		setHipHeight=setHipHeight,
-		characters=characters,
-		refreshrayfilter=function()
-			for i,v in next,characters do
-				if i==v then
-					pcall(insSet,QueryDescendants(i,">BasePart#HumanoidRootPart")[1],"Anchored",true)
-				end
-			end
-			refreshrayfilter()
+		reanimate = function()
+			return nil
 		end,
-		setCameraMoveable=setCameraMoveable,
-		isOnGround=isOnGround,
-		isWalking=isWalking,
-		YvelSign=YvelSign
+		stopreanimate = function()
+			return false
+		end,
+		isReanimated = function()
+			return false
+		end,
 	}
-end
-
--- gp backwards compatibility \240\159\151\191
-local gp=function(p,n,c)
-	return QueryDescendants(p,">"..c.."[Name=\""..n.."\"]")[1]
-end
-
--- again no need to load the whole thing cuz u can use the last one
-_G.GenesisFDless={reanimate=reanimate,stopreanimate=stopreanimate,gp=gp,rs=rs,insSet=insSet,insGet=insGet,cfMul=cfMul,mouse=mouse,isReanimated=function() return c end}
-return _G.GenesisFDless
 end)()
 
 --==============================================================--
---  LC CORE  -  shared engine for the FDless conversions
+--  LC CORE  -  shared engine
 --  (60 Hz attack clock, frame-rate independent lerps, pooled
 --   effects, LC Gun 1/2 hand alignment + saveable align panel)
 --==============================================================--
@@ -2174,7 +153,7 @@ local function LCCore(FD, CFG)
 	local TOUCH = Enum.UserInputType.Touch
 
 	------------------------------------------------------------------
-	-- one copy at a time: stop an older copy, then start FDless fresh
+	-- one copy at a time: stop an older copy, then start the reanimate fresh
 	------------------------------------------------------------------
 	if type(_G.LCFD_Stop) == "function" then
 		pcall(_G.LCFD_Stop)
@@ -2187,7 +166,7 @@ local function LCCore(FD, CFG)
 		fd = FD.reanimate()
 	end
 	if not fd then
-		warn("[LC] FDless did not start")
+		warn("[LC] reanimate did not start")
 		return nil
 	end
 	C.fd = fd
@@ -2269,7 +248,11 @@ local function LCCore(FD, CFG)
 	end
 
 	function C.notify(title, text, dur)
-		pcall(StarterGui.SetCore, StarterGui, "SendNotification", {Title = title, Text = text, Duration = dur or 5})
+		local hub = ((typeof(getgenv) == "function" and getgenv()) or _G).AtsukoHub
+		if type(hub) == "table" and type(hub.Notify) == "function" and pcall(hub.Notify, title, text, "info", dur) then
+			return
+		end
+		pcall(StarterGui.SetCore, StarterGui, "SendNotification", {Title = title, Text = (string.gsub(tostring(text), "</?b>", "")), Duration = dur or 5})
 	end
 
 	------------------------------------------------------------------
@@ -2410,7 +393,7 @@ local function LCCore(FD, CFG)
 		return nil, origin + d * (range or 999), V3(0, 1, 0)
 	end
 
-	-- root movement (FDless "character")
+	-- root movement (the reanimate "character")
 	function C.rootCF()
 		return cframes[C.Root] or IDENT
 	end
@@ -3028,7 +1011,7 @@ local function LCCore(FD, CFG)
 	end
 
 	------------------------------------------------------------------
-	-- per-frame (called by FDless) and per-tick (60 Hz) pumps
+	-- per-frame (called by the reanimate) and per-tick (60 Hz) pumps
 	------------------------------------------------------------------
 	local lastT = 0
 	local lastLerp = osclock()
@@ -3085,7 +1068,7 @@ local function LCCore(FD, CFG)
 			return
 		end
 		if osclock() - lastLerp > 2 then
-			-- FDless was stopped or taken over by another script
+			-- the reanimate was stopped or taken over by another script
 			C.stop(false)
 			return
 		end
@@ -3204,121 +1187,31 @@ local function LCCore(FD, CFG)
 	end
 	_G.LCFD_Stop = C.stop
 
-	------------------------------------------------------------------
-	-- GUN ALIGN PANEL
-	------------------------------------------------------------------
-	local function mk(class, props, parent)
-		local o = Instance.new(class)
-		for k, v in pairs(props) do
-			o[k] = v
-		end
-		if parent then
-			o.Parent = parent
-		end
-		return o
-	end
-	local function round(o, r)
-		mk("UICorner", {CornerRadius = UDim.new(0, r or 6)}, o)
-	end
-	local COL = {
-		bg = Color3.fromRGB(17, 18, 26), panel = Color3.fromRGB(31, 33, 46), line = Color3.fromRGB(58, 62, 86),
-		text = Color3.fromRGB(236, 238, 248), muted = Color3.fromRGB(150, 156, 184), accent = Color3.fromRGB(122, 162, 255),
-		good = Color3.fromRGB(96, 214, 150), bad = Color3.fromRGB(255, 110, 120), warn = Color3.fromRGB(255, 196, 92),
-	}
-	local BOLD, MED, REG = Enum.Font.GothamBold, Enum.Font.GothamMedium, Enum.Font.Gotham
-
-	local gui = mk("ScreenGui", {Name = "LCGunAlign", ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 60, IgnoreGuiInset = false})
-	C.gui = gui
-	local function btn(props, parent)
-		local b = mk("TextButton", {
-			AutoButtonColor = true, BackgroundColor3 = COL.panel, BorderSizePixel = 0, Font = MED,
-			TextColor3 = COL.text, TextSize = 13, Text = "",
-		}, parent)
-		for k, v in pairs(props) do
-			b[k] = v
-		end
-		round(b, 6)
-		return b
-	end
-
-	local toggle = btn({Name = "Toggle", Size = UDim2.new(0, 96, 0, 28), Position = UDim2.new(0, 12, 0, 8), Text = "Gun Align", BackgroundColor3 = COL.bg, BackgroundTransparency = 0.1}, gui)
-	mk("UIStroke", {Color = COL.line, Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border}, toggle)
-
-	local H = 386
-	local main = mk("Frame", {Name = "Panel", Size = UDim2.new(0, 262, 0, H), Position = UDim2.new(0, 12, 0, 44), BackgroundColor3 = COL.bg, BackgroundTransparency = 0.04, BorderSizePixel = 0, Visible = false, Active = true}, gui)
-	round(main, 10)
-	mk("UIStroke", {Color = COL.line, Thickness = 1}, main)
-	local uiScale = mk("UIScale", {Scale = 1}, main)
-
-	local header = mk("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, Active = true}, main)
-	mk("TextLabel", {Size = UDim2.new(1, -110, 1, 0), Position = UDim2.new(0, 12, 0, 0), BackgroundTransparency = 1, Font = BOLD, TextSize = 14, TextColor3 = COL.text, TextXAlignment = Enum.TextXAlignment.Left, Text = "LC Gun Align"}, header)
-	local stopBtn = btn({Size = UDim2.new(0, 46, 0, 22), Position = UDim2.new(1, -84, 0, 6), Text = "Stop", TextSize = 12, TextColor3 = COL.bad}, header)
-	local hideBtn = btn({Size = UDim2.new(0, 26, 0, 22), Position = UDim2.new(1, -34, 0, 6), Text = "-", TextSize = 16, Font = BOLD}, header)
-
 	local TAB = {"Gun 1", "Gun 2", "Muzzle"}
-	local tabs = {}
-	local cur = 1
-	for s = 1, 3 do
-		tabs[s] = btn({Size = UDim2.new(0, 74, 0, 26), Position = UDim2.new(0, 12 + (s - 1) * 81, 0, 40), Text = TAB[s]}, main)
-	end
-	local found = mk("TextLabel", {Size = UDim2.new(1, -24, 0, 16), Position = UDim2.new(0, 12, 0, 72), BackgroundTransparency = 1, Font = REG, TextSize = 11, TextColor3 = COL.muted, TextXAlignment = Enum.TextXAlignment.Left, Text = ""}, main)
-
-	local LABEL = {"Move X", "Move Y", "Move Z", "Turn X", "Turn Y", "Turn Z"}
-	local boxes = {}
-	local MOVE_STEPS = {0.01, 0.05, 0.1, 0.25, 0.5, 1}
-	local TURN_STEPS = {1, 5, 15, 45, 90}
-	local mi, ti = 2, 2
-	local dirty = false
-	local saveBtn
-	local function fmt(n, isRot)
-		if isRot then
-			local s = string.format("%.1f", n)
-			if s == "-0.0" then
-				s = "0.0"
-			end
-			return s
-		end
-		local s = string.format("%.3f", n)
-		s = s:gsub("0+$", "")
-		s = s:gsub("%.$", "")
-		if s == "-0" then
-			s = "0"
-		end
-		return s
-	end
-	local function refreshBoxes()
-		for k = 1, 6 do
-			boxes[k].Text = fmt(VAL[cur][k], k > 3)
-		end
-		for s = 1, 3 do
-			tabs[s].BackgroundColor3 = s == cur and COL.accent or COL.panel
-			tabs[s].TextColor3 = s == cur and COL.bg or COL.text
+	local genv = (typeof(getgenv) == "function" and getgenv()) or _G
+	local AL = {version = 1, title = CFG.alignTitle or "Gun Align", tabs = TAB, file = FILE, dirty = false, open = false, key = CFG.alignKeyText or string.upper(CFG.alignKey or "j")}
+	local watchers = {}
+	local function fire(what)
+		for _, f in ipairs(table.clone(watchers)) do
+			pcall(f, what)
 		end
 	end
-	local statusLbl
-	local statusToken = 0
-	local function status(text, col)
-		statusToken += 1
-		local my = statusToken
-		statusLbl.Text = text
-		statusLbl.TextColor3 = col or COL.muted
-		task.delay(3, function()
-			if statusToken == my and statusLbl.Parent then
-				statusLbl.Text = "J toggles this panel"
-				statusLbl.TextColor3 = COL.muted
-			end
-		end)
+	local function hub()
+		local h = genv.AtsukoHub
+		return type(h) == "table" and h or nil
 	end
-	local function setDirty(d)
-		dirty = d
-		saveBtn.Text = d and "Save *" or "Save"
-		saveBtn.BackgroundColor3 = d and COL.good or COL.panel
-		saveBtn.TextColor3 = d and COL.bg or COL.text
-		toggle.Text = d and "Gun Align *" or "Gun Align"
+	function AL.alive()
+		return C.alive
 	end
-	local function change(k, delta, absolute)
-		local v = VAL[cur]
-		local n = absolute or (v[k] + delta)
+	function AL.get(s)
+		return VAL[s] and table.clone(VAL[s]) or nil
+	end
+	function AL.set(s, k, n)
+		local v = VAL[s]
+		n = tonumber(n)
+		if not v or not n or n ~= n or math.abs(n) >= 1e5 then
+			return nil
+		end
 		if k > 3 then
 			n = ((n + 180) % 360) - 180
 			n = math.floor(n * 10 + 0.5) / 10
@@ -3326,186 +1219,86 @@ local function LCCore(FD, CFG)
 			n = math.floor(n * 1000 + 0.5) / 1000
 		end
 		v[k] = n
-		rebuild(cur)
-		boxes[k].Text = fmt(n, k > 3)
-		setDirty(true)
+		rebuild(s)
+		AL.dirty = true
+		return n
 	end
-
-	-- hold a +/- button to repeat
-	local holdToken = 0
-	local function bindHold(b, fn)
-		b.InputBegan:Connect(function(io)
-			local t = io.UserInputType
-			if t == MB1 or t == TOUCH then
-				holdToken += 1
-				local my = holdToken
-				fn()
-				task.delay(0.35, function()
-					while holdToken == my and C.alive do
-						fn()
-						task.wait(0.05)
-					end
-				end)
-			end
-		end)
-	end
-	C.connect(UIS.InputEnded, function(io)
-		if io.UserInputType == MB1 or io.UserInputType == TOUCH then
-			holdToken += 1
+	function AL.put(s, vals)
+		if not VAL[s] or type(vals) ~= "table" then
+			return
 		end
-	end)
-
-	for k = 1, 6 do
-		local y = 94 + (k - 1) * 32
-		mk("TextLabel", {Size = UDim2.new(0, 60, 0, 28), Position = UDim2.new(0, 12, 0, y), BackgroundTransparency = 1, Font = MED, TextSize = 12, TextColor3 = k > 3 and COL.warn or COL.accent, TextXAlignment = Enum.TextXAlignment.Left, Text = LABEL[k]}, main)
-		local minus = btn({Size = UDim2.new(0, 30, 0, 28), Position = UDim2.new(0, 74, 0, y), Text = "-", Font = BOLD, TextSize = 16}, main)
-		local box = mk("TextBox", {
-			Size = UDim2.new(0, 108, 0, 28), Position = UDim2.new(0, 108, 0, y), BackgroundColor3 = COL.panel, BorderSizePixel = 0,
-			Font = MED, TextSize = 13, TextColor3 = COL.text, Text = "0", ClearTextOnFocus = false, PlaceholderText = "0",
-		}, main)
-		round(box, 6)
-		local plus = btn({Size = UDim2.new(0, 30, 0, 28), Position = UDim2.new(0, 220, 0, y), Text = "+", Font = BOLD, TextSize = 16}, main)
-		boxes[k] = box
-		bindHold(minus, function()
-			change(k, -(k > 3 and TURN_STEPS[ti] or MOVE_STEPS[mi]))
-		end)
-		bindHold(plus, function()
-			change(k, k > 3 and TURN_STEPS[ti] or MOVE_STEPS[mi])
-		end)
-		box.FocusLost:Connect(function()
-			local n = tonumber((box.Text:gsub("[^%d%.%-]", "")))
-			if n and n == n then
-				change(k, 0, n)
-			else
-				box.Text = fmt(VAL[cur][k], k > 3)
-			end
-		end)
+		for k = 1, 6 do
+			VAL[s][k] = tonumber(vals[k]) or 0
+		end
+		rebuild(s)
+		AL.dirty = true
 	end
-
-	local moveStep = btn({Size = UDim2.new(0, 115, 0, 26), Position = UDim2.new(0, 12, 0, 290), TextSize = 12}, main)
-	local turnStep = btn({Size = UDim2.new(0, 115, 0, 26), Position = UDim2.new(0, 135, 0, 290), TextSize = 12}, main)
-	local function stepText()
-		moveStep.Text = "Move step: " .. fmt(MOVE_STEPS[mi])
-		turnStep.Text = "Turn step: " .. TURN_STEPS[ti] .. " deg"
+	function AL.reset(s)
+		AL.put(s, DEFAULT[s])
 	end
-	stepText()
-	moveStep.MouseButton1Click:Connect(function()
-		mi = mi % #MOVE_STEPS + 1
-		stepText()
-	end)
-	turnStep.MouseButton1Click:Connect(function()
-		ti = ti % #TURN_STEPS + 1
-		stepText()
-	end)
-
-	saveBtn = btn({Size = UDim2.new(0, 76, 0, 30), Position = UDim2.new(0, 12, 0, 324), Text = "Save", Font = BOLD}, main)
-	local resetBtn = btn({Size = UDim2.new(0, 76, 0, 30), Position = UDim2.new(0, 93, 0, 324), Text = "Reset"}, main)
-	local loadBtn = btn({Size = UDim2.new(0, 76, 0, 30), Position = UDim2.new(0, 174, 0, 324), Text = "Reload"}, main)
-	statusLbl = mk("TextLabel", {Size = UDim2.new(1, -24, 0, 18), Position = UDim2.new(0, 12, 0, 360), BackgroundTransparency = 1, Font = REG, TextSize = 11, TextColor3 = COL.muted, TextXAlignment = Enum.TextXAlignment.Left, Text = "J toggles this panel"}, main)
-
-	saveBtn.MouseButton1Click:Connect(function()
+	function AL.save()
 		local ok, e = saveAlign()
 		if ok then
-			setDirty(false)
-			status("Saved to " .. FILE, COL.good)
-		else
-			status("Not saved: " .. tostring(e), COL.bad)
+			AL.dirty = false
 		end
-	end)
-	resetBtn.MouseButton1Click:Connect(function()
-		VAL[cur] = table.clone(DEFAULT[cur])
-		rebuild(cur)
-		refreshBoxes()
-		setDirty(true)
-		status(TAB[cur] .. " reset (press Save to keep)", COL.warn)
-	end)
-	loadBtn.MouseButton1Click:Connect(function()
-		local ok, e = loadAlign()
-		refreshBoxes()
-		if ok then
-			setDirty(false)
-			status("Loaded your saved alignment", COL.good)
-		else
-			status(tostring(e), COL.warn)
-		end
-	end)
-	for s = 1, 3 do
-		tabs[s].MouseButton1Click:Connect(function()
-			cur = s
-			refreshBoxes()
-		end)
+		return ok, e
 	end
-
-	local function setOpen(v)
-		main.Visible = v
+	function AL.load()
+		local ok, e = loadAlign()
+		if ok then
+			AL.dirty = false
+		end
+		fire("load")
+		return ok, e
+	end
+	function AL.watch(f)
+		watchers[#watchers + 1] = f
+		return function()
+			local i = table.find(watchers, f)
+			if i then
+				table.remove(watchers, i)
+			end
+		end
+	end
+	function AL.found()
+		return "Gun 1: " .. (C.gunFound(1) and "worn" or "not found") .. "   |   Gun 2: " .. (C.gunFound(2) and "worn" or "not found")
 	end
 	function C.toggleAlign()
-		setOpen(not main.Visible)
-	end
-	toggle.MouseButton1Click:Connect(C.toggleAlign)
-	hideBtn.MouseButton1Click:Connect(function()
-		setOpen(false)
-	end)
-	stopBtn.MouseButton1Click:Connect(function()
-		if dirty then
-			saveAlign()
-		end
-		C.stop()
-	end)
-
-	-- drag the panel by its header
-	local dragging, dragStart, startPos
-	header.InputBegan:Connect(function(io)
-		if io.UserInputType == MB1 or io.UserInputType == TOUCH then
-			dragging = true
-			dragStart = io.Position
-			startPos = main.Position
-		end
-	end)
-	C.connect(UIS.InputChanged, function(io)
-		if dragging and (io.UserInputType == Enum.UserInputType.MouseMovement or io.UserInputType == TOUCH) then
-			local d = io.Position - dragStart
-			main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
-		end
-	end)
-	C.connect(UIS.InputEnded, function(io)
-		if io.UserInputType == MB1 or io.UserInputType == TOUCH then
-			dragging = false
-		end
-	end)
-
-	-- fit small screens
-	local function fit()
-		local cam = workspace.CurrentCamera
-		if cam then
-			uiScale.Scale = math.clamp((cam.ViewportSize.Y - 70) / H, 0.6, 1)
+		local h = hub()
+		if h and type(h.Align) == "function" then
+			pcall(h.Align)
+		else
+			C.notify(AL.title, "Open Atsuko Hub to line things up, the alignment lives there now", 5)
 		end
 	end
-	fit()
-	if workspace.CurrentCamera then
-		C.connect(workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"), fit)
+	function C.alignOpen()
+		return AL.open
+	end
+	genv.AtsukoAlign = AL
+	do
+		local h = hub()
+		if h and type(h.AlignReady) == "function" then
+			pcall(h.AlignReady)
+		end
 	end
 
-	refreshBoxes()
-	setDirty(false)
-	gui.Parent = C.guiParent()
-
-	-- muzzle marker while the panel is open
 	local marker = C.newPart({Name = "MuzzleMarker", Shape = Enum.PartType.Ball, Size = V3(0.4, 0.4, 0.4), Color = C3(1, 0.25, 0.3), Transparency = 1})
-	local lastFound = ""
 	C.onStop(function()
-		gui:Destroy()
+		AL.open = false
+		if genv.AtsukoAlign == AL then
+			genv.AtsukoAlign = nil
+		end
+		fire("stop")
+		local h = hub()
+		if h and type(h.AlignReady) == "function" then
+			pcall(h.AlignReady)
+		end
 	end)
 
 	function C.alignFrame()
-		if main.Visible then
+		if AL.open then
 			marker.Transparency = 0.15
 			marker.CFrame = C.muzzleCF()
-			local f = "Gun 1: " .. (C.gunFound(1) and "worn" or "not found") .. "   |   Gun 2: " .. (C.gunFound(2) and "worn" or "not found")
-			if f ~= lastFound then
-				lastFound = f
-				found.Text = f
-			end
 		elseif marker.Transparency < 1 then
 			marker.Transparency = 1
 		end
@@ -3515,7 +1308,7 @@ local function LCCore(FD, CFG)
 end
 
 --==============================================================--
---  FE SNAKE BANISHER V3  (FDless conversion)
+--  FE SNAKE BANISHER V3
 --==============================================================--
 local GUN_IDS = {
 	-- slot 1: LC Gun 1 (new) , old VoidAlligatorJaw copy
@@ -3550,7 +1343,7 @@ if not game:IsLoaded() then
 	game.Loaded:Wait()
 end
 
-local C = LCCore(FD, {gunIds = GUN_IDS, alignFile = "LCGunAlign.json", maxEffects = 240})
+local C = LCCore(FD, {gunIds = GUN_IDS, alignFile = "LCGunAlign.json", alignTitle = "Snake Banisher V3", maxEffects = 240})
 if not C then
 	return
 end
@@ -5270,5 +3063,4 @@ C.afterFrame = function()
 	end
 end
 
-warn("|| Original Script made by MLG Super Killer  |  Converted by Epic  |  FDless port")
-C.notify("Snake Banisher V3", "Loaded on FDless. Press J (or the Gun Align button) to align LC Gun 1/2.", 7)
+C.notify("Snake Banisher V3", "Loaded on Reanimate. Press J or tap Align in the hub to line up LC Gun 1/2.", 7)
