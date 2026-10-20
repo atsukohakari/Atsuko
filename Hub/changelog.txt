@@ -1,3 +1,57 @@
+Beta v1.2.1
+- renamed AtsukoReanimate.lua and AtsukoEmotes.lua to Reanimate.lua and Emotes.lua, the hub and the scripts use the new names
+- studio dummy and snake banisher download the new files by themselves
+
+Beta v1.2.0
+- the biggest update yet, almost everything got rebuilt
+- atsuko script: tap a script to pick it, then tap reanimate. deanimate stops it. the bar at the bottom shows what's running
+- only one script runs at a time now, deanimate the one that's on before you start another
+- the scripts use the new Reanimate instead of fdless, a smoother uhhhhhh style reanimate that lives in its own file (Hub/Reanimate.lua)
+- studio dummy v4 and snake banisher v3 run on Reanimate now
+- new emotes page right next to atsuko script, no studio dummy needed
+- emotes work while you're reanimated with any of the scripts, the page tells you when you need to reanimate first
+- all dances in one list with search, a favorites tab and a setup tab
+- star the dances you like, give any dance its own key, turn the keys on or off and set the volume
+- every dance has its own options under it, and stopping a dance fades you back smoothly
+- emotes live in their own file (Hub/Emotes.lua) and only download when you use them
+- removed the emote and alignment buttons from studio dummy's phone buttons, emotes have their own page now
+- ui designs: pick how the whole hub is laid out in settings > general > layout (or say design)
+- original: the dock at the bottom and the panel on the left, like before
+- sidebar: a big menu down the left with every page, the panel opens next to it
+- window: one window with the pages on the left, drag it anywhere by the top
+- move things around: everything can be moved now, the panel, the dock, the top bar, the side card, the command bar and the popups
+- tap move things around in settings (or say moveui), drag the handles, then done. reset puts it all back
+- the window design remembers its own spot
+- pc: the panel slides all the way out to the side now, no more invisible line cutting it off halfway
+- fixed the dynamic island staying up after you tap it
+- new music player look: a big card with the cover on a spinning disc, the song and the buttons right under it
+- new youtube check in music > more: it tests everything youtube songs need on your executor and tells you if they'll work there and why
+- the command bar got a new look: clean rounded corners (no more weird corner), your key on the side, sections and a smooth fade
+- rejoin and serverhop: you rejoin first, then the hub loads itself back in the new server by itself
+- the editor got redesigned: a new toolbar, undo and redo, find (ctrl + f), word wrap and line numbers that follow it
+- ask ai button in the editor: your code goes with your message
+- the run button in the editor turns into stop while your script runs
+- ai tools under the chat: fix errors, explain, make it better, add a menu and copy chat
+- fix errors sends your editor code and the last errors from the log so the ai knows what broke
+- stop button while the ai is answering
+- run button on the ai's code, tap it twice so nothing runs by accident
+- works with is accurate now: it reads the hats each script really uses, rig hats with which body part they go on, guns and the rest
+- it keeps checking even if you close the script, and opening it again shows it right away, no new scan
+- what it finds is saved for a week, and it tells you the hats a script picks by name too
+- the hub keeps the files it downloads (reanimate, emotes) so they load faster next time
+- the alignment lives in the hub now, the align panels inside studio dummy and snake banisher are gone
+- tap the round button on the atsuko script bar to line things up (or press the script's own key, or say align)
+- the alignment window: pick gun, screen or muzzle, nudge with - and + (hold to keep going), type exact numbers, undo, reset, flip, copy and save, and studio dummy's screen options are right there too
+- a red ball shows where the muzzle is while the alignment window is open, and it closes by itself when the script stops
+- studio dummy and snake banisher talk through the hub's own notifications now instead of their own popups
+- long notifications show an arrow, tap them to read the whole thing
+- scripts can use the hub's notifications too (the template shows how), and they fall back to roblox's when the hub isn't open
+- youtube videos play straight from youtube in the video player now, no converter: the picture and the sound get put together into one video
+- the video player shows how far the download is, and plays videos up to 20 minutes
+- youtube downloads try again by themselves when a piece fails
+- music > more lists the executors youtube should work on
+- credits in settings > about: everyone who made the hub and the atsuko scripts possible, with their discord servers (tap to copy), and a button to copy them all
+
 Beta v1.1.3
 - spotify works on free accounts now: paste a spotify playlist, album or song link in music > library > spotify and it plays right in the game, no premium
 - search any song there (or in music > add) and play it with one tap

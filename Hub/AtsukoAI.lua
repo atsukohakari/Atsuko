@@ -4,7 +4,7 @@ return function(ctx)
 	local page, root = ctx.page, ctx.root
 
 	local AI = { busy = false, busyChat = nil, withCode = false, order = 0, models = nil, modelsBusy = false, pics = {}, customPic = {}, defaultPic = nil, tab = "profile", view = "chat", query = "" }
-	AI.level = 2
+	AI.level = 3
 	page.api = AI
 
 	AI.FILE = ctx.dir .. "/ai.json"
@@ -549,6 +549,25 @@ return function(ctx)
 	local chipX = UI.button(codeChip, { Name = "Remove", BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -4, 0.5, 0), Size = UDim2.fromOffset(22, 22) })
 	UI.icon("x", 11, T.dim, chipX, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
 
+	local toolsF = UI.new("ScrollingFrame", { Name = "Tools", BackgroundTransparency = 1, BorderSizePixel = 0, AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 1, -50), Size = UDim2.new(1, 0, 0, 28), CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.X, ScrollBarThickness = 0, ScrollingDirection = Enum.ScrollingDirection.X, Visible = false }, root)
+	UI.list(toolsF, 6, Enum.FillDirection.Horizontal)
+	AI.toolsF = toolsF
+	AI.TOOLS = {
+		{ "bug", "Fix errors", 92, "fix" },
+		{ "notebook-text", "Explain", 80, "explain" },
+		{ "wand", "Make it better", 112, "improve" },
+		{ "layout-template", "Add a menu", 98, "gui" },
+		{ "copy", "Copy chat", 88, "copy" },
+	}
+	for i, t in ipairs(AI.TOOLS) do
+		local b = UI.button(toolsF, { Name = t[4], BackgroundColor3 = T.card, Size = UDim2.fromOffset(t[3], 26), LayoutOrder = i })
+		UI.corner(b, 13)
+		ctx.iconText(b, t[1], t[2], T.sub, 10)
+		UI.pressable(b, 0.92)
+		ctx.Ctl.hoverable(b)
+		b.Activated:Connect(function() AI.tool(t[4]) end)
+	end
+
 	local bar = UI.new("Frame", { Name = "Compose", BackgroundColor3 = T.card, AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.new(1, 0, 0, 44) }, root)
 	UI.corner(bar, 16)
 	local barStroke = UI.stroke(bar, T.stroke, 1, 0.5)
@@ -595,8 +614,11 @@ return function(ctx)
 	local function layoutChat()
 		local chip = AI.withCode and AI.view == "chat"
 		codeChip.Visible = chip
-		chat.Size = UDim2.new(1, 0, 1, -(36 + 52 + (chip and 32 or 0)))
+		local tools = not chip and AI.view == "chat" and AI.ready() and #AI.msgs > 0
+		toolsF.Visible = tools
+		chat.Size = UDim2.new(1, 0, 1, -(36 + 52 + ((chip or tools) and 32 or 0)))
 	end
+	AI.layoutChat = layoutChat
 
 	local function scrollDown()
 		task.defer(function()
@@ -623,21 +645,43 @@ return function(ctx)
 		UI.pad(f, 12, 10, 6, 12)
 		UI.list(f, 6)
 		local head = UI.new("Frame", { Name = "Head", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 28), LayoutOrder = 1 }, f)
-		UI.label(head, { Text = string.upper(block.lang), Font = ctx.fontB(), TextSize = 9, TextColor3 = T.dim, Size = UDim2.new(1, -160, 1, 0) })
+		UI.label(head, { Text = string.upper(block.lang), Font = ctx.fontB(), TextSize = 9, TextColor3 = T.dim, Size = UDim2.new(1, ctx.runCode and -236 or -160, 1, 0) })
 		local code = Util.trim(block.text)
 		local function small(icon, text, x, fn)
 			local b = UI.button(head, { BackgroundColor3 = T.card, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, x, 0.5, 0), Size = UDim2.fromOffset(72, 24) })
 			UI.corner(b, 12)
-			ctx.iconText(b, icon, text, T.text, 10)
+			local set = ctx.iconText(b, icon, text, T.text, 10)
 			UI.pressable(b, 0.9)
 			b.Activated:Connect(fn)
-			return b
+			return b, set
 		end
 		small("copy", "Copy", 0, function() copyText(code, "The code") end)
 		small("code-xml", "Editor", -78, function()
 			ctx.editor.open(name, code)
 			notify(AI.name(), "Opened in the Editor, tap Run when you're ready", "ok", 2.5)
 		end)
+		if ctx.runCode then
+			local armed, tk = false, 0
+			local rb, rbSet
+			rb, rbSet = small("play-fill", "Run", -156, function()
+				if armed then
+					armed = false
+					rbSet("play-fill", "Run", T.text)
+					ctx.runCode(code, name)
+					return
+				end
+				armed = true
+				tk += 1
+				local my = tk
+				rbSet("play-fill", "Sure?", T.yellow)
+				task.delay(3, function()
+					if armed and tk == my then
+						armed = false
+						if rb.Parent then rbSet("play-fill", "Run", T.text) end
+					end
+				end)
+			end)
+		end
 		UI.new("Frame", { Name = "Line", BackgroundColor3 = T.line, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 1), LayoutOrder = 2 }, f)
 		UI.label(f, { Name = "Source", Text = (string.gsub(code, "\t", "    ")), RichText = false, Font = Enum.Font.Code, TextSize = 11, TextColor3 = T.text, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 3 })
 		return f
@@ -825,6 +869,7 @@ return function(ctx)
 		if AI.busy and AI.busyChat == AI.cur then showThinking(true) end
 		AI.drawEmpty()
 		AI.drawStrip()
+		layoutChat()
 		box.PlaceholderText = "Message " .. AI.name() .. "..."
 		scrollDown()
 	end
@@ -840,13 +885,16 @@ return function(ctx)
 		local cur = AI.cur
 		AI.busy = true
 		AI.busyChat = cur
+		AI.cancelTok = (AI.cancelTok or 0) + 1
+		local tok = AI.cancelTok
 		send.AutoButtonColor = false
-		UI.setIcon(sendIc, "loader-circle")
+		UI.setIcon(sendIc, "square-fill")
 		showThinking(true)
 		ctx.refreshHead()
 		task.spawn(function()
 			local reply, err = AI.ask(cur)
 			if not ctx.hub.alive or err == "closed" then return end
+			if AI.cancelTok ~= tok then return end
 			AI.busy = false
 			AI.busyChat = nil
 			UI.setIcon(sendIc, "send")
@@ -865,6 +913,55 @@ return function(ctx)
 			if AI.view == "recent" then AI.drawRecentList() end
 			if reply and AI.cfg.notifyDone and (not ctx.shown() or cur ~= AI.cur) then notify(AI.name(), "Your answer is ready", "ok", 2.5) end
 		end)
+	end
+
+	function AI.stop()
+		if not AI.busy then return end
+		AI.cancelTok = (AI.cancelTok or 0) + 1
+		AI.busy = false
+		AI.busyChat = nil
+		UI.setIcon(sendIc, "send")
+		showThinking(false)
+		ctx.refreshHead()
+		notify(AI.name(), "Stopped that answer", "info", 1.5)
+	end
+
+	function AI.tool(kind)
+		if kind == "copy" then
+			local out = {}
+			for _, m in ipairs(AI.msgs) do
+				if m.role == "user" then
+					out[#out + 1] = "You: " .. tostring(m.show or m.content)
+				elseif m.role == "assistant" then
+					out[#out + 1] = AI.name() .. ": " .. tostring(m.content)
+				end
+			end
+			if #out == 0 then return notify(AI.name(), "Nothing to copy yet", "info", 2) end
+			copyText(table.concat(out, "\n\n"), "The chat")
+			return
+		end
+		if AI.busy then return notify(AI.name(), "Wait for the answer first", "info", 2) end
+		local code = tostring((ctx.editor.code()) or "")
+		local hasCode = Util.trim(code) ~= ""
+		local text
+		if kind == "fix" then
+			local errs = ctx.errors and ctx.errors() or ""
+			if not hasCode and errs == "" then return notify(AI.name(), "Write or open a script in the Editor first", "info", 2.5) end
+			text = "Fix my Editor script so it works, and keep what it does the same. Give me the whole fixed script."
+			if errs ~= "" then text = text .. "\n\nThese errors showed up:\n" .. errs end
+		elseif kind == "explain" then
+			if not hasCode then return notify(AI.name(), "Open a script in the Editor first", "info", 2.5) end
+			text = "Explain what my Editor script does, step by step, in simple words."
+		elseif kind == "improve" then
+			if not hasCode then return notify(AI.name(), "Open a script in the Editor first", "info", 2.5) end
+			text = "Make my Editor script cleaner and faster, but keep what it does the same. Give me the whole script."
+		elseif kind == "gui" then
+			text = hasCode and "Add a small draggable on-screen menu to my Editor script with buttons for the things it does. Give me the whole script." or "Make me a small draggable on-screen menu with a few useful buttons."
+		else
+			return
+		end
+		AI.setWithCode(hasCode)
+		AI.send(text)
 	end
 
 	function AI.send(text)
@@ -912,6 +1009,7 @@ return function(ctx)
 		box.Text = ""
 		AI.setWithCode(false)
 		AI.go()
+		layoutChat()
 	end
 
 	function AI.openChat(c)
@@ -1390,7 +1488,13 @@ return function(ctx)
 		AI.show(on and "recent" or "chat")
 	end
 
-	send.Activated:Connect(function() AI.send(box.Text) end)
+	send.Activated:Connect(function()
+		if AI.busy then
+			AI.stop()
+		else
+			AI.send(box.Text)
+		end
+	end)
 	box.FocusLost:Connect(function(enter)
 		barStroke.Color = T.stroke
 		barStroke.Transparency = 0.5
