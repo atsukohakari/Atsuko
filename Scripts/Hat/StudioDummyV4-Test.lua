@@ -966,6 +966,9 @@ local function LCCore(FD, CFG)
 		if key == PERGUN.key then
 			return
 		end
+		if C.flushAlign then
+			C.flushAlign()
+		end
 		PERGUN.key = key
 		PERGUN.use(key)
 		if C.refreshAlignBoxes then
@@ -1299,6 +1302,7 @@ local function LCCore(FD, CFG)
 		v[k] = n
 		rebuild(s)
 		AL.dirty = true
+		AL.later()
 		return n
 	end
 	function AL.put(s, vals)
@@ -1310,16 +1314,32 @@ local function LCCore(FD, CFG)
 		end
 		rebuild(s)
 		AL.dirty = true
+		AL.later()
 	end
 	function AL.reset(s)
 		AL.put(s, DEFAULT[s])
 	end
 	function AL.save()
+		AL.tok = (AL.tok or 0) + 1
 		local ok, e = saveAlign()
 		if ok then
 			AL.dirty = false
 		end
 		return ok, e
+	end
+	function AL.later()
+		AL.tok = (AL.tok or 0) + 1
+		local my = AL.tok
+		task.delay(1.5, function()
+			if my == AL.tok and AL.dirty and C.alive and AL.save() then
+				fire("saved")
+			end
+		end)
+	end
+	function C.flushAlign()
+		if AL.dirty then
+			AL.save()
+		end
 	end
 	function AL.load()
 		local ok, e = loadAlign()
@@ -1386,6 +1406,10 @@ local function LCCore(FD, CFG)
 
 	local marker = C.newPart({Name = "MuzzleMarker", Shape = Enum.PartType.Ball, Size = V3(0.4, 0.4, 0.4), Color = C3(1, 0.25, 0.3), Transparency = 1})
 	C.onStop(function()
+		if AL.dirty then
+			pcall(saveAlign)
+			AL.dirty = false
+		end
 		AL.open = false
 		if genv.AtsukoAlign == AL then
 			genv.AtsukoAlign = nil

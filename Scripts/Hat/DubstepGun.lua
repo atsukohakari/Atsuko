@@ -132,7 +132,6 @@ rayparams.RespectCanCollide = true
 
 local fdless=patchma.reanimate()
 
--- Deanimate from the hub cleans up what it can (a rejoin fully removes it)
 do
 	local hub = ((typeof(getgenv) == "function" and getgenv()) or _G).AtsukoHub
 	if type(hub) == "table" and type(hub.OnStop) == "function" then
