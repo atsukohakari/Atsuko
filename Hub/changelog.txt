@@ -1,3 +1,6 @@
+Beta v1.2.6
+- the dubstep gun runs again: roblox removed ConnectDiedSignalBackend, and the patchma v48 it loads still looked it up, so it errored right away. it now skips that one signal (roblox had already patched it to do nothing), the rest of patchma is untouched
+
 Beta v1.2.5
 - gun alignment saves by itself now: a second after you stop nudging, when you close the alignment window, and when the script stops. nothing gets lost on a stop or a rejoin anymore
 - switching guns saves the old gun's spot before loading the new one
