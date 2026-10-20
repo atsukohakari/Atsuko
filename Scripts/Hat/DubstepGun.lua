@@ -1,4 +1,4 @@
--- @desc Dubstep Gun by Supr14 - runs on the FDless / Patchma reanimate
+-- @desc Dubstep Gun by Supr14, on the hub's Reanimate so emotes work too
 -- @author Supr14
 local function _notify(title, text, dur)
 	local hub = ((typeof(getgenv) == "function" and getgenv()) or _G).AtsukoHub
@@ -68,28 +68,330 @@ local getasset = function(a)
 			return id
 		end
 	end
+	return ""
 end
 
+local ALIGNS = (function()
+	local angles, cf = CFrame.Angles, CFrame.new
+	local function cfMul(a, b)
+		return a * b
+	end
+	return {
+
+		{PartName="Head",meshid="11601535857",C0=angles(0,3.141592653589793,0)},
+
+		{PartName="Left Arm",meshid="13831073174",C0=cfMul(cf(0.017,0,-0.23),angles(-1.4835298641951802,-0.15707963267948966,2.199114857512855))},
+		{PartName="Head",AccessoryName="Accessory (autorig_Head)"},
+		{PartName="Torso",AccessoryName="Accessory (autorig_Torso)"},
+		{PartName="Left Leg",AccessoryName="Accessory (autorig_LeftLeg)"},
+		{PartName="Right Leg",AccessoryName="Accessory (autorig_RightLeg)"},
+		{PartName="Left Arm",AccessoryName="Accessory (autorig_LeftArm)"},
+		{PartName="Right Arm",AccessoryName="Accessory (autorig_RightArm)"},
+
+		{PartName="Torso",meshid="4819720316",textureid="4819722776",C0=angles(0,0,0.2617993877991494)},
+		{PartName="Left Leg",meshid="4094864753",textureid="4094881938",C0=angles(0,0,-1.5707963267948966)},
+		{PartName="Right Leg",meshid="4154474745",textureid="4154474807",C0=angles(0,0,1.5707963267948966)},
+		{PartName="Left Arm",meshid="4489232754",textureid="4489233876",C0=angles(0,0,-1.5707963267948966)},
+		{PartName="Right Arm",meshid="4324138105",textureid="4391374782",C0=angles(0,0,1.5707963267948966)},
+	}
+end)()
+
 local patchma=(function()
-	local src=game:HttpGetAsync("https://gist.githubusercontent.com/BloxinStud10/05dced4c2ed850246ff1ed7e841258c6/raw/9b79c38d723e7cf40fb538a6352ab6ad51f77194/PatchmaV48.luau")
-	local lp=game:GetService("Players").LocalPlayer
-	if pcall(function() return lp.ConnectDiedSignalBackend end) or not src:find("ConnectDiedSignalBackend",1,true) then
-		return loadstring(src)()
-	end
-	local fixed=src:gsub("[%w_]+%(%s*[%w_]+%s*,%s*([\"'])ConnectDiedSignalBackend%1%s*%)","nil")
-	fixed=fixed:gsub("%[%s*([\"'])ConnectDiedSignalBackend%1%s*%]",".Parent and nil")
-	fixed=fixed:gsub("%.ConnectDiedSignalBackend",".Parent and nil")
-	fixed=fixed:gsub("()replicatesignal%(",function(at)
-		if at>1 and fixed:sub(at-1,at-1):match("[%w_%.:]") then
-			return nil
+	local genv=(typeof(getgenv)=="function" and getgenv()) or _G
+	local R=genv.LumenReanim
+	if type(R)~="table" or type(R.rig)~="function" then
+		local base=type(genv.AtsukoHubRaw)=="string" and genv.AtsukoHubRaw or "https://raw.githubusercontent.com/atsukohakari/Atsuko/main/"
+		local ok,src=pcall(function()
+			return game:HttpGet(base.."Hub/Reanimate.lua")
+		end)
+		local fn=ok and type(src)=="string" and loadstring(src,"=Reanimate")
+		if fn then
+			local ok2,r=pcall(fn)
+			if ok2 and type(r)=="table" then
+				R=r
+			end
 		end
-		return "(function(s,...) if s~=nil then return replicatesignal(s,...) end end)("
-	end)
-	local fn=loadstring(fixed)
-	if not fn then
-		fn=loadstring(src)
 	end
-	return fn()
+	if type(R)~="table" or type(R.rig)~="function" then
+		error("couldn't load Reanimate",0)
+	end
+	local CFI=CFrame.identity
+	local BODY={HumanoidRootPart=Vector3.new(2,2,1),Torso=Vector3.new(2,2,1),Head=Vector3.new(2,1,1),["Right Arm"]=Vector3.new(1,2,1),["Left Arm"]=Vector3.new(1,2,1),["Right Leg"]=Vector3.new(1,2,1),["Left Leg"]=Vector3.new(1,2,1)}
+	local REST={Head=CFrame.new(0,1.5,0),["Right Arm"]=CFrame.new(1.5,0,0),["Left Arm"]=CFrame.new(-1.5,0,0),["Right Leg"]=CFrame.new(0.5,-2,0),["Left Leg"]=CFrame.new(-0.5,-2,0)}
+	local MOTOR={Head="Neck",["Right Arm"]="Right Shoulder",["Left Arm"]="Left Shoulder",["Right Leg"]="Right Hip",["Left Leg"]="Left Hip"}
+	local M={cleant={}}
+	M.insGet=function(a,b) return a[b] end
+	M.insSet=function(a,b,c) a[b]=c end
+	M.cfMul=function(a,b) return a*b end
+	M.cfAdd=function(a,b) return a+b end
+	M.cfGet=function(a,b) return a[b] end
+	M.v3Get=function(a,b) return a[b] end
+	local rig,doll,conns=nil,nil,{}
+	local function finish()
+		for _,c in ipairs(conns) do
+			pcall(function() c:Disconnect() end)
+		end
+		table.clear(conns)
+		if doll then
+			local d=doll
+			doll=nil
+			pcall(function() d:FindFirstChildOfClass("Humanoid").Health=0 end)
+			task.delay(0.5,function()
+				pcall(function() d:Destroy() end)
+			end)
+		end
+	end
+	M.stopreanimate=function()
+		finish()
+		if rig then
+			local r=rig
+			rig=nil
+			return r.stopreanimate()
+		end
+		return false
+	end
+	M.reanimate=function()
+		local lp=game:GetService("Players").LocalPlayer
+		local real=lp.Character
+		local aligns={}
+		for _,a in ipairs(ALIGNS) do
+			aligns[#aligns+1]=a
+		end
+		for _,a in ipairs(type(R.presets)=="table" and R.presets or {}) do
+			aligns[#aligns+1]=a
+		end
+		rig=R.rig({aligns=aligns})
+		local fd=rig.reanimate()
+		if not fd then
+			rig=nil
+			error("couldn't reanimate",0)
+		end
+		local live=R.current()
+		local deadline=os.clock()+8
+		while R.current()==live and lp.Character~=live.rig and os.clock()<deadline do
+			task.wait()
+		end
+		if R.current()~=live then
+			rig=nil
+			error("the reanimate stopped while starting",0)
+		end
+		doll=Instance.new("Model")
+		doll.Name=lp.Name
+		local dp,isBody,vp={}, {}, {}
+		for name,size in pairs(BODY) do
+			local p=Instance.new("Part")
+			p.Name=name
+			p.Size=size
+			p.Transparency=1
+			p.Anchored=true
+			p.CanCollide=false
+			p.CanQuery=false
+			p.CanTouch=false
+			p.CastShadow=false
+			p.CFrame=REST[name] or CFI
+			p.Parent=doll
+			dp[name]=p
+			isBody[p]=true
+			vp[p]=fd.getPart(name)
+		end
+		local neck=Instance.new("Motor6D")
+		neck.Name="Neck"
+		neck.Part0=dp.Torso
+		neck.Part1=dp.Head
+		neck.C0=CFrame.new(0,1,0,-1,0,0,0,0,1,0,1,0)
+		neck.C1=CFrame.new(0,-0.5,0,-1,0,0,0,0,1,0,1,0)
+		neck.Parent=dp.Torso
+		local hum=Instance.new("Humanoid")
+		pcall(function()
+			hum.DisplayDistanceType=Enum.HumanoidDisplayDistanceType.None
+			hum.HealthDisplayType=Enum.HumanoidHealthDisplayType.AlwaysOff
+			hum.RequiresNeck=false
+			hum.BreakJointsOnDeath=false
+			hum.EvaluateStateMachine=false
+		end)
+		hum.Parent=doll
+		doll.PrimaryPart=dp.HumanoidRootPart
+		doll.Parent=workspace
+		local js={}
+		local function watch(d)
+			if d:IsA("JointInstance") then
+				js[d]=true
+				pcall(function() d.Enabled=false end)
+			elseif d:IsA("BasePart") then
+				pcall(function()
+					d.Anchored=true
+					d.CanCollide=false
+					d.CanQuery=false
+					d.CanTouch=false
+				end)
+			end
+		end
+		for _,d in ipairs(doll:GetDescendants()) do
+			watch(d)
+		end
+		conns[#conns+1]=doll.DescendantAdded:Connect(watch)
+		conns[#conns+1]=doll.DescendantRemoving:Connect(function(d)
+			js[d]=nil
+		end)
+		local function ends(j)
+			local c0,c1=j.C0,j.C1
+			if j:IsA("Motor6D") then
+				c0=c0*j.Transform
+			end
+			return c0,c1
+		end
+		local function rel(x,parent,fallback)
+			for j in pairs(js) do
+				local a,b=j.Part0,j.Part1
+				if a==x and b==parent then
+					local c0,c1=ends(j)
+					return c1*c0:Inverse()
+				elseif a==parent and b==x then
+					local c0,c1=ends(j)
+					return c0*c1:Inverse()
+				end
+			end
+			return fallback
+		end
+		local function v(p)
+			local x=vp[p]
+			if not x then
+				x={Name=p.Name}
+				vp[p]=x
+				fd.cframes[x]=p.CFrame
+			end
+			return x
+		end
+		local mirror={}
+		local fj={}
+		for _,n in ipairs({"RootJoint","Neck","Right Shoulder","Left Shoulder","Right Hip","Left Hip"}) do
+			fj[n]=fd.getJoint(n)
+		end
+		local pend,used,retry={},{},0
+		local function tryAlign(a)
+			local e=fd.getPartFromMesh(a[1],a[2],used)
+			local j=e and fd.getPartJoint(e)
+			if not j then
+				return false
+			end
+			used[#used+1]=e
+			j.Part1=v(a[4])
+			j.C0=a[3]
+			j.C1=CFI
+			return true
+		end
+		local function frame(_,dt)
+			if not doll then
+				return
+			end
+			fj.RootJoint.C0=rel(dp.Torso,dp.HumanoidRootPart,CFI)*fj.RootJoint.C1
+			for name,mn in pairs(MOTOR) do
+				local j=fj[mn]
+				j.C0=rel(dp[name],dp.Torso,REST[name])*j.C1
+			end
+			local at={}
+			for _,p in pairs(dp) do
+				local c=fd.cframes[vp[p]]
+				if typeof(c)=="CFrame" then
+					at[p]=c
+				end
+			end
+			for _=1,4 do
+				for j in pairs(js) do
+					local a,b=j.Part0,j.Part1
+					if a and b and a~=b and not (isBody[a] and isBody[b]) then
+						if at[b] and not at[a] then
+							local c0,c1=ends(j)
+							at[a]=at[b]*c1*c0:Inverse()
+						elseif at[a] and not at[b] then
+							local c0,c1=ends(j)
+							at[b]=at[a]*c0*c1:Inverse()
+						end
+					end
+				end
+			end
+			for p,c in pairs(at) do
+				if p.Parent then
+					p.CFrame=c
+				end
+			end
+			for j in pairs(js) do
+				local a,b=j.Part0,j.Part1
+				local m=mirror[j]
+				if a and b and a~=b and at[a] and at[b] and not (isBody[a] and isBody[b]) then
+					if not m then
+						m={Name=j.Name}
+						mirror[j]=m
+						fd.joints[#fd.joints+1]=m
+					end
+					local c0,c1=ends(j)
+					if isBody[a] then
+						m.Part0,m.Part1,m.C0,m.C1=v(b),v(a),c1,c0
+					else
+						m.Part0,m.Part1,m.C0,m.C1=v(a),v(b),c0,c1
+					end
+				elseif m then
+					m.Part0=nil
+				end
+			end
+			for p,x in pairs(vp) do
+				if not isBody[p] and not at[p] and p.Parent then
+					fd.cframes[x]=p.CFrame
+				end
+			end
+			if #pend>0 then
+				retry+=dt or 0
+				if retry>=0.5 then
+					retry=0
+					for i=#pend,1,-1 do
+						if tryAlign(pend[i]) then
+							table.remove(pend,i)
+						end
+					end
+				end
+			end
+		end
+		fd.addmode("default",{idle=frame,walk=frame,jump=frame,fall=frame})
+		conns[#conns+1]=lp:GetPropertyChangedSignal("Character"):Connect(function()
+			local c=lp.Character
+			if c and c~=live.rig then
+				real=c
+			end
+		end)
+		conns[#conns+1]=game:GetService("RunService").Heartbeat:Connect(function()
+			if R.current()~=live then
+				rig=nil
+				finish()
+			end
+		end)
+		local turn=0
+		local api=setmetatable({},{__index=fd})
+		api.getCharacter=function()
+			return doll
+		end
+		api.getRealCharacter=function()
+			turn=turn%2+1
+			if turn==2 and real and real.Parent then
+				return real
+			end
+			return live.rig
+		end
+		api.getCF=function()
+			return R.rootCF() or CFI
+		end
+		api.getDir=function()
+			return live.humanoid.MoveDirection
+		end
+		api.align=function(m,t,c,part)
+			local a={tostring(m or ""),tostring(t or ""),typeof(c)=="CFrame" and c or CFI,part}
+			if not tryAlign(a) then
+				pend[#pend+1]=a
+			end
+		end
+		api.stopreanimate=M.stopreanimate
+		return api
+	end
+	return M
 end)()
 
 local insSet=patchma.insSet
