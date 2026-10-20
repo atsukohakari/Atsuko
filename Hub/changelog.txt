@@ -1,3 +1,15 @@
+Beta v1.2.4
+- added the Dubstep Gun by Supr14 to Atsuko Script
+- it runs on its own FDless / Patchma reanimate, so it works but stands apart from Reanimate, alignment and emotes. deanimate cleans up what it can, a rejoin fully removes it
+- works with lists the dubstep gun's hats like the other scripts
+- credited FDless / Patchma (and Supr14) in settings > about
+
+Beta v1.2.3
+- youtube music works on way more executors now: it comes through a converter as an mp3 and plays through a Sound, instead of the webm that only some executors could play
+- the hub uses a free converter by default, so youtube music just works out of the box. turn it off in music > more to go back to the straight-from-youtube webm way
+- paste your own converter in music > more for the best speed (a cobalt server, new or old, or any link with {id} or {url}), or host your own
+- any converter the hub finds that's down just falls back to the next one, then to webm, so music keeps working
+
 Beta v1.2.2
 - the scripts don't carry credit text anymore, everyone is credited in settings > about
 - credits without a discord server just say what they made

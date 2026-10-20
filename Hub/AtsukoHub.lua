@@ -1,5 +1,5 @@
 --[[
-	atsuko hub beta v1.2.2
+	atsuko hub beta v1.2.4
 	by atsukohakari
 
 	icons from lucide.dev (ISC), license in Hub/LUCIDE_LICENSE.txt
@@ -13,7 +13,7 @@ Core.SELF = SELF_CHUNK
 Core.OWNER_TAG = "Atsuko Hakari"
 Core.BETA = "Beta v"
 
-local HUB_VERSION = "1.2.2"
+local HUB_VERSION = "1.2.4"
 local HUB_DIR = "Hub"
 local SRC = { owner = "atsukohakari", repo = "Atsuko", branch = "main" }
 local HOME_REPO = "https://raw.githubusercontent.com/" .. SRC.owner .. "/" .. SRC.repo .. "/" .. SRC.branch .. "/"
@@ -111,7 +111,7 @@ do
 	end
 	if type(old) == "table" and type(old.Destroy) == "function" then pcall(old.Destroy) end
 end
-local HUB = { alive = true, conns = {}, ready = false, version = "1.2.2" }
+local HUB = { alive = true, conns = {}, ready = false, version = "1.2.4" }
 GENV.__AtsukoHubInstance = HUB
 local function hubConn(c)
 	HUB.conns[#HUB.conns + 1] = c
@@ -456,6 +456,7 @@ local DEFAULTS = {
 	miniLyrics = true,
 	ytApi = "",
 	ytKey = "",
+	ytAuto = true,
 	ytSearchKey = "",
 	myPic = "",
 	theme = "midnight",
@@ -602,6 +603,16 @@ end
 Core.saveQueued = false
 -- keys stay on this device: never in Copy my settings
 Core.SECRET_SETTINGS = { ytKey = true, ytSearchKey = true }
+
+-- free converters the hub falls back on so YouTube music works without any setup.
+-- they turn a song into an mp3, which plays through a Sound (works on far more
+-- executors than the webm way). shared and best-effort: paste your own in
+-- Music > More for the best speed, or host one. api: "v7" or "v10" cobalt.
+Core.YT_CONVERTERS = {
+	{ base = "https://cobalt-7.kwiatekmiki.com", api = "v7" },
+	{ base = "https://downloadapi.stuff.solutions", api = "v7" },
+	{ base = "https://c.blahaj.ca", api = "v10" },
+}
 local function saveSettings()
 	if Core.saveQueued then return end
 	Core.saveQueued = true
@@ -2973,66 +2984,115 @@ do
 		return title, by
 	end
 
-	function Player.ytAudio(info)
-		if S.ytApi ~= "" then
-			local data, err = Player.ytConvert(info)
-			if data then return data end
-			local own = Tube.audio(info.id)
-			if own then return own end
-			return nil, err
+	function Player.pickLink(d)
+		if type(d) ~= "table" then return nil end
+		for _, k in ipairs({ "url", "link", "download_url", "downloadUrl", "dlink", "download" }) do
+			if type(d[k]) == "string" and string.find(d[k], "^https?://") then return d[k] end
 		end
-		return Tube.audio(info.id)
+		if type(d.data) == "table" then return Player.pickLink(d.data) end
+		return nil
 	end
 
-	function Player.ytConvert(info)
-		local api = S.ytApi
-		if api == "" then return nil, "YouTube needs a converter first. Add one in Music > More > YouTube" end
-		if not string.find(api, "^https?://") then api = "https://" .. api end
-		local function pickLink(d)
-			if type(d) ~= "table" then return nil end
-			for _, k in ipairs({ "url", "link", "download_url", "downloadUrl", "dlink", "download" }) do
-				if type(d[k]) == "string" and string.find(d[k], "^https?://") then return d[k] end
-			end
-			if type(d.data) == "table" then return pickLink(d.data) end
-			return nil
-		end
-		local body
-		if string.find(api, "{id}", 1, true) or string.find(api, "{url}", 1, true) then
-			local u = string.gsub(api, "{id}", info.id)
+	-- one converter attempt. a link with {id}/{url} is fetched directly, otherwise
+	-- it's posted to as a cobalt server (apiType "v10" for cobalt 10, "v7" for cobalt 7)
+	function Player.convertAt(base, apiType, mode, info)
+		base = Util.trim(tostring(base or ""))
+		if base == "" then return nil, "no converter" end
+		if not string.find(base, "^https?://") then base = "https://" .. base end
+		local key = S.ytKey
+		if string.find(base, "{id}", 1, true) or string.find(base, "{url}", 1, true) then
+			local u = string.gsub(base, "{id}", info.id)
 			u = string.gsub(u, "{url}", Util.urlEncode(info.url))
-			local ok, res = Net.get(u, S.ytKey ~= "" and { Authorization = S.ytKey } or nil)
-			if not ok then return nil, "The converter didn't answer (" .. Util.firstLine(res or "?") .. ")" end
-			if #res > 512 and Player.sniff(res) then return res end
-			local link = pickLink(jsonDecode(res))
-			if not link then return nil, "The converter sent something odd back" end
-			body = link
-		else
-			if not X.request then return nil, "Your executor can't send web requests" end
-			if string.sub(api, -1) ~= "/" then api = api .. "/" end
-			local headers = { Accept = "application/json", ["Content-Type"] = "application/json" }
-			if S.ytKey ~= "" then headers.Authorization = string.find(S.ytKey, " ", 1, true) and S.ytKey or ("Api-Key " .. S.ytKey) end
-			local code, raw = Net.request("POST", api, headers, jsonEncode({ url = info.url, downloadMode = "audio", audioFormat = "mp3", audioBitrate = "128", filenameStyle = "basic" }))
-			local d = jsonDecode(raw)
-			if code == 0 then return nil, "Couldn't reach the converter" end
-			if type(d) == "table" and d.status == "error" then
-				local e = type(d.error) == "table" and tostring(d.error.code or "") or tostring(d.text or "")
-				if string.find(e, "auth", 1, true) or string.find(e, "jwt", 1, true) then return nil, "That converter wants a key, add it under YouTube in the More tab" end
-				return nil, "The converter said no (" .. (e ~= "" and e or ("HTTP " .. code)) .. ")"
+			local ok, res = Net.get(u, key ~= "" and { Authorization = key } or nil)
+			if not ok then return nil, "the converter didn't answer" end
+			if type(res) == "string" and #res > 512 and Player.sniff(res) then return res end
+			local link = Player.pickLink(jsonDecode(res))
+			if not link then return nil, "the converter sent something odd back" end
+			local ok2, data = Net.get(link)
+			if not ok2 then return nil, "couldn't download it" end
+			return data
+		end
+		if not X.request then return nil, "your executor can't send web requests" end
+		local headers = { Accept = "application/json", ["Content-Type"] = "application/json" }
+		if key ~= "" then headers.Authorization = string.find(key, " ", 1, true) and key or ("Api-Key " .. key) end
+		local endpoint, body
+		if apiType == "v7" then
+			endpoint = (string.sub(base, -1) == "/" and base or base .. "/") .. "api/json"
+			if mode == "video" then
+				body = { url = info.url, isAudioOnly = false, vQuality = "480", filenamePattern = "basic" }
+			else
+				body = { url = info.url, isAudioOnly = true, aFormat = "mp3" }
 			end
-			if type(d) == "table" and d.status == "picker" and type(d.picker) == "table" then
-				for _, it in ipairs(d.picker) do
-					if type(it) == "table" and type(it.url) == "string" then
-						body = it.url
-						break
-					end
+		else
+			endpoint = string.sub(base, -1) == "/" and base or base .. "/"
+			if mode == "video" then
+				body = { url = info.url, downloadMode = "auto", videoQuality = "480", youtubeVideoCodec = "vp9", filenameStyle = "basic" }
+			else
+				body = { url = info.url, downloadMode = "audio", audioFormat = "mp3", audioBitrate = "128", filenameStyle = "basic" }
+			end
+		end
+		local code, raw = Net.request("POST", endpoint, headers, jsonEncode(body))
+		if code == 0 then return nil, "couldn't reach the converter" end
+		local d = jsonDecode(raw)
+		if type(d) == "table" and (d.status == "error" or d.error ~= nil) then
+			local e = type(d.error) == "table" and tostring(d.error.code or "") or tostring(d.text or d.error or "")
+			local le = string.lower(e)
+			if string.find(le, "auth", 1, true) or string.find(le, "jwt", 1, true) or string.find(le, "token", 1, true) then
+				return nil, "that converter wants a key, add it under YouTube in the More tab"
+			end
+			return nil, "the converter said no (" .. (e ~= "" and e or ("HTTP " .. code)) .. ")"
+		end
+		local link = Player.pickLink(d)
+		if not link and type(d) == "table" and type(d.picker) == "table" then
+			for _, it in ipairs(d.picker) do
+				if type(it) == "table" and type(it.url) == "string" then
+					link = it.url
+					break
 				end
 			end
-			body = body or pickLink(d)
-			if not body then return nil, "The converter sent something odd back (HTTP " .. code .. ")" end
 		end
-		local ok, data = Net.get(body)
-		if not ok then return nil, "Couldn't download the audio (" .. Util.firstLine(data or "?") .. ")" end
+		if not link then return nil, "the converter sent something odd back (HTTP " .. code .. ")" end
+		local ok, data = Net.get(link)
+		if not ok then return nil, "couldn't download it" end
 		return data
+	end
+
+	-- the converters to try, in order: your own if you set one, else the built-in free ones
+	function Player.converters()
+		local out = {}
+		local api = Util.trim(tostring(S.ytApi or ""))
+		if api ~= "" then
+			local tmpl = string.find(api, "{id}", 1, true) or string.find(api, "{url}", 1, true)
+			out[#out + 1] = { base = api, api = tmpl and "tmpl" or "auto" }
+		elseif S.ytAuto ~= false then
+			for _, c in ipairs(Core.YT_CONVERTERS) do
+				out[#out + 1] = c
+			end
+		end
+		return out
+	end
+
+	function Player.ytConvert(info, mode)
+		mode = mode or "audio"
+		local list = Player.converters()
+		if #list == 0 then return nil, "no converter set" end
+		local lastErr
+		for _, c in ipairs(list) do
+			local tries = c.api == "auto" and { "v10", "v7" } or { c.api }
+			for _, t in ipairs(tries) do
+				local ok, data, err = pcall(Player.convertAt, c.base, t, mode, info)
+				if ok and data and Player.sniff(data) then return data end
+				lastErr = (ok and err) or lastErr
+			end
+		end
+		return nil, lastErr or "no converter worked"
+	end
+
+	-- mp3 through a converter first (plays on every executor via a Sound), webm as the backup
+	function Player.ytAudio(info)
+		local data = Player.ytConvert(info, "audio")
+		if data then return data end
+		return Tube.audio(info.id)
 	end
 
 	function Player.download(url, name, done)
@@ -6900,6 +6960,8 @@ do
 end
 
 Core.CHANGELOG = {
+	{ version = "1.2.4", notes = { "added the Dubstep Gun by Supr14 to Atsuko Script", "it runs on its own FDless / Patchma reanimate, so it works but stands apart from Reanimate, alignment and emotes. deanimate cleans up what it can, a rejoin fully removes it", "works with lists the dubstep gun's hats like the other scripts", "credited FDless / Patchma (and Supr14) in settings > about" } },
+	{ version = "1.2.3", notes = { "youtube music works on way more executors now: it comes through a converter as an mp3 and plays through a Sound, instead of the webm that only some executors could play", "the hub uses a free converter by default, so youtube music just works out of the box. turn it off in music > more to go back to the straight-from-youtube webm way", "paste your own converter in music > more for the best speed (a cobalt server, new or old, or any link with {id} or {url}), or host your own", "any converter the hub finds that's down just falls back to the next one, then to webm, so music keeps working" } },
 	{ version = "1.2.2", notes = { "the scripts don't carry credit text anymore, everyone is credited in settings > about", "credits without a discord server just say what they made", "the old reanimate is gone, the scripts and the hub only use Reanimate now" } },
 	{ version = "1.2.1", notes = { "renamed AtsukoReanimate.lua and AtsukoEmotes.lua to Reanimate.lua and Emotes.lua, the hub and the scripts use the new names", "studio dummy and snake banisher download the new files by themselves" } },
 	{ version = "1.2.0", notes = { "the biggest update yet, almost everything got rebuilt", "atsuko script: tap a script to pick it, then tap reanimate. deanimate stops it. the bar at the bottom shows what's running", "only one script runs at a time now, deanimate the one that's on before you start another", "the scripts use the new Reanimate, a smoother uhhhhhh style reanimate that lives in its own file (Hub/Reanimate.lua)", "studio dummy v4 and snake banisher v3 run on Reanimate now", "new emotes page right next to atsuko script, no studio dummy needed", "emotes work while you're reanimated with any of the scripts, the page tells you when you need to reanimate first", "all dances in one list with search, a favorites tab and a setup tab", "star the dances you like, give any dance its own key, turn the keys on or off and set the volume", "every dance has its own options under it, and stopping a dance fades you back smoothly", "emotes live in their own file (Hub/Emotes.lua) and only download when you use them", "removed the emote and alignment buttons from studio dummy's phone buttons, emotes have their own page now", "ui designs: pick how the whole hub is laid out in settings > general > layout (or say design)", "original: the dock at the bottom and the panel on the left, like before", "sidebar: a big menu down the left with every page, the panel opens next to it", "window: one window with the pages on the left, drag it anywhere by the top", "move things around: everything can be moved now, the panel, the dock, the top bar, the side card, the command bar and the popups", "tap move things around in settings (or say moveui), drag the handles, then done. reset puts it all back", "the window design remembers its own spot", "pc: the panel slides all the way out to the side now, no more invisible line cutting it off halfway", "fixed the dynamic island staying up after you tap it", "new music player look: a big card with the cover on a spinning disc, the song and the buttons right under it", "new youtube check in music > more: it tests everything youtube songs need on your executor and tells you if they'll work there and why", "the command bar got a new look: clean rounded corners (no more weird corner), your key on the side, sections and a smooth fade", "rejoin and serverhop: you rejoin first, then the hub loads itself back in the new server by itself", "the editor got redesigned: a new toolbar, undo and redo, find (ctrl + f), word wrap and line numbers that follow it", "ask ai button in the editor: your code goes with your message", "the run button in the editor turns into stop while your script runs", "ai tools under the chat: fix errors, explain, make it better, add a menu and copy chat", "fix errors sends your editor code and the last errors from the log so the ai knows what broke", "stop button while the ai is answering", "run button on the ai's code, tap it twice so nothing runs by accident", "works with is accurate now: it reads the hats each script really uses, rig hats with which body part they go on, guns and the rest", "it keeps checking even if you close the script, and opening it again shows it right away, no new scan", "what it finds is saved for a week, and it tells you the hats a script picks by name too", "the hub keeps the files it downloads (reanimate, emotes) so they load faster next time", "the alignment lives in the hub now, the align panels inside studio dummy and snake banisher are gone", "tap the round button on the atsuko script bar to line things up (or press the script's own key, or say align)", "the alignment window: pick gun, screen or muzzle, nudge with - and + (hold to keep going), type exact numbers, undo, reset, flip, copy and save, and studio dummy's screen options are right there too", "a red ball shows where the muzzle is while the alignment window is open, and it closes by itself when the script stops", "studio dummy and snake banisher talk through the hub's own notifications now instead of their own popups", "long notifications show an arrow, tap them to read the whole thing", "scripts can use the hub's notifications too (the template shows how), and they fall back to roblox's when the hub isn't open", "youtube videos play straight from youtube in the video player now, no converter: the picture and the sound get put together into one video", "the video player shows how far the download is, and plays videos up to 20 minutes", "youtube downloads try again by themselves when a piece fails", "music > more lists the executors youtube should work on", "credits in settings > about: everyone who made the hub and the atsuko scripts possible, with their discord servers (tap to copy), and a button to copy them all" } },
@@ -9278,7 +9340,7 @@ function Gear.declared(src, st)
 				local h = near()
 				if h then ids(body, h) end
 			end
-			local open = string.match(raw, "^local%s+([%w_]+)%s*=%s*{%s*$") or string.match(raw, "^([%w_%.%[%]\"']+)%s*=%s*{%s*$") or string.match(raw, "^([%w_%.%[%]\"']+)%s*=%s*[%w_%.]+%(%s*{%s*$")
+			local open = string.match(raw, "^local%s+([%w_]+)%s*=%s*{%s*$") or string.match(raw, "^local%s+([%w_]+)%s*=%s*[%w_%.]+%(%s*{%s*$") or string.match(raw, "^([%w_%.%[%]\"']+)%s*=%s*{%s*$") or string.match(raw, "^([%w_%.%[%]\"']+)%s*=%s*[%w_%.]+%(%s*{%s*$")
 			if open then stack[#stack + 1] = { i = indent, h = Gear.tableHint(open) } end
 		end
 		pos = e + 1
@@ -19117,6 +19179,8 @@ Core.CREDITS = {
 	{ "andrfix", "The Studio Dummy version the modes and fly came from", nil },
 	{ "MLG Super Killer", "Made the original Snake Banisher", nil },
 	{ "Epic", "Converted Snake Banisher, the V3 the hub runs", nil },
+	{ "Supr14", "Made the Dubstep Gun", nil },
+	{ "MyWorld & rqz", "FDless / Patchma reanimate, the Dubstep Gun runs on it", "https://discord.com/invite/QMy5f6DrbH" },
 	{ "STEVETHEREALONE", "Uhhhhhh: the dances, their songs and the reanimate style Reanimate and Emotes are built on", "https://discord.gg/NASNUKRBVM" },
 	{ "Dubmood & Solary-3", "Some of the Uhhhhhh dance songs and animations", nil },
 	{ "Edge & the Infinite Yield team", "Lots of the commands came from Infinite Yield (Moon, Zwolf, Sleaze, Toon, Peyton, ATP)", "https://discord.gg/78ZuWSq" },
@@ -21624,8 +21688,12 @@ do
 	end
 
 	section(ov, "YouTube", 3)
-	Ctl.note(ov, 4, "YouTube songs play straight from YouTube, there's nothing to set up. A converter is optional: add one and YouTube songs come through it as mp3s instead, so speed and effects work on them too. Paste a cobalt server link (like https://your-cobalt-server/), or any converter link with {id} or {url} in it.")
-	MP.ytBox = Ctl.input(ov, 5, "Converter (optional)", "https://...", function() return S.ytApi end, function(x)
+	Ctl.note(ov, 4, "YouTube songs come through a tiny converter so they work on every executor: it turns them into mp3s the game plays through a Sound (the straight-from-YouTube webm way only works on some executors). The hub uses a free shared converter by default. For the best speed, paste your own below (a cobalt server, or any link with {id} or {url}), or host one.")
+	MP.ytAutoRow = Ctl.toggle(ov, 5, "Use a free converter automatically", "Plays YouTube songs as mp3s so they work on more executors. Turn off to play straight from YouTube (webm) instead.", function() return S.ytAuto ~= false end, function(x)
+		S.ytAuto = x
+		saveSettings()
+	end)
+	MP.ytBox = Ctl.input(ov, 6, "Your own converter (optional, recommended)", "https://...", function() return S.ytApi end, function(x)
 		S.ytApi = Util.trim(x)
 		saveSettings()
 	end)
@@ -23678,11 +23746,8 @@ function Video.ytVideo(info)
 		Video.say(t, T.sub)
 	end)
 	if data then return data end
-	local api = S.ytApi
-	if api ~= "" and not string.find(api, "{id}", 1, true) and not string.find(api, "{url}", 1, true) then
-		local cdata = Video.ytConvert(info)
-		if cdata then return cdata end
-	end
+	local cdata = Player.ytConvert(info, "video")
+	if cdata then return cdata end
 	return nil, why
 end
 
