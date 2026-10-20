@@ -1,5 +1,5 @@
 --[[
-	atsuko hub v1.1.2
+	atsuko hub beta v1.2.2
 	by atsukohakari
 
 	icons from lucide.dev (ISC), license in Hub/LUCIDE_LICENSE.txt
@@ -11,8 +11,9 @@ local Core = {}
 Core.SELF = SELF_CHUNK
 -- the owner's nickname: their chat tag, and the AI's name until someone changes it
 Core.OWNER_TAG = "Atsuko Hakari"
+Core.BETA = "Beta v"
 
-local HUB_VERSION = "1.1.2"
+local HUB_VERSION = "1.2.2"
 local HUB_DIR = "Hub"
 local SRC = { owner = "atsukohakari", repo = "Atsuko", branch = "main" }
 local HOME_REPO = "https://raw.githubusercontent.com/" .. SRC.owner .. "/" .. SRC.repo .. "/" .. SRC.branch .. "/"
@@ -71,6 +72,7 @@ local X = {
 	identifyexecutor = F(identifyexecutor) or F(getexecutorname),
 	getobjects = F(getobjects),
 	setfpscap = F(setfpscap),
+	queueteleport = F(queue_on_teleport) or F(queueteleport) or F(queueonteleport) or libf(syn, "queue_on_teleport") or libf(fluxus, "queue_on_teleport"),
 }
 -- websockets have a different home on every executor
 do
@@ -109,7 +111,7 @@ do
 	end
 	if type(old) == "table" and type(old.Destroy) == "function" then pcall(old.Destroy) end
 end
-local HUB = { alive = true, conns = {}, ready = false, version = "1.1.2" }
+local HUB = { alive = true, conns = {}, ready = false, version = "1.2.2" }
 GENV.__AtsukoHubInstance = HUB
 local function hubConn(c)
 	HUB.conns[#HUB.conns + 1] = c
@@ -462,6 +464,10 @@ local DEFAULTS = {
 	editorFontSize = 13,
 	editorHighlight = true,
 	editorLock = false,
+	reanimSel = "",
+	layout = "original",
+	moved = {},
+	editorWrap = false,
 	lastVersion = "",
 }
 Core.QUICK_DEFAULT = { "fly", "noclip", "infjump", "fullbright" }
@@ -552,6 +558,14 @@ function Core.normalizeSettings()
 	S.quickCmds = quick
 	if S.barPos ~= "top" and S.barPos ~= "left" and S.barPos ~= "right" and S.barPos ~= "bottom" then S.barPos = "top" end
 	if S.dockPos ~= "bottom" and S.dockPos ~= "left" and S.dockPos ~= "right" then S.dockPos = "bottom" end
+	if S.layout ~= "original" and S.layout ~= "sidebar" and S.layout ~= "window" then S.layout = "original" end
+	local moved = {}
+	for _, k in ipairs({ "stage", "stage_window", "dock", "bar", "edge", "toasts", "cmdbar" }) do
+		local o = type(S.moved) == "table" and S.moved[k]
+		if type(o) == "table" and tonumber(o[1]) and tonumber(o[2]) then moved[k] = { math.clamp(math.floor(tonumber(o[1])), -4000, 4000), math.clamp(math.floor(tonumber(o[2])), -4000, 4000) } end
+	end
+	S.moved = moved
+	if type(S.reanimSel) ~= "string" then S.reanimSel = "" end
 	local saved = {}
 	for _, it in ipairs(S.sbSaved) do
 		if type(it) == "table" and type(it.slug) == "string" and type(it.title) == "string" and #saved < 100 then saved[#saved + 1] = it end
@@ -818,7 +832,7 @@ Spot.toldFree = 0
 function Spot.freeNotice()
 	if os.clock() - Spot.toldFree < 4 then return end
 	Spot.toldFree = os.clock()
-	notify("Spotify (free)", "It can only show the song here, play and skip in your Spotify app", "info", 3)
+	notify("Spotify (free)", "Tap Play here to hear it in the game, the Spotify app's own buttons need Premium", "info", 3)
 end
 
 function Spot.loginUrl()
@@ -1632,6 +1646,1075 @@ function Sfx.play(kind)
 	pcall(function() s:Play() end)
 end
 
+local Tube = { vd = nil, cfgTried = false, dir = LOCAL_DIR .. "/cache/songs", indexFile = LOCAL_DIR .. "/cache/songs.json", listFile = LOCAL_DIR .. "/spotify_free.json", lists = nil, keep = 40, busy = {} }
+Tube.UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+Tube.MUSIC = { name = "WEB_REMIX", id = 67, version = "1.20260707.12.00" }
+Tube.WEB = { name = "WEB", id = 1, version = "2.20260708.00.00" }
+Tube.PLAYERS = {
+	{ name = "VISIONOS", id = 101, version = "1.02", ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15", ctx = { deviceMake = "Apple", deviceModel = "RealityDevice17,1", osName = "visionOS", osVersion = "26.5.23O471" } },
+	{ name = "ANDROID_VR", id = 28, version = "1.65.10", ua = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip", ctx = { deviceMake = "Oculus", deviceModel = "Quest 3", androidSdkVersion = 32, osName = "Android", osVersion = "12L" } },
+}
+Tube.SONGS = "EgWKAQIIAWoMEA4QChADEAQQCRAF"
+Tube.VIDEOS = "EgIQAQ%3D%3D"
+Tube.KIND = { song = true, video = true, single = true, ep = true, album = true, episode = true }
+Tube.EXTRA = { "live", "cover", "remix", "karaoke", "instrumental", "sped up", "slowed", "nightcore", "8d", "reverb", "1 hour", "loop" }
+do
+	local W = {}
+	Tube.W = W
+	W.FRAME = "\240\2\0\157\1\42\64\0\64\0\0\71\8\133\133\136\133\132\136\2\2\0\6\112\60\66\96\10\178\32\247\48\0\254\255\171\80\128"
+	W.ID = {
+		EBML = 0x1A45DFA3,
+		Segment = 0x18538067,
+		Info = 0x1549A966,
+		Tracks = 0x1654AE6B,
+		Cluster = 0x1F43B675,
+		Cues = 0x1C53BB6B,
+		TrackEntry = 0xAE,
+		Timecode = 0xE7,
+		SimpleBlock = 0xA3,
+		BlockGroup = 0xA0,
+		Block = 0xA1,
+		BlockDuration = 0x9B,
+		DiscardPadding = 0x75A2,
+	}
+
+	function W.readId(s, p)
+		local b = string.byte(s, p)
+		if not b then return nil end
+		local len = (b >= 0x80 and 1) or (b >= 0x40 and 2) or (b >= 0x20 and 3) or (b >= 0x10 and 4) or nil
+		if not len then return nil end
+		local id = 0
+		for i = 0, len - 1 do
+			local c = string.byte(s, p + i)
+			if not c then return nil end
+			id = id * 256 + c
+		end
+		return id, len
+	end
+
+	function W.readSize(s, p)
+		local b = string.byte(s, p)
+		if not b or b == 0 then return nil end
+		local len, mark = 1, 128
+		while bit32.band(b, mark) == 0 do
+			len += 1
+			mark = bit32.rshift(mark, 1)
+		end
+		local v = bit32.band(b, mark - 1)
+		local unknown = v == mark - 1
+		for i = 1, len - 1 do
+			local c = string.byte(s, p + i)
+			if not c then return nil end
+			if c ~= 255 then unknown = false end
+			v = v * 256 + c
+		end
+		return v, len, unknown
+	end
+
+	function W.uintOf(s, a, b)
+		local v = 0
+		for i = a, b do
+			v = v * 256 + string.byte(s, i)
+		end
+		return v
+	end
+
+	function W.floatOf(s, a, b)
+		local n = b - a + 1
+		if n == 4 then return (string.unpack(">f", s, a)) end
+		if n == 8 then return (string.unpack(">d", s, a)) end
+		return 0
+	end
+
+	function W.children(s, a, b, f)
+		local p = a
+		while p <= b do
+			local id, il = W.readId(s, p)
+			if not id then return false end
+			local size, sl, unknown = W.readSize(s, p + il)
+			if not size then return false end
+			local ds = p + il + sl
+			local de = unknown and b or math.min(b, ds + size - 1)
+			local stop = f(id, ds, de, unknown)
+			if stop == true then return true end
+			if type(stop) == "number" then
+				p = stop
+			else
+				p = de + 1
+			end
+		end
+		return true
+	end
+
+	function W.parse(s, want)
+		local ID = W.ID
+		local out = { scale = 1000000, frames = {}, codec = nil, priv = nil, delay = nil, preroll = nil, channels = 2, rate = 48000, track = nil, duration = nil }
+		local segA, segB = nil, nil
+		W.children(s, 1, #s, function(id, a, b)
+			if id == ID.Segment then
+				segA, segB = a, b
+				return true
+			end
+		end)
+		if not segA then return nil, "not a webm file" end
+		local function onTracks(a, b)
+			W.children(s, a, b, function(id, ea, eb)
+				if id ~= ID.TrackEntry then return end
+				local t = {}
+				W.children(s, ea, eb, function(cid, ca, cb)
+					if cid == 0xD7 then
+						t.num = W.uintOf(s, ca, cb)
+					elseif cid == 0x83 then
+						t.kind = W.uintOf(s, ca, cb)
+					elseif cid == 0x86 then
+						t.codec = string.sub(s, ca, cb)
+					elseif cid == 0x63A2 then
+						t.priv = string.sub(s, ca, cb)
+					elseif cid == 0x56AA then
+						t.delay = W.uintOf(s, ca, cb)
+					elseif cid == 0x56BB then
+						t.preroll = W.uintOf(s, ca, cb)
+					elseif cid == 0xE0 then
+						W.children(s, ca, cb, function(vid, va, vb)
+							if vid == 0xB0 then
+								t.w = W.uintOf(s, va, vb)
+							elseif vid == 0xBA then
+								t.h = W.uintOf(s, va, vb)
+							end
+						end)
+					elseif cid == 0xE1 then
+						W.children(s, ca, cb, function(aid, aa, ab)
+							if aid == 0xB5 then
+								t.rate = W.floatOf(s, aa, ab)
+							elseif aid == 0x9F then
+								t.channels = W.uintOf(s, aa, ab)
+							end
+						end)
+					end
+				end)
+				local fits
+				if want == "video" then
+					fits = t.kind == 1 and (t.codec == "V_VP9" or t.codec == "V_VP8")
+				else
+					fits = t.kind == 2 and (t.codec == "A_OPUS" or t.codec == "A_VORBIS")
+				end
+				if not out.track and fits then
+					out.track = t.num
+					out.w, out.h = t.w, t.h
+					out.codec = t.codec
+					out.priv = t.priv
+					out.delay = t.delay
+					out.preroll = t.preroll
+					out.channels = t.channels or 2
+					out.rate = t.rate or 48000
+				end
+			end)
+		end
+		local frames = out.frames
+		local function addBlock(a, b, base, extra)
+			local tn, tl = W.readSize(s, a)
+			if not tn or tn ~= out.track then return end
+			local hp = a + tl
+			local hi, lo = string.byte(s, hp, hp + 1)
+			if not lo then return end
+			local rel = hi * 256 + lo
+			if rel >= 32768 then rel -= 65536 end
+			local flags = string.byte(s, hp + 2)
+			local f = { t = (base + rel) * out.scale / 1000000, flags = flags, data = string.sub(s, hp + 3, b) }
+			if extra then
+				f.discard = extra.discard
+				f.dur = extra.dur
+				f.ref = extra.ref
+				f.group = true
+			end
+			frames[#frames + 1] = f
+		end
+		local base = 0
+		local function item(id, ca, cb)
+			if id == ID.Timecode then
+				base = W.uintOf(s, ca, cb)
+			elseif id == ID.SimpleBlock then
+				addBlock(ca, cb, base, nil)
+			elseif id == ID.BlockGroup then
+				local blockA, blockB, extra = nil, nil, {}
+				W.children(s, ca, cb, function(gid, ga, gb)
+					if gid == ID.Block then
+						blockA, blockB = ga, gb
+					elseif gid == ID.DiscardPadding then
+						local v = W.uintOf(s, ga, gb)
+						local n = gb - ga + 1
+						if n > 0 and string.byte(s, ga) >= 128 then v -= 2 ^ (8 * n) end
+						extra.discard = v
+					elseif gid == ID.BlockDuration then
+						extra.dur = W.uintOf(s, ga, gb)
+					elseif gid == 0xFB then
+						extra.ref = true
+					end
+				end)
+				if blockA then addBlock(blockA, blockB, base, extra) end
+			end
+		end
+		local p = segA
+		while p <= segB do
+			local id, il = W.readId(s, p)
+			if not id then break end
+			local size, sl, unknown = W.readSize(s, p + il)
+			if not size then break end
+			local a = p + il + sl
+			local b = unknown and segB or math.min(segB, a + size - 1)
+			if id == ID.Info then
+				W.children(s, a, b, function(cid, ca, cb)
+					if cid == 0x2AD7B1 then
+						out.scale = W.uintOf(s, ca, cb)
+					elseif cid == 0x4489 then
+						out.duration = W.floatOf(s, ca, cb)
+					end
+				end)
+			elseif id == ID.Tracks then
+				onTracks(a, b)
+			elseif id == ID.Cluster then
+				base = 0
+				W.rest()
+				if unknown then
+					local q = a
+					local e = segB
+					while q <= segB do
+						local cid, cil = W.readId(s, q)
+						if not cid then break end
+						if cid == ID.Cluster or cid == ID.Cues or cid == 0x1254C367 then
+							e = q - 1
+							break
+						end
+						local cs, csl, cu = W.readSize(s, q + cil)
+						if not cs or cu then break end
+						local ca = q + cil + csl
+						local cb = math.min(segB, ca + cs - 1)
+						item(cid, ca, cb)
+						q = cb + 1
+						e = cb
+					end
+					b = e
+				else
+					W.children(s, a, b, item)
+				end
+			end
+			p = b + 1
+			if not out.track and id == ID.Cluster then break end
+		end
+		if not out.track then return nil, want == "video" and "no vp9 video in it" or "no opus or vorbis audio in it" end
+		if #frames == 0 then return nil, want == "video" and "no video in it" or "no audio in it" end
+		return out
+	end
+
+	function W.idBytes(id)
+		local t = {}
+		while id > 0 do
+			table.insert(t, 1, string.char(id % 256))
+			id = id // 256
+		end
+		return table.concat(t)
+	end
+
+	function W.sizeBytes(n, width)
+		local len = width
+		if not len then
+			len = 1
+			while n >= 2 ^ (7 * len) - 1 do
+				len += 1
+			end
+		end
+		local t = {}
+		local v = n
+		for i = len, 1, -1 do
+			t[i] = v % 256
+			v = v // 256
+		end
+		t[1] = t[1] + bit32.rshift(256, len)
+		for i = 1, len do
+			t[i] = string.char(t[i])
+		end
+		return table.concat(t)
+	end
+
+	function W.el(id, data, width)
+		return W.idBytes(id) .. W.sizeBytes(#data, width) .. data
+	end
+
+	function W.uintBytes(n, width)
+		local t = {}
+		local v = math.floor(n)
+		repeat
+			table.insert(t, 1, string.char(v % 256))
+			v = v // 256
+		until v == 0 and (not width or #t >= width)
+		return table.concat(t)
+	end
+
+	function W.intBytes(d)
+		d = math.floor(d)
+		if d >= 0 then
+			local b = W.uintBytes(d)
+			if string.byte(b, 1) >= 128 then b = "\0" .. b end
+			return b
+		end
+		local n = 1
+		while d < -(2 ^ (8 * n - 1)) do
+			n += 1
+		end
+		return W.uintBytes(d + 2 ^ (8 * n), n)
+	end
+
+	function W.uint(id, n, width)
+		return W.el(id, W.uintBytes(n, width))
+	end
+
+	function W.block(track, rel, flags, data)
+		local r = rel < 0 and rel + 65536 or rel
+		return W.sizeBytes(track) .. string.char(r // 256, r % 256, flags) .. data
+	end
+
+	function W.build(src)
+		local ID = W.ID
+		local frames = src.frames
+		table.sort(frames, function(a, b) return a.t < b.t end)
+		local last = frames[#frames]
+		local dur = math.max(src.duration and src.duration * src.scale / 1000000 or 0, last.t + 20)
+		local CL = 2000
+		local clusters, cues = {}, {}
+		local fi = 1
+		local T = 0
+		while T < dur do
+			W.rest()
+			local parts = { W.uint(ID.Timecode, T) }
+			for v = 0, CL - 1000, 1000 do
+				local vt = T + v
+				if vt <= dur then
+					local bits = {}
+					while fi <= #frames and math.floor(frames[fi].t + 0.5) < vt + 1000 do
+						local f = frames[fi]
+						local rel = math.floor(f.t + 0.5) - T
+						if f.discard or f.dur then
+							local g = W.el(ID.Block, W.block(2, rel, bit32.band(f.flags or 0, 14), f.data))
+							if f.dur then g ..= W.uint(ID.BlockDuration, f.dur) end
+							if f.discard then g ..= W.el(ID.DiscardPadding, W.intBytes(f.discard)) end
+							bits[#bits + 1] = W.el(ID.BlockGroup, g)
+						else
+							bits[#bits + 1] = W.el(ID.SimpleBlock, W.block(2, rel, bit32.bor(f.flags or 0, 128), f.data))
+						end
+						fi += 1
+					end
+					parts[#parts + 1] = W.el(ID.SimpleBlock, W.block(1, v, 128, W.FRAME))
+					parts[#parts + 1] = table.concat(bits)
+				end
+			end
+			clusters[#clusters + 1] = { t = T, data = W.el(ID.Cluster, table.concat(parts)) }
+			T += CL
+		end
+		local info = W.el(ID.Info, W.uint(0x2AD7B1, 1000000) .. W.el(0x4D80, "atsuko") .. W.el(0x5741, "atsuko") .. W.el(0x4489, string.pack(">d", dur)))
+		local video = W.el(ID.TrackEntry, W.uint(0xD7, 1) .. W.uint(0x73C5, 1) .. W.uint(0x83, 1) .. W.uint(0x9C, 0) .. W.el(0x86, "V_VP8") .. W.uint(0x23E383, 1000000000) .. W.el(0xE0, W.uint(0xB0, 64) .. W.uint(0xBA, 64)))
+		local aparts = { W.uint(0xD7, 2), W.uint(0x73C5, 2), W.uint(0x83, 2), W.el(0x86, src.codec) }
+		if src.priv then aparts[#aparts + 1] = W.el(0x63A2, src.priv) end
+		if src.delay then aparts[#aparts + 1] = W.uint(0x56AA, src.delay) end
+		if src.codec == "A_OPUS" then aparts[#aparts + 1] = W.uint(0x56BB, src.preroll or 80000000) end
+		aparts[#aparts + 1] = W.el(0xE1, W.el(0xB5, string.pack(">d", src.rate or 48000)) .. W.uint(0x9F, src.channels or 2))
+		local tracks = W.el(ID.Tracks, video .. W.el(ID.TrackEntry, table.concat(aparts)))
+		local function seek(id, pos)
+			return W.el(0x4DBB, W.el(0x53AB, W.idBytes(id)) .. W.uint(0x53AC, pos, 8))
+		end
+		local headLen = #W.el(0x114D9B74, seek(ID.Info, 0) .. seek(ID.Tracks, 0) .. seek(ID.Cues, 0))
+		local pos = headLen + #info + #tracks
+		local infoPos, tracksPos = headLen, headLen + #info
+		local body = {}
+		for _, c in ipairs(clusters) do
+			cues[#cues + 1] = W.el(0xBB, W.uint(0xB3, c.t) .. W.el(0xB7, W.uint(0xF7, 1) .. W.uint(0xF1, pos)))
+			body[#body + 1] = c.data
+			pos += #c.data
+		end
+		local cuesPos = pos
+		local head = W.el(0x114D9B74, seek(ID.Info, infoPos) .. seek(ID.Tracks, tracksPos) .. seek(ID.Cues, cuesPos))
+		local segment = head .. info .. tracks .. table.concat(body) .. W.el(ID.Cues, table.concat(cues))
+		local ebml = W.el(ID.EBML, W.uint(0x4286, 1) .. W.uint(0x42F7, 1) .. W.uint(0x42F2, 4) .. W.uint(0x42F3, 8) .. W.el(0x4282, "webm") .. W.uint(0x4287, 4) .. W.uint(0x4285, 2))
+		return ebml .. W.idBytes(ID.Segment) .. W.sizeBytes(#segment, 8) .. segment, dur
+	end
+
+	W.t0 = 0
+	function W.rest()
+		if os.clock() - W.t0 > 0.006 then
+			task.wait()
+			W.t0 = os.clock()
+		end
+	end
+
+	function W.remux(data)
+		W.t0 = os.clock()
+		local ok, src, err = pcall(W.parse, data)
+		if not ok then return nil, "couldn't read the audio (" .. tostring(src) .. ")" end
+		if not src then return nil, err end
+		local ok2, out, dur = pcall(W.build, src)
+		if not ok2 then return nil, "couldn't rebuild the audio (" .. tostring(out) .. ")" end
+		return out, dur / 1000
+	end
+
+	function W.isKey(f)
+		if f.group then return not f.ref end
+		return bit32.band(f.flags or 0, 128) ~= 0
+	end
+
+	function W.audioBlock(f, rel)
+		local ID = W.ID
+		if f.discard or f.dur then
+			local g = W.el(ID.Block, W.block(2, rel, bit32.band(f.flags or 0, 14), f.data))
+			if f.dur then g ..= W.uint(ID.BlockDuration, f.dur) end
+			if f.discard then g ..= W.el(ID.DiscardPadding, W.intBytes(f.discard)) end
+			return W.el(ID.BlockGroup, g)
+		end
+		return W.el(ID.SimpleBlock, W.block(2, rel, bit32.bor(f.flags or 0, 128), f.data))
+	end
+
+	function W.mux(v, a)
+		local ID = W.ID
+		local vf, af = v.frames, a.frames
+		local nv, na = #vf, #af
+		local lastT = math.max(nv > 0 and vf[nv].t or 0, na > 0 and af[na].t or 0)
+		local dur = math.max((v.duration or 0) * v.scale / 1000000, (a.duration or 0) * a.scale / 1000000, lastT + 40)
+		local clusters = {}
+		local vi, ai = 1, 1
+		local huge = math.huge
+		while vi <= nv or ai <= na do
+			W.rest()
+			local tv = vi <= nv and vf[vi].t or huge
+			local ta = ai <= na and af[ai].t or huge
+			local start = math.max(0, math.floor(math.min(tv, ta)))
+			local parts = { W.uint(ID.Timecode, start) }
+			local limit = start + 4000
+			local vids, cue = 0, false
+			while true do
+				tv = vi <= nv and vf[vi].t or huge
+				ta = ai <= na and af[ai].t or huge
+				if tv == huge and ta == huge then break end
+				if tv <= ta then
+					local f = vf[vi]
+					local key = W.isKey(f)
+					if #parts > 1 and (key or tv >= limit) then break end
+					local fl = bit32.band(f.flags or 0, 15)
+					if key then fl = bit32.bor(fl, 128) end
+					parts[#parts + 1] = W.el(ID.SimpleBlock, W.block(1, math.max(0, math.floor(tv + 0.5) - start), fl, f.data))
+					if vids == 0 then cue = key end
+					vids += 1
+					vi += 1
+				else
+					if #parts > 1 and ta >= limit then break end
+					parts[#parts + 1] = W.audioBlock(af[ai], math.max(0, math.floor(ta + 0.5) - start))
+					ai += 1
+				end
+			end
+			clusters[#clusters + 1] = { t = start, cue = cue, data = W.el(ID.Cluster, table.concat(parts)) }
+		end
+		local anyCue = false
+		for _, c in ipairs(clusters) do
+			if c.cue then
+				anyCue = true
+				break
+			end
+		end
+		local info = W.el(ID.Info, W.uint(0x2AD7B1, 1000000) .. W.el(0x4D80, "atsuko") .. W.el(0x5741, "atsuko") .. W.el(0x4489, string.pack(">d", dur)))
+		local vparts = { W.uint(0xD7, 1), W.uint(0x73C5, 1), W.uint(0x83, 1), W.uint(0x9C, 0), W.el(0x86, v.codec) }
+		if v.priv then vparts[#vparts + 1] = W.el(0x63A2, v.priv) end
+		vparts[#vparts + 1] = W.el(0xE0, W.uint(0xB0, v.w or 640) .. W.uint(0xBA, v.h or 360))
+		local aparts = { W.uint(0xD7, 2), W.uint(0x73C5, 2), W.uint(0x83, 2), W.el(0x86, a.codec) }
+		if a.priv then aparts[#aparts + 1] = W.el(0x63A2, a.priv) end
+		if a.delay then aparts[#aparts + 1] = W.uint(0x56AA, a.delay) end
+		if a.codec == "A_OPUS" then aparts[#aparts + 1] = W.uint(0x56BB, a.preroll or 80000000) end
+		aparts[#aparts + 1] = W.el(0xE1, W.el(0xB5, string.pack(">d", a.rate or 48000)) .. W.uint(0x9F, a.channels or 2))
+		local tracks = W.el(ID.Tracks, W.el(ID.TrackEntry, table.concat(vparts)) .. W.el(ID.TrackEntry, table.concat(aparts)))
+		local function seek(id, pos)
+			return W.el(0x4DBB, W.el(0x53AB, W.idBytes(id)) .. W.uint(0x53AC, pos, 8))
+		end
+		local headLen = #W.el(0x114D9B74, seek(ID.Info, 0) .. seek(ID.Tracks, 0) .. seek(ID.Cues, 0))
+		local pos = headLen + #info + #tracks
+		local infoPos, tracksPos = headLen, headLen + #info
+		local body, cues = {}, {}
+		for _, c in ipairs(clusters) do
+			if c.cue or not anyCue then
+				cues[#cues + 1] = W.el(0xBB, W.uint(0xB3, c.t) .. W.el(0xB7, W.uint(0xF7, 1) .. W.uint(0xF1, pos)))
+			end
+			body[#body + 1] = c.data
+			pos += #c.data
+		end
+		local cuesPos = pos
+		local head = W.el(0x114D9B74, seek(ID.Info, infoPos) .. seek(ID.Tracks, tracksPos) .. seek(ID.Cues, cuesPos))
+		local segment = head .. info .. tracks .. table.concat(body) .. W.el(ID.Cues, table.concat(cues))
+		local ebml = W.el(ID.EBML, W.uint(0x4286, 1) .. W.uint(0x42F7, 1) .. W.uint(0x42F2, 4) .. W.uint(0x42F3, 8) .. W.el(0x4282, "webm") .. W.uint(0x4287, 4) .. W.uint(0x4285, 2))
+		return ebml .. W.idBytes(ID.Segment) .. W.sizeBytes(#segment, 8) .. segment, dur
+	end
+
+	function W.muxAV(vdata, adata)
+		W.t0 = os.clock()
+		local ok, v, err = pcall(W.parse, vdata, "video")
+		if not ok then return nil, "couldn't read the video (" .. tostring(v) .. ")" end
+		if not v then return nil, err end
+		local okA, a, errA = pcall(W.parse, adata)
+		if not okA then return nil, "couldn't read the audio (" .. tostring(a) .. ")" end
+		if not a then return nil, errA end
+		local ok2, out, dur = pcall(W.mux, v, a)
+		if not ok2 then return nil, "couldn't put it together (" .. tostring(out) .. ")" end
+		return out, dur / 1000
+	end
+end
+
+function Tube.client(c)
+	if type(c) ~= "table" or type(c.name) ~= "string" or type(c.version) ~= "string" or tonumber(c.id) == nil then return nil end
+	return { name = c.name, id = tonumber(c.id), version = c.version, ua = type(c.ua) == "string" and c.ua or nil, ctx = type(c.ctx) == "table" and c.ctx or nil }
+end
+
+function Tube.loadCfg()
+	if Tube.cfgTried then return end
+	Tube.cfgTried = true
+	local ok, body = Net.get(HOME_REPO .. HUB_DIR .. "/youtube.json")
+	local d = ok and jsonDecode(body) or nil
+	if type(d) ~= "table" then return end
+	if type(d.players) == "table" then
+		local list = {}
+		for _, c in ipairs(d.players) do
+			local x = Tube.client(c)
+			if x then list[#list + 1] = x end
+		end
+		if #list > 0 then Tube.PLAYERS = list end
+	end
+	Tube.MUSIC = Tube.client(d.music) or Tube.MUSIC
+	Tube.WEB = Tube.client(d.web) or Tube.WEB
+	if type(d.songs) == "string" and d.songs ~= "" then Tube.SONGS = d.songs end
+end
+
+function Tube.post(host, ep, client, body, ua)
+	if not X.request then return nil, "Your executor can't send web requests" end
+	local c = { clientName = client.name, clientVersion = client.version, hl = "en", gl = "US" }
+	for k, v in pairs(client.ctx or {}) do
+		c[k] = v
+	end
+	if ua then c.userAgent = ua end
+	if Tube.vd then c.visitorData = Tube.vd end
+	body.context = { client = c }
+	local headers = {
+		["Content-Type"] = "application/json",
+		["User-Agent"] = ua or Tube.UA,
+		["X-YouTube-Client-Name"] = tostring(client.id),
+		["X-YouTube-Client-Version"] = client.version,
+		Origin = "https://" .. host,
+	}
+	if Tube.vd then headers["X-Goog-Visitor-Id"] = Tube.vd end
+	local code, raw = Net.request("POST", "https://" .. host .. "/youtubei/v1/" .. ep .. "?prettyPrint=false", headers, jsonEncode(body))
+	local d = jsonDecode(raw)
+	if type(d) == "table" and type(d.responseContext) == "table" and type(d.responseContext.visitorData) == "string" and d.responseContext.visitorData ~= "" then
+		Tube.vd = d.responseContext.visitorData
+	end
+	if code == 0 then return nil, "Couldn't reach YouTube" end
+	if code ~= 200 or type(d) ~= "table" then return nil, "YouTube said " .. code end
+	return d
+end
+
+function Tube.walk(node, key, out, depth)
+	out = out or {}
+	depth = depth or 0
+	if type(node) ~= "table" or depth > 60 then return out end
+	for k, v in pairs(node) do
+		if type(v) == "table" then
+			if k == key then
+				out[#out + 1] = v
+			else
+				Tube.walk(v, key, out, depth + 1)
+			end
+		end
+	end
+	return out
+end
+
+function Tube.first(node, key, depth)
+	depth = depth or 0
+	if type(node) ~= "table" or depth > 30 then return nil end
+	local v = node[key]
+	if type(v) == "string" then return v end
+	for _, c in pairs(node) do
+		if type(c) == "table" then
+			local r = Tube.first(c, key, depth + 1)
+			if r then return r end
+		end
+	end
+	return nil
+end
+
+function Tube.text(t)
+	if type(t) ~= "table" then return "" end
+	if type(t.simpleText) == "string" then return t.simpleText end
+	local out = {}
+	for _, r in ipairs(type(t.runs) == "table" and t.runs or {}) do
+		if type(r) == "table" and type(r.text) == "string" then out[#out + 1] = r.text end
+	end
+	return table.concat(out)
+end
+
+function Tube.secs(str)
+	str = Util.trim(tostring(str or ""))
+	local h, m, s = string.match(str, "^(%d+):(%d%d):(%d%d)$")
+	if h then return tonumber(h) * 3600 + tonumber(m) * 60 + tonumber(s) end
+	m, s = string.match(str, "^(%d+):(%d%d)$")
+	if m then return tonumber(m) * 60 + tonumber(s) end
+	return nil
+end
+
+function Tube.thumb(node)
+	local lists = Tube.walk(node, "thumbnails")
+	local best = nil
+	for _, l in ipairs(lists) do
+		local last = l[#l]
+		if type(last) == "table" and type(last.url) == "string" then best = last.url end
+	end
+	if not best then return nil end
+	if string.sub(best, 1, 2) == "//" then best = "https:" .. best end
+	best = string.gsub(best, "=w%d+%-h%d+", "=w226-h226")
+	return best
+end
+
+function Tube.clean(by)
+	by = Util.trim(tostring(by or ""))
+	by = string.gsub(by, "%s*%-%s*Topic$", "")
+	return by
+end
+
+function Tube.songs(q)
+	local d, err = Tube.post("music.youtube.com", "search", Tube.MUSIC, { query = q, params = Tube.SONGS }, Tube.UA)
+	if not d then return nil, err end
+	local out, seen = {}, {}
+	for _, r in ipairs(Tube.walk(d, "musicResponsiveListItemRenderer")) do
+		local vid = type(r.playlistItemData) == "table" and r.playlistItemData.videoId or Tube.first(r.overlay, "videoId")
+		local cols = type(r.flexColumns) == "table" and r.flexColumns or {}
+		local function col(i)
+			local c = type(cols[i]) == "table" and cols[i].musicResponsiveListItemFlexColumnRenderer
+			return type(c) == "table" and Util.trim(Tube.text(c.text)) or ""
+		end
+		local title, sub = col(1), col(2)
+		if type(vid) == "string" and #vid == 11 and title ~= "" and not seen[vid] then
+			seen[vid] = true
+			local len, by = 0, nil
+			for p in string.gmatch(sub .. " \226\128\162 ", "(.-) \226\128\162 ") do
+				p = Util.trim(p)
+				local secs = Tube.secs(p)
+				if secs then
+					len = secs
+				elseif not by and p ~= "" and not Tube.KIND[string.lower(p)] then
+					by = p
+				end
+			end
+			out[#out + 1] = { id = vid, title = title, by = Tube.clean(by), len = len, thumb = Tube.thumb(r.thumbnail) }
+			if #out >= 20 then break end
+		end
+	end
+	return out
+end
+
+function Tube.videos(q)
+	local d, err = Tube.post("www.youtube.com", "search", Tube.WEB, { query = q, params = Tube.VIDEOS }, Tube.UA)
+	if not d then return nil, err end
+	local out, seen = {}, {}
+	for _, r in ipairs(Tube.walk(d, "videoRenderer")) do
+		local vid = r.videoId
+		local len = Tube.secs(Tube.text(r.lengthText))
+		if type(vid) == "string" and #vid == 11 and len and not seen[vid] then
+			seen[vid] = true
+			local by = Tube.text(r.ownerText)
+			if by == "" then by = Tube.text(r.longBylineText) end
+			out[#out + 1] = { id = vid, title = Util.trim(Tube.text(r.title)), by = Tube.clean(by), len = len, thumb = Tube.thumb(r.thumbnail) }
+			if #out >= 20 then break end
+		end
+	end
+	return out
+end
+
+function Tube.search(q)
+	Tube.loadCfg()
+	local list, err = Tube.songs(q)
+	if list and #list > 0 then return list end
+	local list2, err2 = Tube.videos(q)
+	if list2 then return list2 end
+	return nil, err2 or err or "Couldn't search YouTube"
+end
+
+function Tube.reason(ps)
+	local why = string.lower(tostring(ps.reason or ""))
+	if string.find(why, "bot", 1, true) then return "YouTube wants a sign-in right now, try again in a bit" end
+	if string.find(why, "age", 1, true) then return "This one is age restricted" end
+	if string.find(why, "private", 1, true) then return "This video is private" end
+	if string.find(why, "unavailable", 1, true) or string.find(why, "removed", 1, true) then return "This video isn't on YouTube anymore" end
+	if ps.status == "LOGIN_REQUIRED" then return "YouTube wants a sign-in for this one" end
+	return ps.reason and tostring(ps.reason) or "YouTube won't play this one here"
+end
+
+function Tube.pick(sd)
+	local list = type(sd) == "table" and type(sd.adaptiveFormats) == "table" and sd.adaptiveFormats or {}
+	local rank = { [251] = 1, [250] = 2, [249] = 3 }
+	local best, bestRank = nil, 99
+	for _, f in ipairs(list) do
+		if type(f) == "table" and type(f.url) == "string" and type(f.mimeType) == "string" and string.find(f.mimeType, "^audio/webm") then
+			local r = rank[tonumber(f.itag) or 0] or 10
+			if r < bestRank then best, bestRank = f, r end
+		end
+	end
+	if not best then return nil end
+	return { url = best.url, len = tonumber(best.contentLength), itag = tonumber(best.itag) }
+end
+
+function Tube.fetch(f, ua, limit, prog)
+	local headers = { ["User-Agent"] = ua or Tube.UA }
+	local total = f.len
+	if not total or total <= 0 then
+		local code, body
+		for try = 1, 2 do
+			code, body = Net.request("GET", f.url, headers)
+			if code == 200 and #body >= 64 then return body end
+			if code == 403 then break end
+			task.wait(0.6 * try)
+		end
+		return nil, code == 403 and "YouTube blocked the download" or ("The download didn't work (" .. code .. ")")
+	end
+	if total > (limit or 40) * 1048576 then return nil, "That one is too big" end
+	local parts, got, tries = {}, 0, 0
+	local chunk = 3 * 1048576
+	while got < total do
+		local stop = math.min(total, got + chunk) - 1
+		local code, body = Net.request("GET", f.url .. "&range=" .. got .. "-" .. stop, headers)
+		if (code ~= 200 and code ~= 206) or #body == 0 then
+			if code == 403 then return nil, "YouTube blocked the download" end
+			tries += 1
+			if tries > 2 or not HUB.alive then
+				return nil, code == 0 and "The download stopped, check your internet" or ("The download didn't work (" .. code .. ")")
+			end
+			task.wait(0.8 * tries)
+		else
+			tries = 0
+			parts[#parts + 1] = body
+			got += #body
+			if prog then pcall(prog, math.min(1, got / total)) end
+		end
+	end
+	return table.concat(parts)
+end
+
+function Tube.stream(id)
+	Tube.visitor()
+	local why = nil
+	for _, c in ipairs(Tube.PLAYERS) do
+		local d, err = Tube.post("www.youtube.com", "player", c, {
+			videoId = id,
+			playbackContext = { contentPlaybackContext = { html5Preference = "HTML5_PREF_WANTS" } },
+			contentCheckOk = true,
+			racyCheckOk = true,
+		}, c.ua)
+		if not d then
+			why = err
+		else
+			local ps = type(d.playabilityStatus) == "table" and d.playabilityStatus or {}
+			local det = type(d.videoDetails) == "table" and d.videoDetails or {}
+			if ps.status ~= "OK" then
+				why = Tube.reason(ps)
+			elseif det.isLive == true or det.isLiveContent == true and not det.lengthSeconds then
+				return nil, "Live streams can't be played"
+			elseif (tonumber(det.lengthSeconds) or 0) > 1500 then
+				return nil, "That one is longer than 25 minutes"
+			else
+				local f = Tube.pick(d.streamingData)
+				if f then
+					local data, derr = Tube.fetch(f, c.ua)
+					if data then return data, det end
+					why = derr
+				else
+					why = "YouTube didn't send a version that plays here"
+				end
+			end
+		end
+	end
+	return nil, why or "Couldn't get the song from YouTube"
+end
+
+function Tube.audio(id)
+	Tube.loadCfg()
+	local raw, det = Tube.stream(id)
+	if not raw then return nil, det end
+	local out, dur = Tube.W.remux(raw)
+	if not out then return nil, "Couldn't get the song ready: " .. tostring(dur) end
+	return out, dur, det
+end
+
+function Tube.visitor()
+	if Tube.vd or Tube.vdTried then return end
+	Tube.vdTried = true
+	pcall(Tube.post, "www.youtube.com", "visitor_id", Tube.WEB, {}, Tube.UA)
+end
+
+function Tube.pickVideo(sd, maxH)
+	local list = type(sd) == "table" and type(sd.adaptiveFormats) == "table" and sd.adaptiveFormats or {}
+	local best, bh = nil, -1
+	for _, f in ipairs(list) do
+		if type(f) == "table" and type(f.url) == "string" and type(f.mimeType) == "string" and string.find(f.mimeType, "^video/webm") and string.find(f.mimeType, "vp0?9") then
+			local h = tonumber(f.height) or 0
+			local fps = tonumber(f.fps) or 30
+			local hdr = type(f.qualityLabel) == "string" and string.find(f.qualityLabel, "HDR", 1, true) ~= nil
+			if h > 0 and h <= maxH and fps <= 31 and not hdr and h > bh then best, bh = f, h end
+		end
+	end
+	if not best then return nil end
+	return { url = best.url, len = tonumber(best.contentLength), itag = tonumber(best.itag), h = bh }
+end
+
+function Tube.video(id, say)
+	Tube.loadCfg()
+	Tube.visitor()
+	local function tell(t)
+		if say then pcall(say, t) end
+	end
+	local why = nil
+	for _, c in ipairs(Tube.PLAYERS) do
+		local d, err = Tube.post("www.youtube.com", "player", c, {
+			videoId = id,
+			playbackContext = { contentPlaybackContext = { html5Preference = "HTML5_PREF_WANTS" } },
+			contentCheckOk = true,
+			racyCheckOk = true,
+		}, c.ua)
+		if not d then
+			why = err
+		else
+			local ps = type(d.playabilityStatus) == "table" and d.playabilityStatus or {}
+			local det = type(d.videoDetails) == "table" and d.videoDetails or {}
+			local secs = tonumber(det.lengthSeconds) or 0
+			if ps.status ~= "OK" then
+				why = Tube.reason(ps)
+			elseif det.isLive == true then
+				return nil, "Live streams can't be played"
+			elseif secs > 1200 then
+				return nil, "That one is longer than 20 minutes, too big for the video player"
+			else
+				local vfmt = Tube.pickVideo(d.streamingData, secs <= 600 and 480 or 360)
+				local afmt = Tube.pick(d.streamingData)
+				if vfmt and afmt then
+					tell("Downloading the video (" .. vfmt.h .. "p)...")
+					local vdata, verr = Tube.fetch(vfmt, c.ua, 90, function(p)
+						tell("Downloading the video " .. math.floor(p * 100) .. "%")
+					end)
+					if vdata then
+						tell("Downloading the sound...")
+						local adata, aerr = Tube.fetch(afmt, c.ua)
+						if adata then
+							tell("Putting it together...")
+							local out, dur = Tube.W.muxAV(vdata, adata)
+							if out then return out, det, dur end
+							why = "Couldn't get the video ready: " .. tostring(dur)
+						else
+							why = aerr
+						end
+					else
+						why = verr
+					end
+				else
+					why = "YouTube didn't send a version that plays here"
+				end
+			end
+		end
+	end
+	return nil, why or "Couldn't get the video from YouTube"
+end
+
+function Tube.norm(s)
+	s = string.lower(tostring(s or ""))
+	s = string.gsub(s, "%b()", " ")
+	s = string.gsub(s, "%b[]", " ")
+	s = string.gsub(s, "%s+feat%.?%s.*$", " ")
+	s = string.gsub(s, "%s+ft%.?%s.*$", " ")
+	s = string.gsub(s, "[%p%c]", " ")
+	s = string.gsub(s, "%s+", " ")
+	return Util.trim(s)
+end
+
+function Tube.score(it, title, by, len, index)
+	local score = 20 - index
+	local a, b = Tube.norm(it.title), Tube.norm(title)
+	if a == b then
+		score += 40
+	elseif b ~= "" and (string.find(a, b, 1, true) or string.find(b, a, 1, true)) then
+		score += 25
+	end
+	local first = Tube.norm(string.match(tostring(by or ""), "^([^,&]+)") or "")
+	if first ~= "" and (string.find(Tube.norm(it.by), first, 1, true) or string.find(a, first, 1, true)) then score += 25 end
+	if len and len > 0 and it.len and it.len > 0 then
+		local d = math.abs(it.len - len)
+		if d <= 2 then
+			score += 30
+		elseif d <= 5 then
+			score += 20
+		elseif d <= 10 then
+			score += 8
+		elseif d > 30 then
+			score -= 25
+		end
+	end
+	local lt, lo = string.lower(it.title), string.lower(title)
+	for _, w in ipairs(Tube.EXTRA) do
+		if string.find(lt, w, 1, true) and not string.find(lo, w, 1, true) then score -= 15 end
+	end
+	return score
+end
+
+function Tube.find(title, by, len)
+	Tube.loadCfg()
+	local q = Util.trim(title .. " " .. (string.match(tostring(by or ""), "^([^,]+)") or ""))
+	local list, err = Tube.songs(q)
+	if not list or #list == 0 then list, err = Tube.videos(q) end
+	if not list or #list == 0 then return nil, err or ("Couldn't find " .. title .. " on YouTube") end
+	local best, bestScore = nil, -math.huge
+	for i, it in ipairs(list) do
+		if i > 10 then break end
+		local sc = Tube.score(it, title, by, len, i)
+		if sc > bestScore then best, bestScore = it, sc end
+	end
+	return best
+end
+
+function Tube.spotLink(text)
+	text = Util.trim(tostring(text or ""))
+	for _, kind in ipairs({ "track", "album", "playlist" }) do
+		local id = string.match(text, "open%.spotify%.com/.-" .. kind .. "/(%w+)") or string.match(text, "^spotify:" .. kind .. ":(%w+)")
+		if id then return kind, id end
+	end
+	return nil
+end
+
+function Tube.spotImage(ent)
+	local list = (type(ent.coverArt) == "table" and ent.coverArt.sources) or ent.images or (type(ent.visualIdentity) == "table" and ent.visualIdentity.image) or nil
+	local best, bw = nil, -1
+	for _, im in ipairs(type(list) == "table" and list or {}) do
+		if type(im) == "table" and type(im.url) == "string" then
+			local w = tonumber(im.width or im.maxWidth) or 0
+			if w > bw and (w <= 640 or bw < 0) then best, bw = im.url, w end
+		end
+	end
+	return best
+end
+
+function Tube.spotify(text)
+	local kind, id = Tube.spotLink(text)
+	if not kind then
+		if string.find(tostring(text), "spotify%.link") or string.find(tostring(text), "spotify%.app%.link") then return nil, "Open that short link in your browser first, then copy the full open.spotify.com link" end
+		return nil, "Paste a Spotify song, album or playlist link"
+	end
+	if not X.request then return nil, "Your executor can't send web requests" end
+	local code, raw = Net.request("GET", "https://open.spotify.com/embed/" .. kind .. "/" .. id, { ["User-Agent"] = Tube.UA, Accept = "text/html", ["Accept-Language"] = "en" })
+	if code == 404 then return nil, "Spotify couldn't find it. Playlists have to be public" end
+	if code ~= 200 then return nil, code == 0 and "Couldn't reach Spotify" or ("Spotify said " .. code) end
+	local ent = nil
+	local json = string.match(raw, "<script[^>]-id=\"__NEXT_DATA__\"[^>]*>(.-)</script>")
+	local d = json and jsonDecode(json) or nil
+	if type(d) == "table" then
+		local pp = type(d.props) == "table" and d.props.pageProps
+		local st = type(pp) == "table" and pp.state
+		ent = type(st) == "table" and type(st.data) == "table" and st.data.entity or nil
+	end
+	if type(ent) ~= "table" then
+		local b64 = string.match(raw, "<script[^>]-id=\"resource\"[^>]*>(.-)</script>")
+		local r = b64 and jsonDecode(Util.b64decode(Util.trim(b64))) or nil
+		if type(r) == "table" then ent = r end
+	end
+	if type(ent) ~= "table" then
+		local b64 = string.match(raw, "<script[^>]-id=\"initial%-state\"[^>]*>(.-)</script>")
+		local r = b64 and jsonDecode(Util.b64decode(Util.trim(b64))) or nil
+		if type(r) == "table" and type(r.data) == "table" then ent = r.data.entity end
+	end
+	if type(ent) ~= "table" then return nil, "Couldn't read that Spotify page, try again in a bit" end
+	local name = tostring(ent.name or ent.title or "Spotify")
+	local tracks = {}
+	local function nbsp(x)
+		return Util.trim((string.gsub(tostring(x or ""), "\194\160", " ")))
+	end
+	if type(ent.trackList) == "table" then
+		for _, t in ipairs(ent.trackList) do
+			if type(t) == "table" and type(t.title) == "string" and t.title ~= "" then
+				tracks[#tracks + 1] = { name = nbsp(t.title), by = nbsp(t.subtitle), len = math.floor((tonumber(t.duration) or 0) / 1000), uri = type(t.uri) == "string" and t.uri or nil }
+			end
+		end
+	else
+		local by = {}
+		for _, a in ipairs(type(ent.artists) == "table" and ent.artists or {}) do
+			if type(a) == "table" and type(a.name) == "string" then by[#by + 1] = a.name end
+		end
+		local dur = tonumber(ent.duration) or (type(ent.duration) == "table" and tonumber(ent.duration.totalMilliseconds)) or 0
+		tracks[1] = { name = nbsp(name), by = #by > 0 and table.concat(by, ", ") or nbsp(ent.subtitle), len = math.floor(dur / 1000), uri = type(ent.uri) == "string" and ent.uri or ("spotify:track:" .. id) }
+	end
+	if #tracks == 0 then return nil, "That one has no songs Spotify shows outside the app" end
+	local owner = nbsp(ent.subtitle)
+	if kind == "track" then owner = tracks[1].by end
+	return { id = kind .. ":" .. id, kind = kind, name = nbsp(name), by = owner, image = Tube.spotImage(ent), tracks = tracks, at = os.time() }
+end
+
+function Tube.loadLists()
+	if Tube.lists then return Tube.lists end
+	local d = jsonDecode(FS.read(Tube.listFile))
+	local out = {}
+	for _, l in ipairs(type(d) == "table" and type(d.lists) == "table" and d.lists or {}) do
+		if type(l) == "table" and type(l.id) == "string" and type(l.tracks) == "table" then
+			local tracks = {}
+			for _, t in ipairs(l.tracks) do
+				if type(t) == "table" and type(t.name) == "string" then tracks[#tracks + 1] = { name = t.name, by = tostring(t.by or ""), len = tonumber(t.len) or 0, uri = type(t.uri) == "string" and t.uri or nil, yt = type(t.yt) == "string" and t.yt or nil } end
+			end
+			out[#out + 1] = { id = l.id, kind = tostring(l.kind or "playlist"), name = tostring(l.name or "Playlist"), by = tostring(l.by or ""), image = type(l.image) == "string" and l.image or nil, tracks = tracks, at = tonumber(l.at) or 0 }
+		end
+	end
+	Tube.lists = out
+	return out
+end
+
+function Tube.saveLists()
+	local s = jsonEncode({ lists = Tube.lists or {} })
+	if s then FS.write(Tube.listFile, s) end
+end
+
+function Tube.addList(l)
+	local lists = Tube.loadLists()
+	for i = #lists, 1, -1 do
+		if lists[i].id == l.id then table.remove(lists, i) end
+	end
+	table.insert(lists, 1, l)
+	while #lists > 40 do
+		table.remove(lists)
+	end
+	Tube.saveLists()
+end
+
+function Tube.removeList(id)
+	local lists = Tube.loadLists()
+	for i = #lists, 1, -1 do
+		if lists[i].id == id then table.remove(lists, i) end
+	end
+	Tube.saveLists()
+end
+
+function Tube.remember(path, inUse)
+	local d = jsonDecode(FS.read(Tube.indexFile))
+	local list = type(d) == "table" and type(d.files) == "table" and d.files or {}
+	for i = #list, 1, -1 do
+		if list[i] == path then table.remove(list, i) end
+	end
+	list[#list + 1] = path
+	local i = 1
+	while #list > Tube.keep and i <= #list do
+		local p = list[i]
+		if type(p) ~= "string" or not inUse(p) then
+			if type(p) == "string" then FS.delete(p) end
+			table.remove(list, i)
+		else
+			i += 1
+		end
+	end
+	local s = jsonEncode({ files = list })
+	if s then FS.write(Tube.indexFile, s) end
+end
+
 local Player = {
 	file = LOCAL_DIR .. "/player.json",
 	dir = LOCAL_DIR .. "/music",
@@ -1655,16 +2738,22 @@ local Player = {
 	ducked = setmetatable({}, { __mode = "k" }),
 	duckConns = {},
 	ducking = false,
+	temp = {},
+	snd = nil,
+	vf = nil,
 }
 
 do
 	local PLAYER_FILE, MUSIC_DIR = Player.file, Player.dir
-	local AUDIO_EXT = { mp3 = true, ogg = true, wav = true, flac = true }
+	local AUDIO_EXT = { mp3 = true, ogg = true, wav = true, flac = true, webm = true }
 
 	function Player.reindex()
 		local by = {}
 		for _, t in ipairs(Player.lib) do
 			by[t.id] = t
+		end
+		for id, t in pairs(Player.temp) do
+			if not by[id] then by[id] = t end
 		end
 		Player.byId = by
 	end
@@ -1676,6 +2765,9 @@ do
 		end
 		if t.kind == "file" and type(t.path) == "string" and t.path ~= "" then
 			return { id = t.id, name = t.name, kind = "file", path = t.path, url = type(t.url) == "string" and t.url or nil, src = type(t.src) == "string" and t.src or nil, by = type(t.by) == "string" and t.by or nil, fav = t.fav == true, len = tonumber(t.len), broken = t.broken == true or nil }
+		end
+		if t.kind == "song" then
+			return { id = t.id, name = t.name, kind = "song", by = type(t.by) == "string" and t.by or nil, len = tonumber(t.len), uri = type(t.uri) == "string" and t.uri or nil, yt = type(t.yt) == "string" and t.yt or nil, path = type(t.path) == "string" and t.path or nil, fav = t.fav == true }
 		end
 		return nil
 	end
@@ -1728,6 +2820,7 @@ do
 	function Player.kindText(t)
 		if not t then return "" end
 		if t.kind == "id" then return "Roblox audio" end
+		if t.kind == "song" then return t.uri and "From Spotify" or "From YouTube" end
 		if t.url then return "From a link" end
 		return "Your file"
 	end
@@ -1812,6 +2905,7 @@ do
 		if string.sub(data, 1, 4) == "OggS" then return "ogg" end
 		if string.sub(data, 1, 4) == "RIFF" and string.sub(data, 9, 12) == "WAVE" then return "wav" end
 		if string.sub(data, 1, 4) == "fLaC" then return "flac" end
+		if string.sub(data, 1, 4) == "\26\69\223\163" then return "webm" end
 		return nil
 	end
 
@@ -1879,8 +2973,18 @@ do
 		return title, by
 	end
 
-	-- asks the converter you set up for an mp3 of the video, returns the audio bytes
 	function Player.ytAudio(info)
+		if S.ytApi ~= "" then
+			local data, err = Player.ytConvert(info)
+			if data then return data end
+			local own = Tube.audio(info.id)
+			if own then return own end
+			return nil, err
+		end
+		return Tube.audio(info.id)
+	end
+
+	function Player.ytConvert(info)
 		local api = S.ytApi
 		if api == "" then return nil, "YouTube needs a converter first. Add one in Music > More > YouTube" end
 		if not string.find(api, "^https?://") then api = "https://" .. api end
@@ -1960,7 +3064,7 @@ do
 			local ext = (type(data) == "string" and #data > 512) and Player.sniff(data) or nil
 			if not ext then
 				if info.host == "drive.google.com" then return done(false, "Google Drive sent a page instead of the song, big files need a direct link") end
-				return done(false, "That link isn't an mp3 or ogg file")
+				return done(false, "That link isn't an mp3, ogg or webm file")
 			end
 			local again = Player.findSrc(info.src)
 			if again then return done(true, again, true) end
@@ -1998,8 +3102,173 @@ do
 		return Player.cfg.volume / 50
 	end
 
+	function Player.isVF(s)
+		return s ~= nil and s.ClassName == "VideoFrame"
+	end
+
+	function Player.wantsVF(t)
+		return t ~= nil and t.kind ~= "id" and type(t.path) == "string" and string.lower(string.match(t.path, "%.(%w+)$") or "") == "webm"
+	end
+
+	function Player.halt(s)
+		if not s then return end
+		pcall(function()
+			if Player.isVF(s) then
+				s:Pause()
+			else
+				s:Stop()
+			end
+		end)
+	end
+
+	function Player.go(s)
+		pcall(function()
+			if Player.isVF(s) then
+				s:Play()
+			else
+				s:Resume()
+			end
+		end)
+	end
+
+	function Player.on(s)
+		local ok, v = pcall(function()
+			if Player.isVF(s) then return s.Playing end
+			return s.IsPlaying
+		end)
+		return ok and v == true
+	end
+
+	function Player.ready(s)
+		local ok, v = pcall(function() return s.IsLoaded and s.TimeLength > 0 end)
+		return ok and v == true
+	end
+
+	function Player.newVF()
+		local old = Player.vf
+		if old then
+			pcall(function() old:Pause() end)
+			pcall(function() old:Destroy() end)
+		end
+		if Player.vfEnd then Player.vfEnd:Disconnect() end
+		local f = Instance.new("VideoFrame")
+		f.Name = "AtsukoAudio"
+		f.BackgroundTransparency = 1
+		f.Size = UDim2.fromOffset(1, 1)
+		f.Position = UDim2.new(0, 0, 1, -1)
+		f.ZIndex = 0
+		f.Volume = Player.vol()
+		f.Parent = HUB.gui
+		Player.vf = f
+		Player.vfEnd = f.Ended:Connect(function()
+			if Player.sound == f and HUB.alive then Player.onEnded() end
+		end)
+		return f
+	end
+
+	function Player.inUse(p)
+		for _, t in ipairs(Player.lib) do
+			if t.path == p then return true end
+		end
+		local c = Player.cur
+		return c ~= nil and c.path == p
+	end
+
+	function Player.fetchSong(t)
+		while t.fetching do
+			task.wait(0.2)
+		end
+		if t.path and FS.exists(t.path) then return t.path end
+		if not (HAS_FS and X.getcustomasset) then return nil, "Your executor can't play files" end
+		t.fetching = true
+		local ok, path, err = pcall(function()
+			if not t.yt then
+				local hit, ferr = Tube.find(t.name, t.by, t.len)
+				if not hit then return nil, ferr end
+				t.yt = hit.id
+				if (not t.len or t.len <= 0) and hit.len and hit.len > 0 then t.len = hit.len end
+			end
+			local p = nil
+			for _, ext in ipairs({ "mp3", "webm" }) do
+				local c = Tube.dir .. "/" .. t.yt .. "." .. ext
+				if FS.exists(c) then
+					p = c
+					break
+				end
+			end
+			if not p then
+				local data, aerr = Player.ytAudio({ id = t.yt, url = "https://www.youtube.com/watch?v=" .. t.yt })
+				if not data then return nil, aerr end
+				p = Tube.dir .. "/" .. t.yt .. "." .. (Player.sniff(data) or "webm")
+				if not FS.write(p, data) then return nil, "Couldn't save the song" end
+			end
+			Tube.remember(p, Player.inUse)
+			return p
+		end)
+		t.fetching = nil
+		if not ok then return nil, "Something went wrong getting it" end
+		if not path then return nil, err end
+		t.path = path
+		if not t.temp then Player.save() end
+		return path
+	end
+
+	function Player.prefetch()
+		local nxt = Player.upNext(1)[1]
+		local t = nxt and nxt.t
+		if not t or t.kind ~= "song" or t.fetching or Player.prefetching or (t.path and FS.exists(t.path)) then return end
+		Player.prefetching = true
+		task.spawn(function()
+			pcall(Player.fetchSong, t)
+			Player.prefetching = false
+		end)
+	end
+
+	function Player.songTrack(x)
+		local name = Util.trim(tostring(x.name or ""))
+		local by = Util.trim(tostring(x.by or ""))
+		local key = x.uri or ((x.yt and ("yt:" .. x.yt)) or ("q:" .. string.lower(name .. "|" .. by)))
+		for _, t in ipairs(Player.lib) do
+			if t.kind == "song" and ((x.uri and t.uri == x.uri) or (x.yt and t.yt == x.yt) or (not x.uri and not x.yt and string.lower(t.name .. "|" .. (t.by or "")) == string.lower(name .. "|" .. by))) then return t end
+		end
+		local id = "s" .. Util.hash(key)
+		local t = Player.temp[id]
+		if not t then
+			t = { id = id, kind = "song", name = name ~= "" and name or "Song", by = by ~= "" and by or nil, len = (tonumber(x.len) or 0) > 0 and tonumber(x.len) or nil, uri = x.uri, yt = x.yt, temp = true, fav = false }
+			Player.temp[id] = t
+		end
+		Player.byId[id] = t
+		return t
+	end
+
+	function Player.playSongs(list, index, shuffle, at)
+		local tracks = {}
+		for _, x in ipairs(list) do
+			tracks[#tracks + 1] = Player.songTrack(x)
+		end
+		if #tracks == 0 then return end
+		if shuffle ~= nil and Player.cfg.shuffle ~= shuffle then
+			Player.cfg.shuffle = shuffle
+			Player.save()
+		end
+		local pick = (index and tracks[index]) or (Player.cfg.shuffle and tracks[math.random(1, #tracks)]) or tracks[1]
+		Player.play(pick, tracks, at)
+	end
+
+	function Player.keep(t)
+		if not t.temp then return true end
+		if #Player.lib >= 500 then return false, "Your library is full (500 songs)" end
+		t.temp = nil
+		Player.temp[t.id] = nil
+		table.insert(Player.lib, t)
+		Player.byId[t.id] = t
+		Player.save()
+		Bus.fire("playerLib")
+		return true
+	end
+
 	function Player.ensure()
-		local s = Player.sound
+		local s = Player.snd
 		if s and s.Parent then return s end
 		s = Instance.new("Sound")
 		s.Name = "AtsukoPlayer"
@@ -2024,7 +3293,7 @@ do
 		Player.endConn = s.Ended:Connect(function()
 			if Player.sound == s and HUB.alive then Player.onEnded() end
 		end)
-		Player.sound = s
+		Player.snd = s
 		return s
 	end
 
@@ -2104,6 +3373,28 @@ do
 		Player.cfg.last = t.id
 		Player.cfg.pos = 0
 		Player.save()
+		if t.kind == "song" and not (t.path and FS.exists(t.path)) then
+			if Player.sound then Player.halt(Player.sound) end
+			Player.state = "loading"
+			Bus.fire("player")
+			task.spawn(function()
+				local path, err = Player.fetchSong(t)
+				if Player.seq ~= my or not HUB.alive then return end
+				if not path then
+					Player.state = "stopped"
+					notify("Couldn't play " .. t.name, err, "error", 3.5)
+					Bus.fire("player")
+					Player.failed(my)
+					return
+				end
+				Player.launch(t, at, my)
+			end)
+			return
+		end
+		Player.launch(t, at, my)
+	end
+
+	function Player.launch(t, at, my)
 		local id, why = Player.resolve(t)
 		if not id then
 			Player.state = "stopped"
@@ -2112,11 +3403,24 @@ do
 			Player.failed(my)
 			return
 		end
-		local s = Player.ensure()
-		pcall(function() s:Stop() end)
+		local vf = Player.wantsVF(t)
+		local s
+		if vf then
+			if Player.snd then Player.halt(Player.snd) end
+			s = Player.newVF()
+		else
+			if Player.vf then Player.halt(Player.vf) end
+			s = Player.ensure()
+			Player.halt(s)
+		end
+		Player.sound = s
 		s.Looped = Player.cfg.rep == "one"
-		s.PlaybackSpeed = Player.cfg.speed
-		s.SoundId = id
+		if vf then
+			s.Video = id
+		else
+			s.PlaybackSpeed = Player.cfg.speed
+			s.SoundId = id
+		end
 		s.TimePosition = 0
 		s.Volume = Player.cfg.fade and 0 or Player.vol()
 		s:Play()
@@ -2124,17 +3428,22 @@ do
 		Bus.fire("player")
 		task.spawn(function()
 			local t0 = os.clock()
-			while Player.seq == my and HUB.alive and not s.IsLoaded and os.clock() - t0 < 10 do
+			while Player.seq == my and HUB.alive and not Player.ready(s) and os.clock() - t0 < (vf and 15 or 10) do
 				task.wait(0.1)
 			end
 			if Player.seq ~= my or not HUB.alive then return end
-			if not s.IsLoaded or s.TimeLength <= 0 then
+			if not Player.ready(s) then
 				Player.state = "stopped"
 				t.broken = true
 				Player.save()
 				Bus.fire("playerLib")
-				pcall(function() s:Stop() end)
-				notify("Couldn't play " .. t.name, t.kind == "id" and "It's private or got taken down" or "The file couldn't be read", "error", 3)
+				Player.halt(s)
+				local msg = (t.kind == "id" and "It's private or got taken down") or (vf and "Roblox couldn't open it. Some executors can't play YouTube songs, a converter in Music > More fixes that") or "The file couldn't be read"
+				if vf and t.kind == "song" and t.path then
+					FS.delete(t.path)
+					t.path = nil
+				end
+				notify("Couldn't play " .. t.name, msg, "error", 3.5)
 				Bus.fire("player")
 				Player.failed(my)
 				return
@@ -2157,6 +3466,7 @@ do
 			end
 			Player.applyDuck()
 			Bus.fire("player")
+			Player.prefetch()
 		end)
 	end
 
@@ -2192,8 +3502,8 @@ do
 	function Player.resume()
 		local s = Player.sound
 		if not s or Player.state ~= "paused" then return end
-		Player.state = s.IsLoaded and "playing" or "loading"
-		s:Resume()
+		Player.state = Player.ready(s) and "playing" or "loading"
+		Player.go(s)
 		Player.fadeTo(Player.vol(), 0.3)
 		Player.applyDuck()
 		Bus.fire("player")
@@ -2202,7 +3512,7 @@ do
 	function Player.stop()
 		Player.seq += 1
 		local s = Player.sound
-		if s then pcall(function() s:Stop() end) end
+		if s then Player.halt(s) end
 		if Player.state ~= "stopped" then
 			Player.state = "stopped"
 			Player.applyDuck()
@@ -2224,7 +3534,7 @@ do
 			Player.start(Player.cur, Player.lastPos or 0)
 			return
 		end
-		if s.IsPlaying then
+		if Player.on(s) then
 			Player.stuck = 0
 			Player.lastPos = s.TimePosition
 			return
@@ -2241,13 +3551,13 @@ do
 		end
 		if Player.stuck >= 3 then
 			Player.stuck = 0
-			pcall(function()
-				s:Resume()
-				if not s.IsPlaying then
+			Player.go(s)
+			if not Player.on(s) then
+				pcall(function()
 					s.TimePosition = Player.lastPos or 0
 					s:Play()
-				end
-			end)
+				end)
+			end
 		end
 	end
 
@@ -2373,7 +3683,7 @@ do
 
 	function Player.setSpeed(v)
 		Player.cfg.speed = math.clamp(math.floor(v * 100 + 0.5) / 100, 0.5, 2)
-		if Player.sound then Player.sound.PlaybackSpeed = Player.cfg.speed end
+		if Player.snd then Player.snd.PlaybackSpeed = Player.cfg.speed end
 		Player.save()
 		Bus.fire("player")
 	end
@@ -2537,11 +3847,12 @@ do
 		Player.seq += 1
 		Player.state = "stopped"
 		Player.applyDuck()
-		if Player.sound then
-			pcall(function() Player.sound:Destroy() end)
-			Player.sound = nil
+		for _, o in ipairs({ Player.snd, Player.vf }) do
+			pcall(function() o:Destroy() end)
 		end
+		Player.sound, Player.snd, Player.vf = nil, nil, nil
 		if Player.endConn then Player.endConn:Disconnect() end
+		if Player.vfEnd then Player.vfEnd:Disconnect() end
 		local s = jsonEncode({ cfg = Player.cfg, lib = Player.lib })
 		if s then FS.write(PLAYER_FILE, s) end
 	end
@@ -3029,7 +4340,7 @@ function Core.snapshotGlobals()
 	return snaps
 end
 
-Core.PROTECTED_KEYS = { __AtsukoHubShared = true, __AtsukoHubInstance = true, AtsukoHub = true }
+Core.PROTECTED_KEYS = { __AtsukoHubShared = true, __AtsukoHubInstance = true, AtsukoHub = true, LumenReanim = true, AtsukoEmotes = true, AtsukoHubRaw = true, AtsukoHubRejoin = true }
 
 function Core.globalChanges(rec)
 	local out = {}
@@ -3608,9 +4919,24 @@ Core.API = {
 		local e = findEntry(q)
 		return e ~= nil and Runner.isRunning(e.path)
 	end,
-	Notify = function(title, text) notify(tostring(title), tostring(text or ""), "info") end,
+	Notify = function(title, text, kind, dur)
+		local k = (kind == "ok" or kind == "error" or kind == "warn") and kind or "info"
+		notify(tostring(title or ""), tostring(text or ""), k, tonumber(dur))
+		return true
+	end,
+	Align = function()
+		task.defer(function()
+			if Core.Align then Core.Align.toggle() end
+		end)
+		return true
+	end,
+	AlignReady = function()
+		task.defer(Bus.fire, "align")
+		return true
+	end,
 }
 GENV.AtsukoHub = Core.API
+GENV.AtsukoHubRaw = HOME_REPO
 
 local T = {
 	side = Color3.fromRGB(18, 19, 23),
@@ -3870,7 +5196,7 @@ function Z.front(frame)
 	frame.ZIndex = Z.n
 end
 
-Core.ICON_SET = "v7-e0dd7a34"
+Core.ICON_SET = "v9-c3a91f5e"
 Core.ICON_DATA = {
 	["activity"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAC1klEQVR42u1b63HbMAwGeB2AG9QjaANrg2qDeISO0BGyQZINmA3YCSJPYHmCKBOgf5hrLyUoSqQskDLudNaRkgh+/PDgwwB3uctqQkQNETV77HhLRBf6K5ddAUFEb/S/vO2l8x3x0knTV63wzW5hXTUMuAQYcNmD15+SpmYTaDM9UywAXWkAYGYToKhGEbE6BswJcZLCoVrZ/j/cJdoM1gx/xl1iw6HK1PkDABw8VQYArKf84N6pxgQ4m7YOBLFZoVrR/q+IOCDiAADXqv0Ak/E9/lP/6Kl/r4IBRNQG6O+7/xQdeLeo0feNLs1lSck+4Ogpe40sOxYNgAtlzQT9Q2XN1uEwlQGcDZtIAMqOBkyWNwSeHzzPP5cMwPucDhHRs7RwqBI63wKAjqR/qE5vuUqU4gNOEfE/tq4rjfrc2p+NeNdK2jP49kU5DQAPEyOimdAHABDj0Iwn/jdEpBFxXDggP5xOId0+235h22F2dGJlTGTPaUHHHyaW4SmabW4/L0VOMxQfU8MhET0l6Nrmng6/IOKcDpiUtJiIfgaccJJz62ciOSyk7ill04TJP2KlZ52gS0tP7lcz7fcAMAKARUS7EGsDAE9MWtxPgRfQ7ex088nowrCMzJNh29IwSsWdPyCiX0xHdOAdnXtdQW2IgVkwO2wT8g+RLBgzTKbGFB3UxhjYmeHwOHPuIR4Anxl4N02ckzvMnH0WyQBudtgumH3KBsBtmpwjO+srO7tvlCtbL6srARgYBpjOd5/T/kUAEEin2wn6fySk4uLMIHiGgDt7kKNtJQQDy4XDwNkDWxMAobR4Nfv3TYc3C4dEdAWA7xH5AIA7e1ATA0KrRMe1Rl8aAD6b1sziRzbvj4IA2OSgpSQGAAD8jnjmNWeD0gAwC02lGgDsrQGQmBUOoWX43O0pgRjYW46+RABMoo+owgz6qR2d2gFov/iCYa//QN3nX2/vckP5A4tBUoE6YmnxAAAAAElFTkSuQmCC",
 	["armchair"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACfElEQVR42u1aMW7bQBCcFVIGCIsU6UIDeQDzAvMJKpOOT8gT9APLL7BcJZ2VF0R+gajaAcQgTQwEiAyknxS+AInAo3gij3e0dgAWIkXu7uzd3uyRgEKhUCgUilOFdLmZ5BTAOYAMQD6w7ysAJYBbEVkOaplkQvKG8eCGZDLICCCZAlgDSCIbzTsAb0WkcrlpcoShqwiDh/HpyvWmiWP2ZwHmugtykh+8TQGSWwDp3ukHAAtTlHYDZjsHUAB4sXetEpEzX8WvDkWodJMs6hzyZSwfzJjbalSH3EsNiE7EiHSecqMmoA8oAUqAEtAar2yVOOQq4OJrl6XmoqER+WW6wqGDnxrbNlx0Tg7JjOS2bUcWYSe6Jpl1MbR1bEvnAxAwd/RpfdRIOMKQswrrS432nhiSacPD7kh+J3lvub7ySMDKYvPe+HTX4HfqWmDqMN3732LI/sDi0+IY3w/2/W0y2zBSMg/BZ20zaxkpMxcd0GoeN2w/+dAGiaMP+8hOXQkmKoVr8MzTc78E3ivRZmhIAjYB/d/EQMAyIAHLGAiYA7gOEPy1iMyCF0GzMVkYoZEOFHzl+grM+ypgHKowMugqoAQoASeDnQsBqydIQNn7hkiMcPVdLA9JAWwtNr4CeA7gpzliwEtz/AbwxvKfMyft0GFTNEbMrfqlgYDEzJvXI5/7GwC57VX65IDEnQL4NvLgi6bvCCYH5G2Jx720yxEGf2ky31j9xaEmvAPwsebSbeBAz2vOvReRT303Qz8soyQPvOyxra8qhZWAbgRUePwo8r9dmQhi+Lz3+8FJ9jrOt4xk+fedXMivQ/7VKySXxqfSx2s5hUKhUCgUTxN/AK+jUL3wlY7hAAAAAElFTkSuQmCC",
@@ -3990,6 +5316,24 @@ Core.ICON_DATA = {
 	["send"] = "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",
 	["ban"] = "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",
 	["video"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEi0lEQVR42u2bTYgcVRDHf/26g1/LEi8qiSIoESU5RBGiiQchmqg3RZB4EEHYg0ICKvgRckhANCQeDHr1qKCQmx8sCAExQVS8GF08KIiIySHRsBqT6e7ysFVaefTs9G52dma6u+Axb3pmuqv+7/+q6tV7k4gIbZZAy6UDoAOgA6ADoAOgA6ADoAOgtZIN+DxRkBJA3LVhin+OAKW7tuKSLLIWSIFiTAZqaLpkAx64BtgK3A9sAqaA34ds7A3APPAdcAw4DvRWAISgTLp0xEUkbpm+7hKRORm9zKkuXreltBC9T/37eAoYyi8Dr+u1UlsSzdGhTUv3nOAc9SvAG0tkQgbk2t8AnAb+9D4tVBg/o8bnanjQz0Yx74PqkKtOM6pjWuO3if5uA/A5cBL4AXjKgYunSSIim0Uk11YqBcsR0t/rYHptVl3TPnRPXf9ZETldca/b7TtZFH4OOSYYTez1OHBOaSRDpP91wLQ6X6+Djewh4MFIh0Q/M7pvB14Dtuh7Y03POfY5IHgncYuI9BQha4WInBWRHctwPpfbdojIGdXB69RTXeMRNxvecwzKIwabfU+bU/VO5i51GubwbP4/D8wqcql+Z5gt1WfNAi86P2A6Zapr0H4BXA3sBb4BdrkEKq1I3JJ+ecC0mwriHM0X+rBCb7oaYk7qM0dfH8OvVV0uAo8DB4A7IrpbPyyWvfooUBVa5rWVqxD+YgBK4BTwW0X4PQPcBnwCfKjG527gCucXkrqLoaQiH//VKTAK+Qf4KwpvAC8o3R9yzMxU78KBcAT4ebH8JdTwyqOWpKJ/r6blRRTzLWeZ1QiwR0FcNgDjKmUF3TPgR+BJYKcyJBuUNGUTYmzVwHkQ5oE3gcPaN6eZD/Jd4w7AlHr8eCqUjr0fAPt09M1P1HbakzgFLER+DTwCPKHGZwrSkpbM4w7APHDWGW7GvQPco2HQFk05ywjVk8CAEI1+oqu7ArjichO0SY0C1yyH7k2rCstK02uS5LxLdRsPQFmRCW5SBlyok+9PMgBxHmAJzqvAx8Dd6gfEhcHGTwGrEj0MnADeBtZHq8HG5gEehEJH/TnN+3drIcVqAKEpDAh9/IJdz4HrgbeALzU79EvkRkaBELHAFj53Ah8BR4GNdbLDQQCMwyFCqeh/HxU+bGFnmziPAl+xsJGyZrHaRujzIPvyjcC6ERp/pWZ9Jmbsfi2KnIgKIrabXQBXAS8Bt9YFIO0ThqYYUFgckqcPOrfXVRgwrSN8H/AM8Eu0GkyjxVOtKXDOPcjn2dv4v8S8WmVxW9Nvj6o+BsIfztO/y0KZ/CDwd1QPGBwSG7YxslFEjlZshPTdGMlcSPmJhf34B7i0tr4W+JTRb42ZTsdU1+DSZMsSTwKPaSjcr5kiLjfw1eP/GNDUzdFMRHaLyKnonudF5Ga9R6g6ODDj6FJUKNAbcosHoNDrorrRx/h+hyBuEpH3FYhvRWSnPzjRpgMSa9V5+vVEa47IhLpHZGImNOmQVCWDW39MLhnwn6FWH5RshXSHpTsAOgA6ADoAOgA6ADoAOgDaKv8CZWhTrvHp4ZoAAAAASUVORK5CYII=",
+	["party-popper"] = "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",
+	["person-standing"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADtklEQVR4nOxaSWgUQRR9I0FcMnFBRZEooggKegseJAkoiB4UXHA/RC96ETUelHiJ4kUPIijeBEkOmkRURIR48aJBr3ryoCSuuKCSiCMaHN+nazBMqqeXmfotdD941ExXVXf//1//qq7qOqQcdUg5Mgcg5cgcgJQjcwBSjglIAMVisZXsJocMu8jVSAA5KIJGyvW6yL0+Ta6S+3O5XBFK0FbAEfgbL2gjD0MRagpg9MXZI+SUgKbfyWlUwR8oQFMBKxFsvKCeXAElaI4CsyK0nQ0laDrgWYS2T6EEtUeAz/QHFndCNL3Nth+hBO1hsJHFc3KyT5MCuZQOeAMlqA6DNOw1i2Zy0FItx5o1jRfEVgCjOZPFdvId+YA3PhKhbwOL3WQL+Zt8RF6LeI48i7XkXLKXfb8gBmI5gBcXCQ/hX7b+Sd4jr5N3eTMFOIC57kZyJ7mBnGSqJAhL4lw3rgNOsjjjU/2DvAUvKmGSXpjrbYKnts3wn0uc4PXOIiLiDoNNFerkBvcIeePDLG/Ck/d9RAD7rmOxi9xCNoTo0oQYiJsEB0K2kxtvI/tp0GfyEtni19i8JV6WttLH9A1jvOAxYqCaJHiUxSFyEaLjLdlL9pj/O+BJfD6i4yV5gQq7iBioeh5AR6yCZ4AkpnnQwXt4CbeHhj9BFajZRMi868sYL47YhtrP5z+RffAMf1irNQNnM0GTxMQZWxH+OS6HJNEb8CIdKYmGhfOpMB0xkcV6eM6Q4WxqQBdZD5DhUyLdT8N/wSG03wVKE5nzGJ/wZArcDocTKRu03wUKpGR/2zA6wLo+TeMF2b4AUo7MAUg5MgcgGdiG30S26ZJywHLLsWVIAKoTIQEnQzNYyKpvufNHyTmcB3yFIpKQnbxG25RXZ+pUoT0Vns5CVobrfZrIe0AjVfANStBWwDH4Gw9T1w5FaO4OB0W/BFUVaCogKPolqKpARQEm88s+Qr6s6pUpF5Qdlw2ShRojgpYCJLvnLcc7ydOW43kojQgaK0J+z75Ef7H5/QLjVaCSCzQU4Pfsn6Jxo0LYVaCSC5wqICj6xnhpJ5OgRFTgWgEVo1/6k6QKXC6Lh4r+mPaJqMClAkJFv4SkVOBEAVGjP6afugpcKeAg7NHv9DNeYOo6LVVyrgNwAFcOWGM5Nkh2IxjdsH9D1AoHcOUA23d+HZWiX4Jp0xHynFXDZQ44B+9LEdnFvULDIn0EzXPIfv8+81dUcZznGEaNob4k9r8hWxZHypE5AClH5gCkHKl3wF8AAAD//wqI2uEAAAAGSURBVAMAdiAkthORJdEAAAAASUVORK5CYII=",
+	["layout-template"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACuElEQVR4nOybP2gUURDGv02CIBqx0MIo2ojoNRpjl0IRm4BYBJNKxF6LIAG1sxMrEcXCTtuI2KRTSaNt0EJEURQVCxX8ExQDcn5DYrM3s7sxuwu7Mz8YBmZfJm++u9vbN+/eAJwzAOeEAHBOCJA3oNvt7qIbp43SBtEMvtMe0e4mSfIya2CSdZHFn6W7RFuDZvKbNk0RrlsDTAFY/BTdFbSDKYpwVbugCsDit9M9p61FO/hF20MR3qYv9Bl/cAztKV6QWo5qF6yb4F4l9on2DM2gQ9ucimk1mQJsVGJzfAtNogHwIzxDdzwV1mqK54AQAM4JAeCcEADOCQHgnBAAzgkBjPhHJTbBRUYXzUWryRRgHu1DrcnqCG3A0tp/K9qBvPo7uZz/mb6gdoQ4ULqqp9AeTmjFC1ZLTES4TzdCe4Pm8oo2wloeWgMy2+L/4EdiG500SpvSHpd2+DsW/j5vYCEB2kw8B8A5IUCRQbwJ9tMN09ajHBZo87xJ/cEK4VwGl+fSV0b+vM3RHXSXUc1OkWxX3aNd0LaslLnIDvV52gEUu3kXyp+1OXqEbhbVf/Ut0sayvqs5l2t0Z1BBfutReB3dC9oQ6uEDbTcnuYDeuRyme4DVYea3PkcTqK94QdYc48a1aVSY3xJgP+rH+p/7UA7DWtASYIsSm0lKgrnuKPmHVjCXyf/Ir65s4zkAzgkB4JwQAM4JAeCcEADOCQHgHEuAb0rsENfmcyiHjhL7aoz9gd5zChc5l9MoIb8lwBMlJr+9PYjqeJoRH03FOigpv9UR2kT3GvWdEJFXRzYvv6B3LifpbmF1mPmtzdHPWGpA1sU5bXLLc7lN9xgV5c/aHL1BJ6dGFlEdsocnpzlu5oyT3/rPooL8ue3lig5NFT7UlJrLGJ10q6VN1l9G/tgchXNCADjHvQB/AQAA//9LMvA+AAAABklEQVQDAPXrqXZkzmETAAAAAElFTkSuQmCC",
+	["move"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAES0lEQVR4nOybS0hVQRjHP0uiB7VIeywqWyQ9KBKKIEmxTbTJQJCgCC9SEAo9oJYtEmmRShBUi0CKamObHps2WegisBZRFIUttKKiLIIwJEv7f945dZw7c8/ce5qZq/f+4M/cO68733e+M+ecmXOLKc8ppjzHmwPGx8dnITkmvnYUFRX9Ig8UkQdg/Bokj6F5ImsYqoATXpNjnDsAxi9E8hJaJBV9gtbCCV/JITPIIcL4e5RqPLOYy0QdZziLAGHYA2hDRNVnUI2rSHASAaEjH2U8iTrOIsF6BGRw5GWcRILVCMjwyMs4iQRrERDjyMtYjQQrEQDj5yLpJr3xg4q8AU1d7qMbfc4hC9g6BU5BGzVlV6E+RX6fKFPBfZ0kC9hyQKUmnw1MkJ4E6Z1QSRaw5YBrirwrUALn8piukShLiLoy18kCVhwAQy4i6QhltUON6YwPteU6jXJ75F8iC1i9D8DEVYZkFIN/L+V3IamXqneh3h6T9v8Tq4/DGPggxSBuexMKCyKU5+S9AzK6CmBSKoFaoJtQA+R0PUEzpplQoxgTj60kk/bGEYCOVyHphZaKrN3QJugw+eUc1CQ+85gOYqxVpstrRkdQYXxAM8rmkyfEbzdJ2TzGXjHmSCIdgI7KSW08MwKNkj/GxBhkAieUR3WQ1gHCiz2kNp5pQ6iNkCfw27ya3KYp5jH3REWC1gFpwj7gNnSa/NMK3dWURZ4OSgcYGl+PI/CTPCPGwJNfVk5IccBUMj4gjhMmPQyhwnYkd+jfjo3MF+g5V6V4rKPUvYHP0AuKB9uzHtKtI/KcUQuHdYcbTADjl1Fyqcr7zY1l+MpRBie84y9hY4/Q9DeeYRubgy/hO8EflD8MBx/Cp0Apko/QTJre8Db8kmCZ/W8EIGMITthByVl+Ok+Cu8J7DJMehnh2hBMqSH8Z5CetbxTzMqhZErsvL4ll2Ce/cHGL9MZzdKc8JKVMeqJClWigoha6IX4wJwgZv1NTRWk8o5z1p5IT4hjPaC97hk5oJ/+cpSyNZ9Je9w2ckIvrAQGRxjORNz6ig2pSOyFX1wN4rNUmq0JGd37oqJ/UkZCL6wHBke836cN4TZC9iZDbgo/noQWU3M1tJf+0QLwdvxn6DjVhrG9NG2e0LC46rqUcQrxgeZyypLAxQnlOwQFkEUyaKzjFefqGsiBuexOsLYBg8HyHxitMg/h8JpNtNK4rtydL2HpL7BCSo6GsE1CniRNEnU65PfIPkAVsRcA+RV4DRTghZHyDongvWcDWHMA3SdsU+WxYOqdfhvZryh6RBay8I4QjORvJQ6hCU2UAWmmQF/AE2mrjtrvwqixZQgy4hpJHL1u4rdU3xguvy5NlQpHwNINmXNfJv0YKf5khRxjOCdbPeRlff5t7BZVKRUPQapfGM843Q4WBddDvUDZ/rnNt/MR4yBOIhOWUXNHlFZ0LMP4DecCbA3KFvF8Q+QMAAP//gBxTqAAAAAZJREFUAwDhaskV6gSLKQAAAABJRU5ErkJggg==",
+	["bug"] = "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",
+	["star"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAGjklEQVR4nOxbaWxVRRT+HgIJQlyC0WBTUVpqLQWXFNfYxB8kGuIa16QkitQVjFH8gxgXoj8MRg1FwbgkKkHUqJAmRkmMC1ajiQu2RapAimwaXKOgMaZ+H3eefb2dub0zffe2pnzJybzOzJ0539wzc8+cmY7GCMdojHAM6QD09PRUKy0UCt9iiDAKQwASv5byA39+I9FvyhwMAQrIGSTayOQdyiGxor8pjbSGj5Ejch0Akhfp7yiTHFW2U6ZwEP5BTsh7ClwPN3nhOMpc5Ii8LaAbEckkdNMCjkdOyM0CSF5vdiDywmTWvQ45ITcLICl96qpi2ftMemgsv4tWcCJyQC4WYD5xVZaiRymPW/Jr8vosZm4BJKI+uijVsaL96F0Qd1PGxcplMTW0hB5kiDws4Br0Jy8sI7lfJfzdYinXM1cjY+RhAfL2bG+/kuR/NHUmIvIP+lkB60xFhsjUAkjsStjf/pNF8oL5vcJSr5ptXIEMkakFUPkOJnWx7D5vv6SurGAXZWysfifrTkNGyMwCSOgy9CcvPBUnLyRYQR3buhQZIRMLoML6rn8K+wBUkOwux3PHMtlpKeqkzORz+1BmlN0CSOJMJq2wk1/uIi+YsicsRWprHds+HWVGkAVQkcOYnESZWiJydKTohIRHK5IGwLTtsoIifkdkEVtg4glGNrHt3+CJQoIiMmO5oyJXg75kj4I/FlPBB9NUZN/3MHkA/tiL3gHpKvm92TV9CpbOb2DSRDkX5cMHVKDR5wHq8SGTs1E+vE5ZQj0+L80sxDrVLuxZlBer2GmT5zPSRU7RasrFKC/Ooz7vFv8olHSoubsNYeZtg74Cd7Oz9RgEqNdsJvdSZqI82IFojyF/pM8AnMzkC/gjvhh9TfnE+Phlg1l4z0D/xXcK/FFP/eSk9QmLH57wgCI5WlS0QxNhrcJb2chm5ASzwq830gccnFpEA6GvkL5GxcFxBWD+41pqAUcgeoO2KdCOaO7sxf8A5CIO78HuiygcX0Uu+pz2OkLM+IXJYkeb9ZQNbPhoDHMYHTfATl5YVCQv9PEEWbCSyUrHg/IJ3mcHx2CYgrpVICLvCqdpF/pMaUY/V5gVboI9QAHTcJvx1oYVqJPmu3wHV/yghdxuiWcmeYLLmMx3FGtR1CnOdgwDGPJtlApHFZFfYCtwbobMA0sdxZMRWUKaMHemoA4nIJn8Uhd5IXE3yAfvYrLEUawO24wCQwL2rT3KR3CTv99wcCLVbpAd3Qm3NXyPaDp0IUcY8przLs91IXV6BAMg9XZ4gEHYQ2lghzuRA6hLJSJX2/VFmk9dliMFvOIB7Ph2RIcZNnSw03rkAOqxiUmto3gB9WhBSnhFhNjwY0yaHcXTdPEBGYN9qH8beR2gNPuQF7xDYuzgaSY3O4qbkT3mOfJvNLp5ITgoyjfxGpN4tPYPKjEBGcEcs/1FGRMrepX9Bp0fDCYousaSN55KHonsoEVvjCV/NQIxmFti+22ZfBM/Izu4gp5/IhCDsQDbkddPyBAmsGkLtATfJRjMAMyw5HUie3RY8qYjEIMZAFun7cgetj6CByBoDTCrsc3pyWMAbBYwA4EItQDtucda8ofKAsYWr936IvQr4HJ5v0QKUNkLmMxCFMCUB6dA69tc5N5K8bhrkBUC875zXM4B2G3iik6Q+G1MFlIqLcV3sFwBloeTNjIs071iHaVPjBVpGqyDJ0KngG3O2eamSI/SjS/KVkQ3wirhhgIsLay7hdJk1hobvrLkBS2EoQOQ6gtAAhchmhbPU3wCJ4rxv0DZaNqIwzbYQTtR7wGgQnJFayxF7SV1zqFov742VDEDPbtWbalNW18lqDW6eSHEAlym1k4FplN0OUKh6QYMjJcpb6Sop7Z0LtFKORX2KSAutfBEyAC43uh9lI2U2RgYugUyiQvaVRTtKBVmX5HiObX9GaLDUh/dnCinBZyPgfEiZTJJ30rZU8zkb31BFGPQ3F+Vop1ZjnxvhyhkAMbBHwfWApKck3SWwLJt5i6BBrkV/vCORYQMgM+O78BaQFKXFI+j04B12ykX8qcuXPn8C4334a13RIiLkNxgXTMZn1BN83RRSs8uTZ/yHB+inJJQTVvlOvbZDQ+ExAR1hO46adHZgK7HNpSLvOnzTSanIbp47XJ35/qSF4IcIXb0HJPL0ev7a17P0z85UF7J4oq72qS8ZC5P6wB3hynSwnoW89cgALn/29xww8F/ncUIx8EBwAjHvwAAAP//GV+2IQAAAAZJREFUAwA0FRo0Ql9rbQAAAABJRU5ErkJggg==",
+	["disc-3"] = "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",
+	["undo-2"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAD/ElEQVR4nOybSWgUQRiF32gEt6AIrpEQRCUQxR00mgjRk1HUgyiJKB4UPHgRj6IinkQRFEVQiBgiGBGDF0EJxNzEgxsJbrhFRBENuIvL+H6mhCHpmqru6Zp0p+eDR8Xu6pl6//xdXUtbgoRTgoRTDAASTjEASDjFAMAh6XS6XMpUKvUKEWUIHEDjKeoY/3wp4t+HEVFSCBkxz+IctaXPqe3MhLOIGKFmgDJ/Hv3NCw2IIKH1ATQ/FBnzOqO3EUFCuQWU+RZqo6bKPWoxb4EfiBh5Z4Ayf4lar6nygKqLonkhrwywMP+QWkrzHxFRAneCNC/ZYzJfG2XzQqBbQJlvo+o1Vf6bf4+I4/sWsDD/lKqOg3nBVwZYmq+Ji3nBOgMszL+gltD8W8QIq06Q5ofBbL4mbuYFYwYo813UDE0Veb7fpX4iXNLUJ+oDJU+Sbqot7KeKTQAeQ29+IOikmsOaWOUMAM2PYdELB7PGEHhOHUQmGH8QEFMARrH4gmjTTq0OOtTO2QnyQ78ic/9HmRVUB3+ssQiATR8wGpmpbKWmiqtOUNo2gSqjSi3qy6RrOX+0XvjA6t62HAPIY/A1HMDvn8liE7WVmpajajvbsBI+iN1AiO1oZHGIqtBUOc027IQlvnp3H0Nh10EoVe2o01RZxTZcgwWxngyxLc0sNnuc6uL3z4IFvtcD+MG/WayjrmiqTKc62bjxcM826qbH8Sp+/w5YEHiAozKhFeYFEaeZwHZMYvGMGtHnlFUWBF4RUpmwAfpMkMemZMI4OET1N6c8TkkWVJiuz2tfQA1BTUHocB0EckJzfC0M5L0xkhWEVk2V2VQ7gzAcjmAbZAvuvsepRaZrQ9kZUkGQDZGLmipzqX1wyy2PY2Wmi0LbGlNBkEHKBU2Varilx+PYVBgIdW9QBUGey80ep1vgFq8ATIGB0LfHGQRZyZEx+9Gsw0d4/Azc4tXHGKfITl6QUEHYw45Peudf/PcbuGeyxzHjkNzpGyKqdy4U8z2ODWwACoVauPWaGN0xXTtYXpKSjnekx3HjjDCKi52+UDvUMhco73PqG1XK2/BvrusHQwYcQH/zQpPJvBDrDOCvLwuiN9Dfhzz+KhiAd6bPiG0G0Hwti8vw/hFP2pgHYpoBNL+LxXHN6SfUAgbgMyyIVQao1eEm6OcVsomzxta8UPAAqO22OTAPw7P3BcT4MqrKcE0jzT+CDwoaAJqX+cFuuKGB5q/CJwXrA2h+Idy8LClrjvU0H+iznbwsrWEiwkdeyK4Mal4o5C3QjfCQV3L30ngP8qSgj0HeBrJIuZ+aZ3lJ9hsi0rnJuuN1Gv+OkIj9XCBfiv9lBgmnGAAknGIAkHASH4B/AAAA//8U0lgbAAAABklEQVQDAOrwOu1BdvleAAAAAElFTkSuQmCC",
+	["redo-2"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEDklEQVR4nOybSWgUQRiF36hEiRCMCwoJLqAmCCpBRHCDXPQgQhTjQY0xHtSDJxEEERG8BSUBEQ96MDFRUSQSUNGDxH0BNxJxC2hUggsqmosYdXw/PYEw6Zqp7qlquu354PEP1aU9/5vqWjsjEHNGIObkDUDMyRuAmJM3ACEmmUxOlphIJN7CEsMQUph8A0OPiJ/rqQQsYOU/zRUmu43hSFpxE1XH1pCEQcLaAta7lNVSTaZbQlgNuK8or6FOmDQhrI/AKIa71FxFlZPURj4Of5AjoTRAoAljGTqo2YoqbVR1riaE1gAhZcItqlxRJWcTQjsMCkzsK8NS6rmiyirqLI0aDr/3QARgghMYblPTFVV8t4RQt4ABmNhnhiVUt6KK75YQiRYwABOcxHCHmqqoIi1hLQ37DU0iZYBAE0oZbkBtwgWqSteESDwCg2Fi7+E8Dm8UVVZQ52mU1kLPeAvgjcczVMEZusZRMpQVWbjXSKoiFd14Rs3J1hKMfSkmvgXOVHUxwsMLGlCeqUJOBqSa2SZqDzUF4aSIJvSpLvreEGHyhQxXqEUIN/2ZLvoygMmPgZP8fISbTv76PzNV8GwAky9muEnN0qj+g+qlPsk/hVl0OsF5yIKfFnAOmZOX2VozdYrud8MCg+YCquS15wKeDOCNjzFUKi6/pnbzpqdhEdMTIe1RgDdeydCuuHwZzmKkDxbRmAp7Sl7wYoAsSctcLjXzhrWwTCp5+eUzrQg9rQMErUeAN98K9+SvUnWwjGbyvpbDWi2AX+AphnZ8MryUpDYtrGFzL0DI2gL4BWSG59brNwaU/HVYSl7QWQ2uUZQ3wiKp/UBJXjWXl9Em501RnT7Abbb3gDf+CEuktsU7oE5etsU3mDgl0mkBpS5l92CX/VBvh7fCUPKCXwPewS4LFeUtVI3J80EdA9yWubYNaHEpOw7nNCjww9FvLmWjYREmKSfDBwcVHaA2m05e0OkEpbMrTiubCMsw2Z3sDA/xYz8/98ISOi3ArbevQAAw8R6byQs6Bjx2KVvGXydyO8pu6CRxyaVM+oB1+A/IuhbgL10AZ2cnffPhFVVmo2MKkqwtgAn+gjMEpTOD2ouIo7salOWovLFVkH6JqqRJ1xBRtDoyJviB4ajbJaqNBoXpMMQTXnaEZCv8ITVNUWU7jTqMiOHpZIgmyK6QmFCoqCIbF3U04iUiguejMZpQzXAmS7UuOFtYMlLongv8pZ7QvO8IEF9ngzRB5gCtsEM9TdiFgPB9OEoTFjBchHP8bRo51u5EAPiezvILyqbITKoB5ilBQOQ0n6cJX6gdcEYGk49EFwLC6FsbfCxkjbCcWo2hb4jo8IjaR1PbERCRe0nKNPk/mUHMyRuAmJM3ADEn9gb8AwAA///2dgHIAAAABklEQVQDAG5vMxonGfsJAAAAAElFTkSuQmCC",
+	["wrap-text"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADAElEQVR4nOxaO2gVQRQ9G1KoiQQtRIKiiQl2/pGAWggpBBUjCDZqZaMWBuyUdL7WQlQsLATTCUpAMFbiDw1+AoKFRi3UaEAIKH4qfTk3bwNhuXezSZa82Z05cLi8e2fe7j07e3dmdhvhORrhOYIA8BxBAHiOIAA8RxAAniMIAM8RBLAC1Wp1H80RciWKjTGyP4qiO1ow0pxM/iDNLZQLPRRhIOlsMBofQPmwW3P6VAMWaU5rBAygfLirOSOrdcmK4HXe/4NaMILnCPMAeI4gADxHEACeIwgAzxEEsALxkvgw3J8K/yA/kW/I+5zyvp1NZ2s/4BDNTRQTz8heCjGUpbG1GtyD4qKLfMqLeCpLY0uA/yg2ZGRfoghnZ2poCTCIcqBCEVJ3t9L2A/bTHCVXwG2sItelxH+SHawJ37VgKfYDeLFaaU6S54wmVynACS1Qqg0RCtFJM0w2KeGlFOFX0mnVgEKCCY7Q9Brhbs1ZKgEEFOEazR8ltEVrXwgBOLQbyE1kU8Yuw4qvVWvovABxgXuBWlKj/N2dpZviU+ud0wIwWXnEPSE3x64W8jb9q2foulXxjWkNnRWASa6heUyuTYSayb0p/Y7TLFZCr7T2Tj4GmYRMbB7CuG+J7Sx2z5V+bTSvURMpiWb2+Z10OjcC4md5WvIVI3mZ8kqd0JK/oSUvWMhXY7LAkhO8wpP5YBxT3uDKe/wlxn98JUcSvmWk3C4tsNHJY77XAvX4PmA8PqHxxDHlin9G/qPyNI910QrW4/uA5eQGxX8G+Sffl5a8wKU9wb/ID7LyO2a9EZ6Oenwf8A21Sp3EBfIf5gdZ+lbItizJC+pRBC/z5D4ax9xJcw92ERwlk8VsalN0iP/bj1nCuXkAReigeQD7MXieifYhJ7g6EWqneQRbhG0U4SVygJNT4fgW2YHa0NbQhZzg9I5QvBiS26F9mlvW+usp0hfkAKdXg3GSu8ip4S5bWj15JT95DBQAsiFCs5F8Z83p54rwlRg8RxAAniMIAM/hvQATAAAA//90kOUHAAAABklEQVQDABEJzZDfTVpcAAAAAElFTkSuQmCC",
+	["server"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACWUlEQVR4nOyaPUsDQRCGJyGIH4UoURS1EBtT21iJYCcxfjQ2KQTbFGLtn1A7sVBJYaXEaCmmEDsRLCxEtBEiikEtRGziu3EvbC538bwquzsPDLOZ3RzMZHezd/fGyHJiZDmBClAulzvhErBW0oMv2E0kEvn4a2DErwNJ98BtwCZhfaQnRdgpbBXFePEa4FkAJD8DtwPrJjMowZZQhLy7o64ASD4FlyMzmUMRanKrKQCSj8PdwrrITMRMGFWXQ9Q1IEvmJi8QS3pXDVRnAH59sdEVPb70AMvACqjcJ2kAcmmHm4Ktw4Y9hsSRy6toqH+DQz7XS2PwBWmE/KHyKISY8uceQwZhlQKoS6Df52JaJe/iyic+4DTUAuhyyAlMgyXb4TSsPwpHKSRYX0nYvrQkaUqoGYCE5+EOlNAiYguYcoekGWFnwGzAWNPDewCFIxcw1vSEmgFircs7xrQMZRE7Jg0JvQRkwlomrcKPxJT2GxkGlmmbT9e701A3wWufi4yTvoz5xC+dRrUAWNNPcM8eg7MownSDajYd4nZYbtJ7Ht2Pzq2wwL0HbMHWXLER2Im8MBnAtvrB/UisBe6O/J8N6M49LIEZ8O0Eag5CsiND5rKsJi+oOwliwBGceDJcInMQuaSQW8Hd0ejFSC/cJmyC9H4xcgZb+deLETdWvhqzBT4Kk+VwAYIMYn0A6wO0h/UBEtYHEOsDWB8gYH0AsT7gF9YHkOWwPoBCwPoA1geYA+sDKASsDyDWBxgD6wOUIOsDiPUBrA9gfQCxPoD1ARVYH6DA+gCDsf4o/AMAAP//11zJYQAAAAZJREFUAwAclyKQA0z4WAAAAABJRU5ErkJggg==",
+	["brain"] = "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",
+	["list-tree"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACJ0lEQVR4nOyazysFURTHvyPlZ+RH2UuWSko2ilIUhYiFUrbY2foz/AGUbFhQhIWlBTayU1hbvZQSRc93ei+L173zZt6M1333nE+dznvn3pm5833v3jlzZuohnHoIRwWAcFQACEcFgHBUAAhHBYBwVABbQz6fn6dbLn7dC4LgHGXgNr10G7RBWh3c4JW2z/GfmhoDU5Anskh3WBKe4U7OYIHbdNI90TrgJnMc/0lp0PYrTRli04hmAO6efMi4KWibAu2GWDdqm0ZTMMt5+kDLwV2Ma1hmVwHOrxzXgWF+XId7i+Aux3dhasz0MsiDPNNtoYbQPADCUQEgHJsAQcxYzWMToM8Q64WHJMkEXU5zK8YmwKch1goPsWVrb4ZYFzO9IXiG7R9gEiAU64YiXNPnEc0H7Yq2w+zwK6oj99eMQvoc3q21IHsqqgeEtYBFpOeAB16J6sBj7dGt4v9JVA/IiskYfWZRHRLVA3wkdT2g3Lw3cRGjzyWqQ+p6wDFtlzZKC68GUeL9LYIoTzj/b2kTtCZkT2Q9IMkieMidLMEz9GYIwlEBIBwVAMKxCfADIdgEeDHEeuAhtmzu3hAb8bEeYMsE++keDU3h1PC/HlAc2BHdAtJR0/WANRReeEiD8/UAqwBU6x2FFyXu4AfJ6wHFp70jtG3aN5LjfD0g9tMeztU2ujEkrAfEWAQb6DbhUj1AEpoKQzgqAISjAkA4KgCEowJAOCoAhPMLAAD//wsWxzcAAAAGSURBVAMAKwKIEsI29DQAAAAASUVORK5CYII=",
+	["file-search"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAFJElEQVR4nOybW6gVVRjH/1tOVBjdswsKWdnNOtEVu5EFFRHR5aHIBws9Sg8RVnSTeigoMiwxSCj1dCekBwnDirCOmcciqSgLLI0ejMqkQqwktNPvYybZZ1rrzNqzZ89e0+kHf9Y5a9aemfWfb8/M+tbaPRrl9GiU05YBQ0NDp1AcqnIZi8ajTWg32tJoNDapQzTUInT6Poqb0fGqjjfRNIz4RSUTbAAdP5ZiGTpT3eELdAEm/KoSCTKAzo9LT6DscG+Vz9DUMiNhTGC7F9T9zhu9aA0X5ECVRK4BHGw6xeWKh8loNedVygUJiYBZnvo56MhGSbCvGxSORcJ7mHCY2iTEgPGOusc554XoB3WeZz31J6GBdiMhxICjHXWfqCIweQZFv2fzyUoiYZwKEnoTzPKnKgQTZiq5EbuwSDATDlEBihpQOZhwk/wmnIDWFomE2hhgBJiwrlUTamWAkZqw2LP5GLVoQu0MMDBhtkoyoagBQyqf712VdOQAV31qwlNyYyYM8tkjlENMEfCxp/4y3wcw4VaKRZ7NNnh7TjkUzQeUHgF05jeumI37j8tsepH6synfRX84Pvoqsit9nWPb+co7bl4DDm5ve4dnqs/lhD9QyXCs2ymeUImkr9leQr4CCzP/D3ai8ylPoo9UIaH5ABt8HGx/0vnV6iDpsdai/VQCeRHQckqsCjBhAsXL6EK1SS0NMDDBzs0edVPRiUre+fdWi9TWgFbBsOuV5CyHkWfA//MCrTTGZQvBieggtAV9h8F/qcbkGpDekO5AlyrJxzWzk+2DlCvQIsyoNE9QBt73ADrWgx7hz81K8n+THc32QZegBdaO9leoZjgNSEdSa5DNAu2lMCx3uJLPPqwa8S8D6IB1+A00RcWYyz7uUk1wRcCj6Ay1xzxMOEc1YJgBnLRNeM7xtP0J2ZW1kZmN0a9ETyPXU8Cevb6xelRkI+BeuaPiJTSRu/x8tB5tRyvRLdSfir5xfOYsDI1pRsnJns6mr55XOdrYU2CWjdddO6D+SwrL07lyBK79RUXz1bZ3bdcsywN0cqdGgO3vU7zm2JSbkOg2zQYc5WkTOj5f76iboMhpfhPc19MmdP5vq6NurCKnOQK2edqcpjB6HXVbFTnNBtjqi12ONrOVQ7pg4UbHpk8VOXsMSO/yrlzfdDp4nkZmHnJNTr6lyMk+85d52r2OCVdnK214jGwg5IoSW+K2XJEzLFtCZ+xG+C3yTSvZcrV30EYlj7hr0SRP2wGi6mJVRNGMUMOxI1sT9LxKOCfUx/H7VQFFDRjj+IBNPy9R+9iBl3JiMxUxvoSIveM/pnKmwBZjwgxFitMAomA3ukfJ8rivFcY6uQ2zSFiCCUXzCx1lxKkxTHhbyRhhGlrlaLIDPYNOp609KvvkN+F+RUhuUtSigeKVVHlt+9NRpeseskMRUvr6AExYSmE3vuZIsL8fUoR0ZGIkjQTLIN2ZVs1P8wbR0bGZITpscwUrFDmjfmos+B5ASPeh5SjK77KSSZos25VDyNSY7dgWRfyT5r6Gul2EeGxGuH7JkrumOeQrYKPAbI7/QUz4nbIfI35WF+E8bEbK3lNuc2zONSBkkdRFFAOqJ71coM9HapB7D0jXBK1S/ViQ13kjdJGULZPboDh+NxSCJXInYUDu22fQU4Ad/agkAbJR8fOhkp/XBb16Bz8G2eFXSuYF5yrJGsWGXZy7Oc8paHPohwovkkp/sGQTH/uru2yjwxtUkP/MKrGijPpX4b8BAAD//9MmykUAAAAGSURBVAMASNJ7HL4FBpAAAAAASUVORK5CYII=",
+	["star-off"] = "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",
+	["crosshair"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAGtklEQVR4nORba4xdUxT+7kwxSqYexUy9xpv4M0OJqlaViE6UTmpUZBJm0tQPoWmnSJqKV4TUFBVBWlWl9Yioog+Reo0q+lDBD6LDoDJatDTUeI5v9ey5uWfP2ueee865r8yXfNlz93OtNefsvfbe6wzBIMcQDHIUzQB9fX11TM4yPzemUqluFAEp5BlUdBSTJnI0WUseTh7gqP47uYPsId8lX6JhPkQekbgBqHAFkzHkZHiKH4V4+I5cTr5IrqNB+pAgEjOAUfxq8nbyBOQHX5K3kc8lZYhEDEDl5b99B3k6CoNPyVtphJcRE7EMQMUnMLmLPBPFwUZyDg3xOiIisgGo/EImU0NW30O+Rb5Hfk+2kedbdd4mF5NHwpswx5P7IxwW0AjXIQJyXgapuMzgMildnKWqTF4vkGso3Fqrj0uV+jtY7ymrnoxxCdmM4Ml0GutKeTP72IMcUJFLZQ4ynMk6BCu/k5xFnkhh2m3lc4E82uRMeJPqTeSugOqN5DtGxtAIbQB2fDCTD8j6gGr3kMdT6HnkX0gI0hfZIX2T9wVUHUmuN7KGQigDsEN5VVbBvbx1k6dSyNnkr8gT2Pcv5M0yFrxXTMNJ5KtG5qwI+wQsIUc5ytaTDRTsCxQIZqx6M7YGmUQXIwSyGoCWbIfn4GiQQcbKfwYFBseUuWYsucxRpYWyT0cWBBqAHVzEZK6j+BkK0Ub+iyJBxiZb+OdSR5X7qcO4oD6cBmDDoUyed9R5n7wG0aEtVbsQHa3wfAwbIvuz1GU/V8OgJ0CWskOU/G6ykZb/B9GhubBrEBFGFvEttImxhmx3ttUyzTIindnbVtmu1nPArYgJ4wy1mJ9Pss/XEBPs8zQmG8gDrSJZmY7hGLvtNi4DyFo7Symazk4eQgnDTNodStFcyn6LnZlSOpADi2/IKqtoG3lczEc/7zDveze8Rz8TvWQd5d+emanNAbLBqVLy7yx15QWU8U94O1QbolPbgPp2Bi0oR1HnWdlfw/Pt/0MZgDrsw6SLPNoq6qQOvl1ohdWwGp4XZePxclFeQFn/ZrJIKRptlvc07FdAtp7axBh5iSoiVit5lfB0TMM2QKPS6CdadAvKDJRZTot+VIomZP6wDdCgNFiF8oXmW/h0tA1QozT4COULTXafjvae+TClQQ/KFz8oeSMyf6QnPM6Ochi5TWkg7/9uBA+ylO/cShQQGa50TUC1YdBPsI6gvHID5XsCTnZ00oDsmEKBJiVxTh8GHEtunJYjOkTXvQbInAPOQTxcgMLhcsRD+nQr8wmI6+hUoXyQfvUzn4ANiIdCOktxX7X0jXNSk2Ai+/lcEHMSHEF5965umQaQDYR2lt/EyitQhqBOV8C7nfJlU5/0k5/+w2wgdir9BFm41FGr5PncY9sT3K40KNbNbxLQZPc5R7YBNisNJqF80aTk+XS0DfCK0mC4ifMpK1BmuTSpVop8OtoGEHdWu+iI63gUA5rMMsn7ViufATgR/sHkTaXh1KDLhVKDOfW5VilaSx17MzO0Q1HtNTgUAZcLJQiJJdAudQboph2KynvzLTwnIhPOy4VSQsCljir/gCfAVNAuRMUgs1H6mAM9EPPuXG6GXJcL4iyNSSJ607oaS+Q8gX1K6K1c3FZaReLfHGvuDHxIBXR2PZOHlSLZR9f3+9IRBdX287HOE9in/LM+gX6qNY19L9TaBd0OP0p+peTL1dnKsCEoDmhLVOTzBMqyL7xjcE15udRZ5GrrNIC5CLkK3mNv4wxyAaJjqJJXi+iQ8Drt5EpkvzLoUicwQsScrbuCIVtp+SfIShQJMrbIwD+nOKq0UodNQX1kjREywYuPuAYgOynEQSgwOKas851GBg3zKfuybP2EjRK7AV6ApIZzyS0U6BQUCBxLgrI/NmNrkLDcGQiBUAYw75DsCrscVerIzylYBzkMeYI8aTIG//wMA29++yEyTg4bTh86UpQd/szkbLhj8wTiLm+lkDeaE6ZEILM8KSGzXQh2yUW2kZQ1dMBVTrHCIWLzBBKrO5/sodBL5FsCE2CdE6QN2Uw+De92ah50/74fkWIW44TLzzRChYVsQ2XSChMuPw7Zo9EzMYOKP4gIiPvBxIXwPLpqFAfi20+k8p2IiJxeARsc+A14wcli/V4UDnJu8YCMHUd5QZIfTYknJ2Fo8uVGvm6JRPHHyHv7LzfjIh+fzcnrIFEYl5k0dOy+AzKji58vhxmrqfhvSBCF+HByPJOJ8JbQXD6clC33iriPeDbk3QAumL27nNuLw7KJim5GEVA0A5QKBv3X4/8DAAD//8X1gDUAAAAGSURBVAMAYJcZbd0bhuUAAAAASUVORK5CYII=",
+	["flip-horizontal"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADN0lEQVR4nOybu2tUQRTGv41pfGAlKNiIFgYVo0ZERcOKQhSttBC0CeQP8IlYiGJhoSAq/gFiIWJhShFUEEEQlbCxiBJMiI0Gy8VnoZvvsJuw2Zy5j72Ps3DnBx9z98zcnZlz75x797DTjYLTjYJj6oBardYjZalU+gQjumAAJ76Kes/DjyI5plbAABMHkFNUX9NnOT4DAyIvAV6hAyy2UBuoNQh23i/qGW/tW476rYptI9x9n2Oxn1oCN/+pKWqMqrDv54hAqAPY+TIW96mjiMchnrudAzmp1FUV21/o/T9gcQIx4XmPWAyx/59B7bpCvmQdC1mrcSc/ywCScxjtcZyS2LI2qJHTATxxEYthaj3axyrGzCJPmeHGXFSCBniV2oxkPEFyniIZvdRlV2VQDDjrsMv6HUU96LiQIPiC6+8mkjNIjVD7qMUB7eRiymSXK3USRK9oJ6kO4C2zx9HZ+ZQm9VWxfdMasr8/LG40FArHfoHF9RbzUtp38rvetLZ3LYGyYnub0uSFe5j/JKg2bInhGMVRH5SqstbetQQ2KbYvSAkOcpRXRIJrT8M0Rtt3pMc4FsavXq2hywHOqJkWnPA0i2nkhzon/2sQBcc7AIb4fIDPB8zR+fmAlImVD8gSKwdEzgdkjX8KoOB4B6DgWDkgcj4ga6zeAzLLB8TF5A7IIR8QGbMYYJAPUPFBEAXHOwCG+HyAzwfM4fMB8PkAnw8wwTsABcc7ADb4fAB8PsDnA3w+oBPwDkDBcTngH3Igw3xATbGpc3I9BicV20qkRA75gNWKbUJr6HJARbH1c5B9SIfM8gEc4y4Wu5WqEa29awlUHHa5Uq+g32LNhP1VNu5+Afn3ZxnB+wWEEtXvqIvuAA58nJ0+5uExpdrVQSuyX2Cb1X6BFh5yHFNaRdCr8CD1GclIY7/AESRD5jDkqnQ6gB77weIg9Q62hC23IGTsA5zLb1eDwB9DPHGC2sHDS2iPpP/1T/IdF2Xs1GRQo0gvQvySa1yLd1EPRHtRj9phm6by3i8g+xfkir+mXrLvKiJQggF05m3UH4XN3OGgTyNnCp8PMLkDBHkbRAfkA8wc0CkU/tfgDAAAAP//2yt+5gAAAAZJREFUAwADRSDXX7XofgAAAABJRU5ErkJggg==",
+	["heart-handshake"] = "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",
 }
 local ICONS = {}
 Core.GLYPHS = {
@@ -4177,7 +5521,8 @@ local Root = UI.new("Frame", { Name = "Root", BackgroundTransparency = 1, Size =
 Core.RootScale = UI.new("UIScale", {}, Root)
 HUB.gui = Gui
 -- everything that makes up the hub itself sits on one stage, so dragging the title moves it all together
-Core.Stage = UI.new("Frame", { Name = "Stage", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 100 }, Root)
+Core.Stage = UI.new("Frame", { Name = "Stage", BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(1, 1), ZIndex = 100 }, Root)
+Core.stageScale = UI.new("UIScale", {}, Core.Stage)
 Core.stageX, Core.stageY = 0, 0
 
 -- themes: a theme sets the background, the cards, the text and the accent. the background tint then mixes a bit
@@ -4382,7 +5727,8 @@ local L = { scale = 1, W = 1280, H = 720, panelH = 380 }
 Core.NAV = {
 	{ id = "home", title = "Home", icon = "house" },
 	{ id = "explore", title = "Scripts", icon = "code" },
-	{ id = "scripts", title = "Atsuko Script", icon = "layout-list" },
+	{ id = "scripts", title = "Atsuko Script", icon = "person-standing" },
+	{ id = "emotes", title = "Emotes", icon = "party-popper" },
 	{ id = "editor", title = "Editor", icon = "code-xml" },
 	{ id = "ai", title = "AI", icon = "sparkles" },
 	{ id = "running", title = "Running", icon = "activity" },
@@ -4478,10 +5824,23 @@ function Toast.dismiss(t)
 	UI.done(tw, function() t.holder:Destroy() end)
 end
 
+function Core.wrapH(text, size, font, w)
+	local ok, v = pcall(function()
+		return Core.TextService:GetTextSize(text, size, font, Vector2.new(w, 10000)).Y
+	end)
+	if ok and type(v) == "number" and v > 0 then return v end
+	local lines = 0
+	for line in string.gmatch(text .. "\n", "(.-)\n") do
+		lines += math.max(1, math.ceil(#line * size * 0.55 / w))
+	end
+	return lines * (size + 3)
+end
+
 function Toast.show(title, text, kind, dur)
 	if not S.notifications or not HUB.alive then return end
 	title, text = tostring(title or ""), tostring(text or "")
-	dur = dur or S.toastTime
+	dur = tonumber(dur) or S.toastTime
+	local plain = string.gsub(text, "</?b>", "")
 	-- the same message twice in a row just refreshes the one that's showing
 	local key = title .. "\0" .. text
 	for _, x in ipairs(Toast.list) do
@@ -4510,6 +5869,12 @@ function Toast.show(title, text, kind, dur)
 	Sfx.play("ping")
 	Toast.n += 1
 	local from = Core.toastList.VerticalAlignment == Enum.VerticalAlignment.Bottom and 72 or -72
+	local fullH = math.max(15, math.ceil(Core.wrapH(plain, 11, FONT_M, 200)))
+	local shortH = math.min(fullH, 44)
+	local long = fullH > shortH + 2
+	local function cardH(th)
+		return 26 + th + 12
+	end
 	local holder = UI.new("Frame", {
 		Name = "Toast",
 		BackgroundTransparency = 1,
@@ -4520,8 +5885,9 @@ function Toast.show(title, text, kind, dur)
 		Name = "Card",
 		BackgroundColor3 = T.side,
 		BackgroundTransparency = 0.02,
-		Size = UDim2.fromOffset(260, 52),
+		Size = UDim2.fromOffset(260, cardH(shortH)),
 		Position = UDim2.fromOffset(0, from),
+		ClipsDescendants = true,
 	})
 	UI.corner(card, 14)
 	UI.stroke(card, T.stroke, 1, 0.35)
@@ -4530,19 +5896,54 @@ function Toast.show(title, text, kind, dur)
 	local iconBg = UI.new("Frame", { BackgroundColor3 = col, BackgroundTransparency = 0.82, Size = UDim2.fromOffset(30, 30), Position = UDim2.fromOffset(11, 11) }, card)
 	UI.corner(iconBg, 10)
 	UI.icon(iconName, 16, col, iconBg, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
-	UI.label(card, { Text = tostring(title), Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(50, 9), Size = UDim2.new(1, -60, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
-	UI.label(card, { Text = tostring(text or ""), Font = FONT_M, TextSize = 11, TextColor3 = T.sub, Position = UDim2.fromOffset(50, 26), Size = UDim2.new(1, -60, 0, 15), TextTruncate = Enum.TextTruncate.AtEnd })
-	local bar = UI.new("Frame", { BackgroundColor3 = col, BackgroundTransparency = 0.25, BorderSizePixel = 0, Size = UDim2.new(1, -28, 0, 2), Position = UDim2.fromOffset(14, 48) }, card)
+	UI.label(card, { Text = tostring(title), Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(50, 9), Size = UDim2.new(1, long and -80 or -60, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+	local body = UI.label(card, {
+		Name = "Text",
+		Text = text ~= plain and text or plain,
+		RichText = text ~= plain,
+		Font = FONT_M,
+		TextSize = 11,
+		TextColor3 = T.sub,
+		TextWrapped = true,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Position = UDim2.fromOffset(50, 26),
+		Size = UDim2.new(1, -60, 0, shortH),
+	})
+	local more
+	if long then
+		more = UI.icon("chevron-down", 12, T.dim, card, { Name = "More", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 11) })
+	end
+	local bar = UI.new("Frame", { BackgroundColor3 = col, BackgroundTransparency = 0.25, BorderSizePixel = 0, AnchorPoint = Vector2.new(0, 1), Size = UDim2.new(1, -28, 0, 2), Position = UDim2.new(0, 14, 1, -4) }, card)
 	UI.corner(bar, 1)
 	local t = { holder = holder, card = card, from = from, key = key, seq = 0, bar = bar, scale = UI.new("UIScale", {}, card) }
 	Toast.list[#Toast.list + 1] = t
 	while #Toast.list > 3 do
 		Toast.dismiss(Toast.list[1])
 	end
-	UI.tween(holder, 0.35, { Size = UDim2.fromOffset(260, 58) })
+	UI.tween(holder, 0.35, { Size = UDim2.fromOffset(260, cardH(shortH) + 6) })
 	UI.tween(card, 0.45, { Position = UDim2.fromOffset(0, 0) }, Enum.EasingStyle.Back)
 	UI.tween(bar, dur, { Size = UDim2.new(0, 0, 0, 2) }, Enum.EasingStyle.Linear)
-	card.Activated:Connect(function() Toast.dismiss(t) end)
+	card.Activated:Connect(function()
+		if long and not t.open then
+			t.open = true
+			t.seq += 1
+			local my = t.seq
+			local h = math.min(fullH, 360)
+			body.Size = UDim2.new(1, -60, 0, h)
+			UI.tween(card, 0.35, { Size = UDim2.fromOffset(260, cardH(h)) })
+			UI.tween(holder, 0.35, { Size = UDim2.fromOffset(260, cardH(h) + 6) })
+			if more then UI.tween(more, 0.25, { Rotation = 180 }) end
+			local stay = math.max(dur, 6 + #plain / 30)
+			bar.Size = UDim2.new(1, -28, 0, 2)
+			UI.tween(bar, stay, { Size = UDim2.new(0, 0, 0, 2) }, Enum.EasingStyle.Linear)
+			task.delay(stay, function()
+				if t.seq == my then Toast.dismiss(t) end
+			end)
+			return
+		end
+		Toast.dismiss(t)
+	end)
 	task.delay(dur, function()
 		if t.seq == 0 then Toast.dismiss(t) end
 	end)
@@ -4638,9 +6039,23 @@ do
 	UI.accent(dot, "BackgroundColor3")
 	UI.stroke(dot, T.side, 1.5, 0)
 	Dock.cmdDot = dot
+	local brand = UI.new("Frame", { Name = "Brand", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 58), Visible = false }, f)
+	local logo = UI.new("ImageLabel", { Name = "Logo", BackgroundColor3 = T.card, Position = UDim2.fromOffset(14, 13), Size = UDim2.fromOffset(32, 32), ScaleType = Enum.ScaleType.Crop, Image = "" }, brand)
+	UI.corner(logo, 10)
+	local letter = UI.label(logo, { Text = "A", Font = FONT_B, TextSize = 16, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromScale(1, 1) })
+	UI.accent(letter, "TextColor3")
+	Logo.attach(logo, letter)
+	UI.label(brand, { Text = "Atsuko Hub", Font = FONT_B, TextSize = 14, Position = UDim2.fromOffset(54, 12), Size = UDim2.new(1, -62, 0, 18), TextTruncate = Enum.TextTruncate.AtEnd })
+	UI.label(brand, { Text = Core.BETA .. HUB_VERSION, TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(54, 30), Size = UDim2.new(1, -62, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+	UI.new("Frame", { Name = "Line", BackgroundColor3 = T.line, BorderSizePixel = 0, Position = UDim2.new(0, 14, 1, -1), Size = UDim2.new(1, -28, 0, 1) }, brand)
+	Dock.brand = brand
 end
 
 function Dock.layout(anim)
+	if Dock.full then return Dock.layoutFull(anim and 0.35 or 0) end
+	Dock.scroll.Position = UDim2.fromOffset(0, 0)
+	Dock.scroll.Size = UDim2.fromScale(1, 1)
+	Dock.brand.Visible = false
 	local vertical = S.dockPos ~= "bottom"
 	Dock.vertical = vertical
 	local ids = Dock.order
@@ -4678,6 +6093,7 @@ function Dock.layout(anim)
 		ref.icon.Position = UDim2.fromOffset(item / 2, item / 2)
 		ref.label.Position = UDim2.fromOffset(item - 6, 0)
 		ref.label.Size = UDim2.new(1, -(item - 6) - 6, 1, 0)
+		ref.label.TextColor3 = T.text
 		UI.tween(ref.label, t, { TextTransparency = (on and selW > 0) and 0 or 1 })
 		if on then pillP, pillS = p, sz end
 		pos += w + gap
@@ -4712,6 +6128,64 @@ function Dock.layout(anim)
 	Dock.scroll.ScrollingEnabled = full > avail + 0.5
 end
 
+function Dock.layoutFull(t)
+	local ids = Dock.order
+	local sel = Dock.sel
+	local w, h = Dock.fullW, Dock.fullH
+	local top = Dock.brandH or 0
+	local item = Dock.compact and 34 or 38
+	local pad, gap = 8, 3
+	Dock.item, Dock.thick = item, w
+	local pos = pad
+	local pillP, pillS = nil, nil
+	for _, id in ipairs(ids) do
+		local ref = Dock.items[id]
+		local on = id == sel
+		local p = UDim2.fromOffset(pad, pos)
+		local sz = UDim2.fromOffset(w - pad * 2, item)
+		UI.tween(ref.btn, t, { Position = p, Size = sz })
+		ref.icon.Size = UDim2.fromOffset(17, 17)
+		ref.icon.Position = UDim2.fromOffset(item / 2 + 2, item / 2)
+		ref.label.Position = UDim2.fromOffset(item + 6, 0)
+		ref.label.Size = UDim2.new(1, -(item + 12), 1, 0)
+		ref.label.TextColor3 = on and T.text or T.sub
+		UI.tween(ref.label, t, { TextTransparency = 0 })
+		if on then pillP, pillS = p, sz end
+		pos += item + gap
+	end
+	Dock.pillCorner.CornerRadius = UDim.new(0, 12)
+	if pillP then
+		if Dock.pill.BackgroundTransparency > 0.9 then
+			Dock.pill.Position, Dock.pill.Size = pillP, pillS
+			UI.tween(Dock.pill, t, { BackgroundTransparency = 0 })
+		else
+			UI.tween(Dock.pill, t, { Position = pillP, Size = pillS, BackgroundTransparency = 0 })
+		end
+	else
+		UI.tween(Dock.pill, t, { BackgroundTransparency = 1 })
+	end
+	pos += 4
+	Dock.sep.Size = UDim2.fromOffset(w - pad * 4, 1)
+	Dock.sep.Position = UDim2.fromOffset(pad * 2, pos)
+	pos += 8
+	Dock.close.Position = UDim2.fromOffset(pad, pos)
+	Dock.close.Size = UDim2.fromOffset(item, item)
+	Dock.closeIcon.Size = UDim2.fromOffset(17, 17)
+	UI.setIcon(Dock.closeIcon, Core.shellMode == "window" and "minus" or "chevron-left")
+	pos += item + pad
+	Dock.badge.Position = UDim2.fromOffset(item / 2 + 11, 9)
+	Dock.cmdDot.Position = UDim2.fromOffset(item / 2 + 10, 10)
+	Dock.w, Dock.h = w, h
+	UI.tween(Dock.frame, t, { Size = UDim2.fromOffset(w, h) })
+	Dock.corner.CornerRadius = UDim.new(0, Core.shellMode == "window" and 16 or 22)
+	Dock.scroll.Position = UDim2.fromOffset(0, top)
+	Dock.scroll.Size = UDim2.new(1, 0, 1, -top)
+	Dock.scroll.CanvasSize = UDim2.fromOffset(0, pos)
+	Dock.scroll.ScrollingDirection = Enum.ScrollingDirection.Y
+	Dock.scroll.ScrollingEnabled = pos > h - top + 0.5
+	Dock.brand.Visible = top > 0
+end
+
 function Dock.select(id)
 	Dock.sel = id
 	for nid, ref in pairs(Dock.items) do
@@ -4724,6 +6198,18 @@ function Dock.show(on)
 	Dock.token += 1
 	local tk = Dock.token
 	Dock.shown = on
+	if Core.shellMode == "window" then
+		Dock.moving = false
+		Dock.frame.Position = Dock.posOn or Dock.frame.Position
+		if on then
+			Dock.frame.Visible = true
+		else
+			task.delay(0.2 / math.max(0.5, S.animSpeed), function()
+				if Dock.token == tk and not Dock.shown then Dock.frame.Visible = false end
+			end)
+		end
+		return
+	end
 	Dock.moving = true
 	if on then
 		local was = Dock.frame.Visible
@@ -4800,6 +6286,7 @@ function Head.set(title, sub)
 	Head.title.Text = tostring(title or "")
 	Head.sub.Text = tostring(sub or "")
 	Head.fit()
+	if Core.onHead then Core.onHead() end
 end
 
 local Tools = {}
@@ -4936,7 +6423,7 @@ local P = {}
 P.holder = UI.new("Frame", {
 	Name = "Panel",
 	BackgroundTransparency = 1,
-	ClipsDescendants = true,
+	ClipsDescendants = false,
 	Visible = false,
 	Size = UDim2.fromOffset(PANEL_W + 8, 388),
 	ZIndex = 100,
@@ -4990,13 +6477,26 @@ end)
 Core.resetBtn = Core.headerButton("ResetSpot", 9)
 UI.setIcon(Core.resetBtn.icon, "rotate-ccw")
 function Core.clampStage(x, y)
+	local r = Core.shellMode == "window" and Core.winRect
+	if r then
+		local x0, x1 = -r.x, L.W - r.x - r.w
+		local y0, y1 = -r.y, L.H - r.y - r.h
+		return math.clamp(x, math.min(x0, x1), math.max(x0, x1)), math.clamp(y, math.min(y0, y1), math.max(y0, y1))
+	end
 	local mx, my = L.W * 0.75, L.H * 0.7
 	return math.clamp(x, -mx, mx), math.clamp(y, -my, my)
 end
 function Core.moveStage(x, y, smooth)
 	x, y = Core.clampStage(x, y)
 	Core.stageX, Core.stageY = x, y
-	UI.tween(Core.Stage, smooth and 0.45 or 0, { Position = UDim2.fromOffset(x, y) })
+	UI.tween(Core.Stage, smooth and 0.45 or 0, { Position = UDim2.new(0.5, x, 0.5, y) })
+	local key = Core.shellMode == "window" and "stage_window" or "stage"
+	local o = S.moved[key]
+	local rx, ry = math.floor(x + 0.5), math.floor(y + 0.5)
+	if not (type(o) == "table" and o[1] == rx and o[2] == ry) then
+		S.moved[key] = (rx ~= 0 or ry ~= 0) and { rx, ry } or nil
+		saveSettings()
+	end
 	local moved = math.abs(x) > 0.5 or math.abs(y) > 0.5
 	if Core.resetBtn.btn.Visible ~= moved then
 		Core.resetBtn.btn.Visible = moved
@@ -5044,7 +6544,7 @@ P.content = UI.new("Frame", {
 P.geoToken = 0
 
 local Aside = { open = false, key = nil, page = nil, token = 0 }
-Aside.holder = UI.new("Frame", { Name = "Aside", BackgroundTransparency = 1, ClipsDescendants = true, Visible = false, Size = UDim2.fromOffset(308, 308), ZIndex = 100 }, Core.Stage)
+Aside.holder = UI.new("Frame", { Name = "Aside", BackgroundTransparency = 1, ClipsDescendants = false, Visible = false, Size = UDim2.fromOffset(308, 308), ZIndex = 100 }, Core.Stage)
 Aside.card = UI.new("Frame", { Name = "Card", BackgroundTransparency = 1, Size = UDim2.fromOffset(300, 300), Position = UDim2.fromOffset(4, 4) }, Aside.holder)
 Aside.bg = UI.new("Frame", { Name = "Bg", BackgroundColor3 = T.panel, BackgroundTransparency = S.opacity, Size = UDim2.fromScale(1, 1), Active = true }, Aside.card)
 UI.corner(Aside.bg, 22)
@@ -5053,7 +6553,7 @@ Aside.content = UI.new("Frame", { Name = "Content", BackgroundTransparency = 1, 
 
 -- Home's right column lives in its own holder so it can come in from the right side
 local HomeSide = { shown = false, token = 0 }
-HomeSide.holder = UI.new("Frame", { Name = "HomeRight", BackgroundTransparency = 1, ClipsDescendants = true, Visible = false, Size = UDim2.fromOffset(308, 308), ZIndex = 100 }, Core.Stage)
+HomeSide.holder = UI.new("Frame", { Name = "HomeRight", BackgroundTransparency = 1, ClipsDescendants = false, Visible = false, Size = UDim2.fromOffset(308, 308), ZIndex = 100 }, Core.Stage)
 HomeSide.card = UI.new("Frame", { Name = "Card", BackgroundTransparency = 1, Size = UDim2.fromOffset(300, 300), Position = UDim2.fromOffset(312, 4) }, HomeSide.holder)
 
 function Aside.header(parent, title, onBack)
@@ -5400,6 +6900,10 @@ do
 end
 
 Core.CHANGELOG = {
+	{ version = "1.2.2", notes = { "the scripts don't carry credit text anymore, everyone is credited in settings > about", "credits without a discord server just say what they made", "the old reanimate is gone, the scripts and the hub only use Reanimate now" } },
+	{ version = "1.2.1", notes = { "renamed AtsukoReanimate.lua and AtsukoEmotes.lua to Reanimate.lua and Emotes.lua, the hub and the scripts use the new names", "studio dummy and snake banisher download the new files by themselves" } },
+	{ version = "1.2.0", notes = { "the biggest update yet, almost everything got rebuilt", "atsuko script: tap a script to pick it, then tap reanimate. deanimate stops it. the bar at the bottom shows what's running", "only one script runs at a time now, deanimate the one that's on before you start another", "the scripts use the new Reanimate, a smoother uhhhhhh style reanimate that lives in its own file (Hub/Reanimate.lua)", "studio dummy v4 and snake banisher v3 run on Reanimate now", "new emotes page right next to atsuko script, no studio dummy needed", "emotes work while you're reanimated with any of the scripts, the page tells you when you need to reanimate first", "all dances in one list with search, a favorites tab and a setup tab", "star the dances you like, give any dance its own key, turn the keys on or off and set the volume", "every dance has its own options under it, and stopping a dance fades you back smoothly", "emotes live in their own file (Hub/Emotes.lua) and only download when you use them", "removed the emote and alignment buttons from studio dummy's phone buttons, emotes have their own page now", "ui designs: pick how the whole hub is laid out in settings > general > layout (or say design)", "original: the dock at the bottom and the panel on the left, like before", "sidebar: a big menu down the left with every page, the panel opens next to it", "window: one window with the pages on the left, drag it anywhere by the top", "move things around: everything can be moved now, the panel, the dock, the top bar, the side card, the command bar and the popups", "tap move things around in settings (or say moveui), drag the handles, then done. reset puts it all back", "the window design remembers its own spot", "pc: the panel slides all the way out to the side now, no more invisible line cutting it off halfway", "fixed the dynamic island staying up after you tap it", "new music player look: a big card with the cover on a spinning disc, the song and the buttons right under it", "new youtube check in music > more: it tests everything youtube songs need on your executor and tells you if they'll work there and why", "the command bar got a new look: clean rounded corners (no more weird corner), your key on the side, sections and a smooth fade", "rejoin and serverhop: you rejoin first, then the hub loads itself back in the new server by itself", "the editor got redesigned: a new toolbar, undo and redo, find (ctrl + f), word wrap and line numbers that follow it", "ask ai button in the editor: your code goes with your message", "the run button in the editor turns into stop while your script runs", "ai tools under the chat: fix errors, explain, make it better, add a menu and copy chat", "fix errors sends your editor code and the last errors from the log so the ai knows what broke", "stop button while the ai is answering", "run button on the ai's code, tap it twice so nothing runs by accident", "works with is accurate now: it reads the hats each script really uses, rig hats with which body part they go on, guns and the rest", "it keeps checking even if you close the script, and opening it again shows it right away, no new scan", "what it finds is saved for a week, and it tells you the hats a script picks by name too", "the hub keeps the files it downloads (reanimate, emotes) so they load faster next time", "the alignment lives in the hub now, the align panels inside studio dummy and snake banisher are gone", "tap the round button on the atsuko script bar to line things up (or press the script's own key, or say align)", "the alignment window: pick gun, screen or muzzle, nudge with - and + (hold to keep going), type exact numbers, undo, reset, flip, copy and save, and studio dummy's screen options are right there too", "a red ball shows where the muzzle is while the alignment window is open, and it closes by itself when the script stops", "studio dummy and snake banisher talk through the hub's own notifications now instead of their own popups", "long notifications show an arrow, tap them to read the whole thing", "scripts can use the hub's notifications too (the template shows how), and they fall back to roblox's when the hub isn't open", "youtube videos play straight from youtube in the video player now, no converter: the picture and the sound get put together into one video", "the video player shows how far the download is, and plays videos up to 20 minutes", "youtube downloads try again by themselves when a piece fails", "music > more lists the executors youtube should work on", "credits in settings > about: everyone who made the hub and the atsuko scripts possible, with their discord servers (tap to copy), and a button to copy them all" } },
+	{ version = "1.1.3", notes = { "spotify works on free accounts now: paste a spotify playlist, album or song link in music > library > spotify and it plays right in the game, no premium", "search any song there (or in music > add) and play it with one tap", "free spotify through discord has a play here button, it plays the song you're on in the game from where you are", "youtube songs don't need a converter or a key anymore, they play straight from youtube (a converter is still there if you want one)", "tap the heart on a spotify or youtube song to keep it in your library", "the next song in a spotify list gets ready while the one before it plays", "the hub says beta now" } },
 	{ version = "1.1.2", notes = { "themes: a new themes tab in settings with 9 themes: midnight, pure black, sakura, grape, ocean, forest, mocha, and two light ones, cloud and strawberry milk", "a theme changes the whole hub: the background, the cards and buttons, the text and the accent", "make your own themes in the theme maker: pick the background and everything else follows it, or set the cards, text and accent yourself", "the hub changes as you pick colors in the theme maker, and closing it without saving puts everything back", "light backgrounds get dark text by themselves, dark ones get light text", "share themes: copy a theme's code and anyone can add it in settings > themes", "new theme command: say theme and a name, or just theme for the next one", "your themes come along in copy my settings, and resetting settings keeps them", "the ai is talkative now: it chats with you about anything, not just scripts, and it's still great at scripting", "new personality setting in ai settings > preferences: chatty, balanced or scripts only", "new thinking setting: quick answers faster, deep thinks longer on hard scripts", "fixed the ai saying to check your internet: it tries again by itself when a message gets dropped, answers faster, and tells you the real reason when something goes wrong", "test the connection button in ai settings > ai key" } },
 	{ version = "1.1.1", notes = { "new ai tab: ask for a script or how to fix one and it writes it for you, with copy and open in editor buttons on the code", "the ai can read the script in your editor: tap the code button next to the box and it goes with your message", "the ai is called Atsuko Hakari and has its own picture. its name is the big title on the ai tab, change the name and picture whenever you want", "personal preferences: tell the ai about you and how you want your answers, in settings > ai or in the ai's own settings. it reads them before every answer", "recent chats: your last 30 chats are saved, search them, open one to keep going or delete it (the clock button at the top of the ai tab)", "ai settings with 4 tabs: profile, preferences, ai key and chats. answer length, creativity, reply language, chat memory, remember chats and a heads-up when an answer is ready", "clean chat look: your messages on the right with your picture, answers with the ai's picture, copy and retry under each answer, and ideas to start with", "the ai works with a free google gemini key, or any openai-style service (openrouter, groq and more). your keys stay on your device", "the ai lives in its own file and only downloads when you open the tab, so the hub doesn't get bigger. an old copy of that file never opens on a newer hub, the tab tells you to update it", "pick your own profile picture in settings > general (a roblox image id or a picture link), it shows on home and in the ai chat", "search youtube for songs in music > add, then add them with one tap (needs a free youtube key, songs go through your converter)", "the command bar opens as soon as you press ; (or your own key), and the key doesn't end up in the box", "keys can be combos now: shift + ; makes : and the other shift symbols work too (! ? @ and more), plus ctrl + any key", "hub keys work even when the game uses the same key, just not while you're typing or in the roblox menu", "your converter and youtube keys are never in copy my settings", "the owner's chat tag says Atsuko Hakari now", "removed the colored fog and aurora sky commands" } },
 	{ version = "1.1.0", notes = { "smoother everywhere: switching pages and tabs doesn't snap or jump anymore, things on the left slide in from the left and things on the right slide in from the right", "home opens with the left cards coming in from the left and the right cards from the right", "runs and opens straight on home, and when you close it and open it again you're back on the page you left", "pc: alt (left or right) opens and closes it, change it in settings > general. the arrow on the side of the screen is only on phones now", "spotify moved into the music player: one player for your songs and spotify, with a whole new look", "lyrics show the line you're on big and the next line under it, plus a full lyrics tab", "new mini player with a lyrics button", "add songs from youtube and other links, they get saved in your music folder and the same song never gets added twice", "music keeps going on phones: if the game or the phone cuts the song off it picks it back up, and spotify stays logged in on phones that can't save files", "tap the dynamic island while a song is on to see it, with nothing playing it opens home", "new editor tab: write scripts, run them, save them, and pop it out into its own window you can move around", "atsuko's own scripts page is called atsuko script now. edit any of them and save your copy, it shows up in scripts > my scripts", "hub size setting, starts at 75%", "pick any color you want for the accent, and the background can take some of it too", "customize home: show, hide and move the cards, and add your own pictures, notes and clocks", "new command bar: suggestions as you type, arrow keys, tab to fill and your recent commands", "new commands: antifling, antivoid, antisit, tpwalk, swim, freecam, hipheight, light, edgejump, fixcam and lay", "running the hub again just tells you it's already running instead of making a second one, same for commands that are already on", "no more double notifications", "say -reload in chat to restart the hub, it tells you if anything broke", "studio dummy: stop really stops it now, none of its commands work until you run it again", "the dynamic island grows right out of the top bar when you tap it and shrinks back into it, same size and smooth", "drag the title to move the hub anywhere, the reset button in the corner (or running it again) puts it back", "home fits everything on the screen instead of scrolling (turn it off in customize home)", "spotify works with free accounts too, through discord: the song, the time, lyrics and the visualizer", "the visualizer bounces on spotify songs too", "hub chat: a server chat with the hub users in your server and a global chat with everyone, in a window you can move and resize. tap someone's picture to block them, bad words get covered up", "the hub's owner gets a purple-to-pink Atsuko tag in chat, and nobody else can fake it", "commands from 07hub (with permission): smooth fly, fly speed, freeze, orbit, head sit, teleport to a spot, copy position, waypoints, emotes, fps and ping, fps cap, colored fog and aurora sky", "video player for testing: youtube (through your converter), webm and mp4 links and roblox video ids, saved in your videos folder" } },
@@ -5448,13 +6952,13 @@ do
 				Ver.latest = v
 				if Ver.told ~= v then
 					Ver.told = v
-					notify("Update ready", "v" .. v .. " is out, open Home to update", "ok", 5)
+					notify("Update ready", Core.BETA .. v .. " is out, open Home to update", "ok", 5)
 				end
 				Bus.fire("update", v)
 			else
 				Ver.latest = nil
 				Bus.fire("update", nil)
-				if manual then notify("You're up to date", "v" .. HUB_VERSION .. " is the newest", "ok") end
+				if manual then notify("You're up to date", Core.BETA .. HUB_VERSION .. " is the newest", "ok") end
 			end
 		end)
 	end
@@ -5488,7 +6992,7 @@ do
 		return Win.show("news", {
 			title = "What's new",
 			icon = "sparkles",
-			sub = "v" .. HUB_VERSION,
+			sub = Core.BETA .. HUB_VERSION,
 			w = 280,
 			h = 320,
 			minW = 220,
@@ -5501,7 +7005,7 @@ do
 				for i, entry in ipairs(Core.CHANGELOG) do
 					local head = UI.label(body, {
 						Name = "Version",
-						Text = "v" .. entry.version .. (entry.version == HUB_VERSION and "  ·  you have this" or ""),
+						Text = Core.BETA .. entry.version .. (entry.version == HUB_VERSION and "  ·  you have this" or ""),
 						Font = FONT_B,
 						TextSize = 11,
 						TextColor3 = entry.version == HUB_VERSION and T.text or T.sub,
@@ -5563,10 +7067,10 @@ function Aside.show(key, frame, page, onClose)
 	if not Aside.open then
 		Aside.open = true
 		Aside.token += 1
-		local w = Aside.card.Size.X.Offset
-		if Aside.card.Position.X.Offset < 5 then Aside.card.Position = UDim2.fromOffset(w + 12, 4) end
+		if Aside.card.Position.X.Offset < 5 then Aside.card.Position = UDim2.fromOffset(Shell.offRight(Aside.holder), 4) end
 		UI.tween(Aside.card, 0.45, { Position = UDim2.fromOffset(4, 4) })
-		if Shell.narrow and Panel.open then UI.tween(P.card, 0.45, { Position = UDim2.fromOffset(-(P.card.Size.X.Offset + 12), 4) }) end
+		if Shell.narrow and Panel.open then UI.tween(P.card, 0.45, { Position = UDim2.fromOffset(Shell.offLeft(P.holder, P.card.Size.X.Offset), 4) }) end
+		if Shell.mode == "window" and Panel.open and Panel.page then Shell.applyPage(Pages[Panel.page]) end
 		HomeSide.sync()
 	elseif swapped then
 		frame.Position = UDim2.fromOffset(18, 0)
@@ -5584,20 +7088,23 @@ function Aside.hide(instant)
 	Aside.onClose, Aside.key, Aside.page = nil, nil, nil
 	if f then pcall(f) end
 	local t = instant and 0 or 0.4
-	local w = Aside.card.Size.X.Offset
-	local tw = UI.tween(Aside.card, t, { Position = UDim2.fromOffset(w + 12, 4) })
+	local tw = UI.tween(Aside.card, t, { Position = UDim2.fromOffset(Shell.offRight(Aside.holder), 4) })
 	UI.done(tw, function()
 		if Aside.token == tk then Aside.holder.Visible = false end
 	end)
+	task.delay(t / math.max(0.5, S.animSpeed) + 0.25, function()
+		if Aside.token == tk and not Aside.open then Aside.holder.Visible = false end
+	end)
 	if Shell.narrow and Panel.open then UI.tween(P.card, t, { Position = UDim2.fromOffset(4, 4) }) end
+	if Shell.mode == "window" and Panel.open and Panel.page then Shell.applyPage(Pages[Panel.page], instant) end
 	HomeSide.sync()
 end
 
 function HomeSide.slide(on, instant)
-	local w = HomeSide.card.Size.X.Offset
+	local w = Shell.offRight(HomeSide.holder)
 	if HomeSide.shown == on then
 		if instant then
-			HomeSide.card.Position = on and UDim2.fromOffset(4, 4) or UDim2.fromOffset(w + 12, 4)
+			HomeSide.card.Position = on and UDim2.fromOffset(4, 4) or UDim2.fromOffset(w, 4)
 			HomeSide.holder.Visible = on
 		end
 		return
@@ -5606,11 +7113,11 @@ function HomeSide.slide(on, instant)
 	HomeSide.token += 1
 	local tk = HomeSide.token
 	if on then
-		if not HomeSide.holder.Visible then HomeSide.card.Position = UDim2.fromOffset(w + 12, 4) end
+		if not HomeSide.holder.Visible then HomeSide.card.Position = UDim2.fromOffset(w, 4) end
 		HomeSide.holder.Visible = true
 		UI.tween(HomeSide.card, instant and 0 or 0.5, { Position = UDim2.fromOffset(4, 4) })
 	else
-		local tw = UI.tween(HomeSide.card, instant and 0 or 0.32, { Position = UDim2.fromOffset(w + 12, 4) }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+		local tw = UI.tween(HomeSide.card, instant and 0 or 0.32, { Position = UDim2.fromOffset(w, 4) }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
 		UI.done(tw, function()
 			if HomeSide.token == tk then HomeSide.holder.Visible = false end
 		end)
@@ -5638,6 +7145,44 @@ local function applyLayout()
 	Win.relayout()
 end
 
+function Core.moved(key)
+	local o = S.moved[key]
+	if type(o) == "table" then return UDim2.fromOffset(tonumber(o[1]) or 0, tonumber(o[2]) or 0) end
+	return UDim2.fromOffset(0, 0)
+end
+
+do
+	local w = UI.new("Frame", { Name = "Window", BackgroundColor3 = T.panel, BackgroundTransparency = S.opacity, Visible = false, ZIndex = 90, Active = true }, Core.Stage)
+	UI.corner(w, 24)
+	UI.stroke(w, T.stroke, 1, 0.25)
+	Shell.win = w
+	local bar = UI.new("Frame", { Name = "TitleBar", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 48), ZIndex = 91, Active = true }, w)
+	Shell.winBar = bar
+	local logo = UI.new("ImageLabel", { Name = "Logo", BackgroundColor3 = T.card, Position = UDim2.fromOffset(14, 10), Size = UDim2.fromOffset(28, 28), ScaleType = Enum.ScaleType.Crop, ZIndex = 92, Image = "" }, bar)
+	UI.corner(logo, 9)
+	local letter = UI.label(logo, { Text = "A", Font = FONT_B, TextSize = 14, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromScale(1, 1), ZIndex = 93 })
+	UI.accent(letter, "TextColor3")
+	Logo.attach(logo, letter)
+	Shell.winTitle = UI.label(bar, { Name = "Title", Font = FONT_B, TextSize = 14, Position = UDim2.fromOffset(52, 8), Size = UDim2.new(0.45, -52, 0, 18), TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 92, Text = "Atsuko Hub" })
+	Shell.winSub = UI.label(bar, { Name = "Sub", TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(52, 26), Size = UDim2.new(0.45, -52, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 92 })
+	UI.new("Frame", { Name = "Line", BackgroundColor3 = T.line, BorderSizePixel = 0, Position = UDim2.fromOffset(12, 47), Size = UDim2.new(1, -24, 0, 1), ZIndex = 91 }, w)
+	bar.InputBegan:Connect(function(input)
+		if input.UserInputType ~= MOUSE1 and input.UserInputType ~= TOUCH then return end
+		if Drag.cur then return end
+		local sx, sy = Core.stageX, Core.stageY
+		local far = 0
+		Drag.start(input, function(_, delta)
+			far = math.max(far, math.abs(delta.X) + math.abs(delta.Y))
+			if far < 4 then return end
+			Core.moveStage(sx + delta.X / L.scale, sy + delta.Y / L.scale)
+		end)
+	end)
+	Core.onHead = function()
+		Shell.winTitle.Text = Head.title.Text ~= "" and Head.title.Text or "Atsuko Hub"
+		Shell.winSub.Text = Head.sub.Text
+	end
+end
+
 function Shell.layout()
 	local M = 12
 	local W, H = L.W, L.H
@@ -5647,6 +7192,19 @@ function Shell.layout()
 	Dock.compact = Shell.compact
 	Head.compact = Shell.compact
 	Head.h = Shell.compact and 46 or 60
+	local mode = S.layout
+	if mode == "sidebar" and W < 700 then mode = "original" end
+	if mode == "window" and (W < 560 or H < 330) then mode = "original" end
+	local was = Shell.mode
+	Shell.mode = mode
+	Core.shellMode = mode
+	if was ~= mode then
+		local so = S.moved[mode == "window" and "stage_window" or "stage"]
+		Core.stageX, Core.stageY = 0, 0
+		if type(so) == "table" then Core.stageX, Core.stageY = tonumber(so[1]) or 0, tonumber(so[2]) or 0 end
+		Core.Stage.Position = UDim2.new(0.5, Core.stageX, 0.5, Core.stageY)
+		Core.resetBtn.btn.Visible = Core.stageX ~= 0 or Core.stageY ~= 0
+	end
 	local pf = Pill.frame
 	if bp == "left" then
 		pf.AnchorPoint, pf.Position = Vector2.new(0, 0), UDim2.fromOffset(M, 6)
@@ -5657,51 +7215,113 @@ function Shell.layout()
 	else
 		pf.AnchorPoint, pf.Position = Vector2.new(0.5, 0), UDim2.new(0.5, 0, 0, 6)
 	end
-	Dock.layout(false)
+	pf.Position = pf.Position + Core.moved("bar")
+	Dock.full = mode ~= "original"
+	if mode == "window" then
+		if Dock.frame.Parent ~= Core.Stage then Dock.frame.Parent = Core.Stage end
+		Dock.frame.ZIndex = 95
+		Dock.frame.BackgroundTransparency = 0
+	else
+		if Dock.frame.Parent ~= Root then Dock.frame.Parent = Root end
+		Dock.frame.ZIndex = 3000
+		Dock.frame.BackgroundTransparency = S.opacity
+	end
+	Shell.win.Visible = mode == "window" and Panel.open
 	local bottomIn = M + ((barOn and bp == "bottom") and 30 or 0)
 	local x1, x2, yBottom = M, W - M, H - bottomIn
-	local thick = Dock.thick
-	if dp == "left" then
-		Dock.frame.AnchorPoint = Vector2.new(0, 0.5)
-		Dock.posOn, Dock.posOff = UDim2.new(0, M, 0.5, 0), UDim2.new(0, -thick - 40, 0.5, 0)
-		x1 = M + thick + 10
-	elseif dp == "right" then
-		Dock.frame.AnchorPoint = Vector2.new(1, 0.5)
-		Dock.posOn, Dock.posOff = UDim2.new(1, -M, 0.5, 0), UDim2.new(1, thick + 40, 0.5, 0)
-		x2 = W - M - thick - 10
+	local headY, toolsY = M, M
+	local top
+	if mode == "window" then
+		local topIn = (barOn and bp == "top") and 40 or 14
+		local botIn = (barOn and bp == "bottom") and 40 or 14
+		local ww = math.min(W - 32, 940)
+		local wh = math.min(H - topIn - botIn, 580)
+		local wx = math.floor((W - ww) / 2)
+		local wy = math.floor(topIn + (H - topIn - botIn - wh) / 2)
+		Shell.winRect = { x = wx, y = wy, w = ww, h = wh }
+		Core.winRect = Shell.winRect
+		Shell.win.Position = UDim2.fromOffset(wx, wy)
+		Shell.win.Size = UDim2.fromOffset(ww, wh)
+		local navW = ww < 720 and 150 or 176
+		Dock.fullW, Dock.fullH, Dock.brandH = navW, wh - 58, 0
+		Dock.frame.AnchorPoint = Vector2.new(0, 0)
+		Dock.posOn = UDim2.fromOffset(wx + 6, wy + 52)
+		Dock.posOff = Dock.posOn
+		Dock.layout(false)
+		if not Panel.open then Dock.frame.Visible = false end
+		x1, x2 = wx + 6 + navW + 8, wx + ww - 8
+		top = wy + 52
+		yBottom = wy + wh - 6
+		Tools.pos = UDim2.fromOffset(wx + ww - 10, wy + 6)
+		Tools.posOff = Tools.pos
+		Head.x, Head.y = x1, wy + 4
+		Head.frame.Position = UDim2.fromOffset(x1, wy + 4)
+		Head.frame.Visible = false
+		Shell.barTight = false
+	elseif mode == "sidebar" then
+		local sideTop = (barOn and bp == "left") and 40 or M
+		local sideBot = (barOn and bp == "bottom" and W < 1000) and 40 or M
+		local sw = 192
+		Dock.fullW, Dock.fullH, Dock.brandH = sw, H - sideTop - sideBot, 58
+		Dock.frame.AnchorPoint = Vector2.new(0, 0)
+		local o = Core.moved("dock")
+		Dock.posOn = UDim2.fromOffset(M, sideTop) + UDim2.fromOffset(0, o.Y.Offset)
+		Dock.posOff = UDim2.fromOffset(-sw - 40, sideTop)
+		Dock.layout(false)
+		x1 = M + sw + 12
 	else
-		Dock.frame.AnchorPoint = Vector2.new(0.5, 1)
-		Dock.posOn, Dock.posOff = UDim2.new(0.5, 0, 1, -bottomIn), UDim2.new(0.5, 0, 1, thick + 40)
-		yBottom = H - bottomIn - thick - 10
+		Dock.layout(false)
+		local thick = Dock.thick
+		local o = Core.moved("dock")
+		if dp == "left" then
+			Dock.frame.AnchorPoint = Vector2.new(0, 0.5)
+			Dock.posOn, Dock.posOff = UDim2.new(0, M, 0.5, 0) + o, UDim2.new(0, -thick - 40, 0.5, o.Y.Offset)
+			x1 = M + thick + 10
+		elseif dp == "right" then
+			Dock.frame.AnchorPoint = Vector2.new(1, 0.5)
+			Dock.posOn, Dock.posOff = UDim2.new(1, -M, 0.5, 0) + o, UDim2.new(1, thick + 40, 0.5, o.Y.Offset)
+			x2 = W - M - thick - 10
+		else
+			Dock.frame.AnchorPoint = Vector2.new(0.5, 1)
+			Dock.posOn, Dock.posOff = UDim2.new(0.5, 0, 1, -bottomIn) + o, UDim2.new(0.5, o.X.Offset, 1, thick + 40)
+			yBottom = H - bottomIn - thick - 10
+		end
 	end
 	if not Dock.moving then Dock.frame.Position = Dock.shown and Dock.posOn or Dock.posOff end
 	local narrow = (x2 - x1) < 610
 	Shell.narrow = narrow
 	Shell.x1, Shell.x2, Shell.barOn = x1, x2, barOn
-	local headY, toolsY = M, M
-	Shell.barTight = barOn and bp == "top" and (W / 2 - math.max(Pill.frame.Size.X.Offset, 340) / 2 - 10 - x1) < 230
-	if barOn then
-		if bp == "left" then
-			headY += 32
-		elseif bp == "right" then
-			toolsY += 32
-		elseif bp == "top" and (narrow or Shell.barTight) then
-			headY += 32
-			toolsY += 32
+	if mode ~= "window" then
+		Shell.barTight = barOn and bp == "top" and (W / 2 - math.max(Pill.frame.Size.X.Offset, 340) / 2 - 10 - x1) < 230
+		if barOn then
+			if bp == "left" and mode == "original" then
+				headY += 32
+			elseif bp == "right" then
+				toolsY += 32
+			elseif bp == "top" and (narrow or Shell.barTight) then
+				headY += 32
+				toolsY += 32
+			end
 		end
+		Head.x, Head.y = x1, headY
+		Head.frame.Position = UDim2.fromOffset(x1, headY)
+		if was == "window" and Panel.open then Head.frame.Visible = true end
+		Shell.fitHead()
+		Tools.pos = UDim2.fromOffset(x2, toolsY + (Head.h - 36) / 2)
+		Tools.posOff = UDim2.fromOffset(L.W - Core.stageX + math.max(Shell.toolsW or 0, 120) + 30, toolsY + (Head.h - 36) / 2)
+		top = math.max(headY + Head.h, toolsY + Head.h) + (Shell.compact and 8 or 10)
+	else
+		Shell.fitHead()
 	end
-	Head.x, Head.y = x1, headY
-	Head.frame.Position = UDim2.fromOffset(x1, headY)
-	Shell.fitHead()
-	Tools.pos = UDim2.fromOffset(x2, toolsY + (Head.h - 36) / 2)
-	Tools.posOff = UDim2.fromOffset(x2 + 60, toolsY + (Head.h - 36) / 2)
 	Tools.frame.Position = Panel.open and Tools.pos or Tools.posOff
-	Tools.frame.Size = UDim2.fromOffset(math.floor((x2 - x1) * 0.6), 36)
-	local top = math.max(headY + Head.h, toolsY + Head.h) + (Shell.compact and 8 or 10)
+	Tools.frame.Size = UDim2.fromOffset(math.floor((x2 - x1) * (mode == "window" and 0.7 or 0.6)), 36)
 	local st = Shell.stage
 	st.x, st.y, st.w, st.h = x1, top, x2 - x1, math.max(170, yBottom - top)
 	if narrow then
 		Shell.leftW, Shell.rightW = st.w, st.w
+	elseif mode == "window" then
+		Shell.leftW = math.clamp(math.floor(st.w * 0.46), 300, 400)
+		Shell.rightW = math.clamp(math.floor(st.w * 0.38), 270, 340)
 	else
 		Shell.leftW = math.clamp(math.floor(st.w * 0.4), 300, 390)
 		Shell.rightW = math.clamp(math.floor(st.w * 0.33), 270, 340)
@@ -5712,31 +7332,58 @@ function Shell.layout()
 	Aside.holder.Position = UDim2.fromOffset((narrow and st.x or (st.x + st.w - aw)) - 4, st.y - 4)
 	Aside.holder.Size = UDim2.fromOffset(aw + 8, st.h + 8)
 	Aside.card.Size = UDim2.fromOffset(aw, st.h)
-	Aside.card.Position = Aside.open and UDim2.fromOffset(4, 4) or UDim2.fromOffset(aw + 12, 4)
+	Aside.card.Position = Aside.open and UDim2.fromOffset(4, 4) or UDim2.fromOffset(Shell.offRight(Aside.holder), 4)
 	local rw = Shell.rightW
 	HomeSide.holder.Position = UDim2.fromOffset(st.x + st.w - rw - 4, st.y - 4)
 	HomeSide.holder.Size = UDim2.fromOffset(rw + 8, st.h + 8)
 	HomeSide.card.Size = UDim2.fromOffset(rw, st.h)
-	if narrow then HomeSide.slide(false, true) else HomeSide.card.Position = HomeSide.shown and UDim2.fromOffset(4, 4) or UDim2.fromOffset(rw + 12, 4) end
-	if dp == "left" then
+	if narrow then HomeSide.slide(false, true) else HomeSide.card.Position = HomeSide.shown and UDim2.fromOffset(4, 4) or UDim2.fromOffset(Shell.offRight(HomeSide.holder), 4) end
+	local eo = Core.moved("edge").Y.Offset
+	if dp == "left" and mode == "original" then
 		Edge.AnchorPoint = Vector2.new(0, 0.5)
-		Shell.edgeOn, Shell.edgeOff = UDim2.new(0, -12, 0.5, 0), UDim2.new(0, -50, 0.5, 0)
+		Shell.edgeOn, Shell.edgeOff = UDim2.new(0, -12, 0.5, eo), UDim2.new(0, -50, 0.5, eo)
 		UI.setIcon(edgeIcon, "chevron-right")
 		edgeIcon.Position = UDim2.fromOffset(25, 33)
 	else
 		Edge.AnchorPoint = Vector2.new(1, 0.5)
-		Shell.edgeOn, Shell.edgeOff = UDim2.new(1, 12, 0.5, 0), UDim2.new(1, 50, 0.5, 0)
+		Shell.edgeOn, Shell.edgeOff = UDim2.new(1, 12, 0.5, eo), UDim2.new(1, 50, 0.5, eo)
 		UI.setIcon(edgeIcon, "chevron-left")
 		edgeIcon.Position = UDim2.fromOffset(13, 33)
 	end
 	Edge.Visible = Core.mobile()
 	Edge.Position = (Shell.edgeShown and Core.mobile()) and Shell.edgeOn or Shell.edgeOff
+	if was ~= nil and was ~= mode then Shell.modeChanged(was, mode) end
 	Shell.applyPage(Panel.page and Pages[Panel.page], true)
 	HomeSide.sync(true)
 	Toast.place(true)
 	if Core.placeIsland then Core.placeIsland() end
-	-- a moved hub stays where you put it, but never ends up off the screen after a resize
+	if Core.cmdLayout then Core.cmdLayout() end
 	if Core.stageX ~= 0 or Core.stageY ~= 0 then Core.moveStage(Core.stageX, Core.stageY) end
+	if Core.Move and Core.Move.on then Core.Move.placeToast() end
+end
+
+function Shell.offLeft(holder, w)
+	return -(Core.stageX + holder.Position.X.Offset + (w or 0) + 40)
+end
+
+function Shell.offRight(holder)
+	return L.W - (Core.stageX + holder.Position.X.Offset) + 40
+end
+
+function Shell.modeChanged(was, mode)
+	if Panel.open then
+		P.card.Position = (Aside.open and Shell.narrow) and UDim2.fromOffset(Shell.offLeft(P.holder, P.card.Size.X.Offset), 4) or UDim2.fromOffset(4, 4)
+		Head.frame.Visible = mode ~= "window"
+		Head.frame.Position = UDim2.fromOffset(Head.x, Head.y)
+	end
+	for _, ref in pairs(Dock.items) do
+		if mode == "original" then
+			ref.label.TextColor3 = T.text
+		end
+	end
+	Dock.frame.Visible = Dock.shown and (mode ~= "window" or Panel.open)
+	Dock.frame.Position = Dock.shown and Dock.posOn or Dock.posOff
+	Core.stageScale.Scale = 1
 end
 
 function Shell.fitHead()
@@ -5757,6 +7404,7 @@ function Shell.fitHead()
 			end
 		end
 	end
+	Shell.toolsW = toolsW
 	if Shell.narrow then
 		Head.maxW = math.max(150, (x2 - x1) - toolsW - 6)
 	elseif Shell.barTight then
@@ -5774,6 +7422,10 @@ Core.fitHead = function() Shell.fitHead() end
 function Shell.pageW(pg)
 	local st = Shell.stage
 	if pg and pg.wide and not Shell.narrow then return st.w end
+	if Shell.mode == "window" and not Shell.narrow and not (pg and pg.bare) then
+		if Aside.open then return math.max(Shell.leftW, st.w - Shell.rightW - 10) end
+		return st.w
+	end
 	return Shell.leftW
 end
 
@@ -5798,8 +7450,10 @@ function Shell.applyPage(pg, instant)
 	UI.tween(P.card, t, { Size = UDim2.fromOffset(w, st.h) })
 	if Panel.open then
 		local hidden = Aside.open and Shell.narrow
-		if hidden then UI.tween(P.card, t, { Position = UDim2.fromOffset(-(w + 12), 4) }) end
+		if hidden then UI.tween(P.card, t, { Position = UDim2.fromOffset(Shell.offLeft(P.holder, w), 4) }) end
 	end
+	local clip = Shell.mode == "window"
+	P.holder.ClipsDescendants, Aside.holder.ClipsDescendants, HomeSide.holder.ClipsDescendants = clip, clip, clip
 	local inset, top = 10, 12
 	if bare then inset, top = 0, 0 end
 	UI.tween(P.content, t, { Position = UDim2.fromOffset(inset, top), Size = UDim2.fromOffset(w - inset * 2, st.h - top - (bare and 0 or 10)) })
@@ -5837,6 +7491,8 @@ function Toast.place(instant)
 		y = (barOn and S.barPos == "top") and 38 or 8
 	end
 	Core.toastList.VerticalAlignment = bottom and Enum.VerticalAlignment.Bottom or Enum.VerticalAlignment.Top
+	local mo = Core.moved("toasts")
+	x, y = x + mo.X.Offset, y + mo.Y.Offset
 	local key = math.floor(x) .. "," .. math.floor(y)
 	if key == Core.toastSpot then return end
 	local first = Core.toastSpot == nil
@@ -6086,15 +7742,33 @@ function Panel.show(id)
 	Panel.open = true
 	P.holder.Visible = true
 	Panel.switch(id, not wasVisible)
-	if not wasVisible then P.card.Position = UDim2.fromOffset(-(P.card.Size.X.Offset + 12), 4) end
-	-- left things come in from the left, right things from the right
-	if not Head.frame.Visible then Head.frame.Position = UDim2.fromOffset(Head.x - 40, Head.y) end
-	Head.frame.Visible = true
-	if not Tools.frame.Visible then Tools.frame.Position = Tools.posOff or Tools.frame.Position end
-	Tools.frame.Visible = true
-	if not (Aside.open and Shell.narrow) then UI.tween(P.card, 0.5, { Position = UDim2.fromOffset(4, 4) }) end
-	UI.tween(Head.frame, 0.45, { Position = UDim2.fromOffset(Head.x, Head.y) })
-	UI.tween(Tools.frame, 0.45, { Position = Tools.pos or Tools.frame.Position })
+	if Shell.mode == "window" then
+		local first = not Shell.win.Visible
+		Shell.win.Visible = true
+		Dock.frame.Visible = true
+		Dock.frame.Position = Dock.posOn or Dock.frame.Position
+		P.card.Position = (Aside.open and Shell.narrow) and UDim2.fromOffset(Shell.offLeft(P.holder, P.card.Size.X.Offset), 4) or UDim2.fromOffset(4, 4)
+		Head.frame.Visible = false
+		Tools.frame.Visible = true
+		Tools.frame.Position = Tools.pos or Tools.frame.Position
+		if Core.onHead then Core.onHead() end
+		if first and S.animations then
+			Core.stageScale.Scale = 0.94
+			UI.tween(Core.stageScale, 0.42, { Scale = 1 }, Enum.EasingStyle.Back)
+		else
+			Core.stageScale.Scale = 1
+		end
+	else
+		Core.stageScale.Scale = 1
+		if not wasVisible then P.card.Position = UDim2.fromOffset(Shell.offLeft(P.holder, P.card.Size.X.Offset), 4) end
+		if not Head.frame.Visible then Head.frame.Position = UDim2.fromOffset(-(Core.stageX + Head.frame.Size.X.Offset + 40), Head.y) end
+		Head.frame.Visible = true
+		if not Tools.frame.Visible then Tools.frame.Position = Tools.posOff or Tools.frame.Position end
+		Tools.frame.Visible = true
+		if not (Aside.open and Shell.narrow) then UI.tween(P.card, 0.5, { Position = UDim2.fromOffset(4, 4) }) end
+		UI.tween(Head.frame, 0.45, { Position = UDim2.fromOffset(Head.x, Head.y) })
+		UI.tween(Tools.frame, 0.45, { Position = Tools.pos or Tools.frame.Position })
+	end
 	HomeSide.sync()
 	Core.setNavSelected(id)
 	Toast.place()
@@ -6109,18 +7783,49 @@ function Panel.hide()
 	Panel.token += 1
 	local tk = Panel.token
 	Aside.hide()
-	local tw = UI.tween(P.card, 0.32, { Position = UDim2.fromOffset(-(P.card.Size.X.Offset + 12), 4) }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
-	UI.done(tw, function()
-		if Panel.token == tk then P.holder.Visible = false end
-	end)
-	local tw2 = UI.tween(Head.frame, 0.3, { Position = UDim2.fromOffset(-(Head.frame.Size.X.Offset + 24), Head.y) }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
-	UI.done(tw2, function()
-		if Panel.token == tk then Head.frame.Visible = false end
-	end)
-	local tw3 = UI.tween(Tools.frame, 0.3, { Position = Tools.posOff or Tools.frame.Position }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
-	UI.done(tw3, function()
-		if Panel.token == tk then Tools.frame.Visible = false end
-	end)
+	if Shell.mode == "window" then
+		local function done()
+			if Panel.token ~= tk or Panel.open then return end
+			P.holder.Visible = false
+			Shell.win.Visible = false
+			Tools.frame.Visible = false
+			Core.stageScale.Scale = 1
+		end
+		if S.animations then
+			local tw = UI.tween(Core.stageScale, 0.2, { Scale = 0.94 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+			UI.done(tw, done)
+			task.delay(0.35 / math.max(0.5, S.animSpeed), done)
+		else
+			done()
+		end
+		if Panel.mode ~= "closed" then
+			Panel.mode = "closed"
+			Dock.show(false)
+			Core.showEdge(not HUB.hidden)
+		end
+	else
+		local tw = UI.tween(P.card, 0.34, { Position = UDim2.fromOffset(Shell.offLeft(P.holder, P.card.Size.X.Offset), 4) }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+		UI.done(tw, function()
+			if Panel.token == tk then P.holder.Visible = false end
+		end)
+		local tw2 = UI.tween(Head.frame, 0.32, { Position = UDim2.fromOffset(-(Core.stageX + Head.frame.Size.X.Offset + 40), Head.y) }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+		UI.done(tw2, function()
+			if Panel.token == tk then Head.frame.Visible = false end
+		end)
+		local off = UDim2.fromOffset(L.W - Core.stageX + math.max(Shell.toolsW or 0, 120) + 30, (Tools.pos or Tools.frame.Position).Y.Offset)
+		Tools.posOff = off
+		local tw3 = UI.tween(Tools.frame, 0.32, { Position = off }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+		UI.done(tw3, function()
+			if Panel.token == tk then Tools.frame.Visible = false end
+		end)
+		task.delay(0.6 / math.max(0.5, S.animSpeed), function()
+			if Panel.token == tk and not Panel.open then
+				P.holder.Visible = false
+				Head.frame.Visible = false
+				Tools.frame.Visible = false
+			end
+		end)
+	end
 	HomeSide.sync()
 	Core.setNavSelected(nil)
 	Toast.place()
@@ -6154,7 +7859,7 @@ function Panel.nav(id)
 	if Panel.open and Panel.page == id then
 		if Aside.open then
 			Aside.hide()
-		else
+		elseif Shell.mode ~= "window" then
 			Panel.hide()
 		end
 		return
@@ -6321,6 +8026,176 @@ local function iconText(btn, iconName, text, color, size)
 	end
 	set(iconName, text, nil)
 	return set, ic, lab
+end
+
+Core.Move = { on = false, grips = {} }
+do
+	local MV = Core.Move
+	MV.ITEMS = {
+		{ key = "stage", name = "Hub" },
+		{ key = "dock", name = "Dock" },
+		{ key = "bar", name = "Top bar" },
+		{ key = "edge", name = "Side arrow" },
+		{ key = "toasts", name = "Notifications" },
+	}
+	function MV.frames(key)
+		if key == "stage" then
+			local out = {}
+			if Shell.mode == "window" then
+				if Shell.win.Visible then out[#out + 1] = Shell.winBar end
+			else
+				if Head.frame.Visible then out[#out + 1] = Head.frame end
+				if P.holder.Visible and Panel.open then out[#out + 1] = P.card end
+			end
+			return out
+		elseif key == "dock" then
+			if Shell.mode ~= "window" and Dock.frame.Visible then return { Dock.frame } end
+		elseif key == "bar" then
+			if Pill.frame.Visible then return { Pill.frame } end
+		elseif key == "edge" then
+			if Edge.Visible then return { Edge } end
+		elseif key == "toasts" then
+			return { MV.toastBox }
+		end
+		return {}
+	end
+	function MV.clear()
+		for _, g in ipairs(MV.grips) do
+			pcall(function() g:Destroy() end)
+		end
+		MV.grips = {}
+		if MV.toastBox then MV.toastBox.Visible = false end
+	end
+	function MV.grip(f, item)
+		local g = UI.button(f, { Name = "MoveGrip", BackgroundColor3 = accentColor(), BackgroundTransparency = 0.8, Size = UDim2.fromScale(1, 1), ZIndex = 4900, Text = "", AutoButtonColor = false })
+		local c = f:FindFirstChildOfClass("UICorner")
+		UI.corner(g, c and c.CornerRadius.Offset or 12)
+		UI.stroke(g, accentColor(), 2, 0.1)
+		local chip = UI.new("Frame", { BackgroundColor3 = T.ink, BackgroundTransparency = 0.15, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(math.ceil(textWidth(item.name, 11, FONT_B)) + 34, 22), ZIndex = 4901 }, g)
+		UI.corner(chip, 11)
+		UI.icon("move", 11, T.text, chip, { Position = UDim2.fromOffset(8, 5), ZIndex = 4902 })
+		UI.label(chip, { Text = item.name, Font = FONT_B, TextSize = 11, Position = UDim2.fromOffset(24, 0), Size = UDim2.new(1, -28, 1, 0), ZIndex = 4902 })
+		g.InputBegan:Connect(function(input)
+			if input.UserInputType ~= MOUSE1 and input.UserInputType ~= TOUCH then return end
+			if Drag.cur then return end
+			local sx, sy = Core.stageX, Core.stageY
+			local o = S.moved[item.key]
+			local ox, oy = 0, 0
+			if type(o) == "table" then ox, oy = tonumber(o[1]) or 0, tonumber(o[2]) or 0 end
+			Drag.start(input, function(_, delta)
+				local dx, dy = delta.X / L.scale, delta.Y / L.scale
+				if item.key == "stage" then
+					Core.moveStage(sx + dx, sy + dy)
+				else
+					local nx = math.clamp(ox + dx, -L.W * 0.9, L.W * 0.9)
+					local ny = math.clamp(oy + dy, -L.H * 0.9, L.H * 0.9)
+					if item.key == "edge" then nx = 0 end
+					S.moved[item.key] = { math.floor(nx + 0.5), math.floor(ny + 0.5) }
+					MV.apply(item.key)
+				end
+			end, function()
+				saveSettings()
+				Shell.layout()
+			end)
+		end)
+		MV.grips[#MV.grips + 1] = g
+	end
+	function MV.apply(key)
+		if key == "dock" then
+			Shell.layout()
+		elseif key == "bar" then
+			Shell.layout()
+		elseif key == "edge" then
+			Shell.layout()
+		elseif key == "toasts" then
+			Toast.place(true)
+			MV.placeToast()
+		end
+	end
+	function MV.placeToast()
+		local b = MV.toastBox
+		if b then
+			b.Position = Core.ToastBox.Position
+			b.Size = UDim2.fromOffset(260, 64)
+		end
+	end
+	function MV.refresh()
+		if not MV.on then return end
+		MV.clear()
+		if not MV.toastBox then
+			local b = UI.new("Frame", { Name = "ToastSpot", BackgroundColor3 = T.card, BackgroundTransparency = 0.2, Size = UDim2.fromOffset(260, 64), ZIndex = 4890, Visible = false }, Root)
+			UI.corner(b, 14)
+			UI.label(b, { Text = "Notifications show here", TextSize = 11, TextColor3 = T.sub, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.new(1, 0, 1, 0), ZIndex = 4891 })
+			MV.toastBox = b
+		end
+		MV.toastBox.Visible = true
+		MV.placeToast()
+		for _, item in ipairs(MV.ITEMS) do
+			for _, f in ipairs(MV.frames(item.key)) do
+				if f then MV.grip(f, item) end
+			end
+		end
+	end
+	function MV.start()
+		if MV.on then return end
+		MV.on = true
+		if not Panel.open then
+			if Panel.mode ~= "bar" then Panel.openBar() end
+			Panel.show(Panel.startId())
+		end
+		if not MV.bar then
+			local b = UI.new("Frame", { Name = "MoveBar", BackgroundColor3 = T.panel, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(390, 52), ZIndex = 5100, Active = true }, Root)
+			UI.corner(b, 26)
+			UI.stroke(b, T.stroke, 1, 0.2)
+			local ib = UI.new("Frame", { BackgroundTransparency = 0.78, Position = UDim2.fromOffset(9, 9), Size = UDim2.fromOffset(34, 34), ZIndex = 5101 }, b)
+			UI.corner(ib, 17)
+			UI.accent(ib, "BackgroundColor3")
+			UI.accent(UI.icon("move", 16, T.text, ib, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), ZIndex = 5102 }), "ImageColor3")
+			UI.label(b, { Text = "Drag things to move them", Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(52, 9), Size = UDim2.new(1, -210, 0, 17), TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 5101 })
+			UI.label(b, { Text = "It stays where you put it", TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(52, 26), Size = UDim2.new(1, -210, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 5101 })
+			local reset = UI.button(b, { Name = "Reset", BackgroundColor3 = T.card2, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -86, 0.5, 0), Size = UDim2.fromOffset(70, 34), ZIndex = 5101 })
+			UI.corner(reset, 17)
+			iconText(reset, nil, "Reset", T.text, 11)
+			UI.pressable(reset, 0.92)
+			reset.Activated:Connect(function() MV.reset() end)
+			local done = UI.button(b, { Name = "Done", AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -9, 0.5, 0), Size = UDim2.fromOffset(70, 34), ZIndex = 5101 })
+			UI.corner(done, 17)
+			UI.accent(done, "BackgroundColor3")
+			iconText(done, "check", "Done", T.ink, 11)
+			UI.pressable(done, 0.92)
+			done.Activated:Connect(function() MV.stop() end)
+			MV.bar = b
+			MV.barScale = UI.new("UIScale", {}, b)
+		end
+		MV.bar.Visible = true
+		local by = -20
+		if Core.shellMode == "original" and S.dockPos == "bottom" and Dock.shown then by = -(Dock.thick + 34) + math.min(0, Core.moved("dock").Y.Offset) end
+		if S.statsBar and S.barPos == "bottom" then by -= 30 end
+		MV.bar.AnchorPoint = Vector2.new(0.5, 1)
+		MV.bar.Position = UDim2.new(0.5, 0, 1, by)
+		MV.barScale.Scale = 0.9
+		UI.tween(MV.barScale, 0.35, { Scale = 1 }, Enum.EasingStyle.Back)
+		task.defer(MV.refresh)
+	end
+	function MV.stop()
+		if not MV.on then return end
+		MV.on = false
+		MV.clear()
+		if MV.bar then MV.bar.Visible = false end
+		saveSettings()
+		Shell.layout()
+		notify("Moved", "Everything stays where you put it", "ok", 2)
+	end
+	function MV.reset()
+		S.moved = {}
+		Core.moveStage(0, 0, true)
+		saveSettings()
+		Shell.layout()
+		notify("Moved", "Everything is back in its spot", "info", 2)
+	end
+	Bus.on("panel", function()
+		if MV.on then task.delay(0.55, MV.refresh) end
+	end)
 end
 
 local function emptyState(parent, icon, title, text, order, btnText, btnFn)
@@ -6866,8 +8741,14 @@ function Detail.refresh()
 	local pending = Runner.pending[e.path]
 	local active = Runner.isActive(rec)
 	local acc = accentColor()
-	if pending then
-		D.runSet("loader-circle", "Loading", T.ink)
+	local R = Core.Reanim
+	if R.busy == "stopping" and R.path == e.path then
+		setRunSpin(false)
+		D.runSet("loader-circle", "Stopping", T.sub)
+		UI.tween(D.run, 0.2, { BackgroundColor3 = T.card, BackgroundTransparency = 0 })
+		D.runStroke.Transparency = 1
+	elseif pending or (R.busy == "starting" and S.reanimSel == e.path) then
+		D.runSet("loader-circle", "Starting", T.ink)
 		UI.tween(D.run, 0.2, { BackgroundColor3 = acc, BackgroundTransparency = 0.35 })
 		D.runStroke.Transparency = 1
 		setRunSpin(true)
@@ -6879,22 +8760,22 @@ function Detail.refresh()
 		D.runStroke.Transparency = 0.6
 	elseif active then
 		setRunSpin(false)
-		D.runSet("check", "Running", T.green)
+		D.runSet("check", "Reanimated", T.green)
 		UI.tween(D.run, 0.2, { BackgroundColor3 = T.card, BackgroundTransparency = 0 })
 		D.runStroke.Color = T.green
 		D.runStroke.Transparency = 0.6
 	else
 		setRunSpin(false)
-		D.runSet("play-fill", "Run", T.ink)
+		D.runSet("person-standing", "Reanimate", T.ink)
 		UI.tween(D.run, 0.2, { BackgroundColor3 = acc, BackgroundTransparency = 0 })
 		D.runStroke.Transparency = 1
 	end
 	if active then
-		D.stopSet("square-fill", "Stop", T.red)
+		D.stopSet("square-fill", "Deanimate", T.red)
 		UI.tween(D.stop, 0.2, { BackgroundColor3 = T.red, BackgroundTransparency = 0.86 })
 		D.stopStroke.Transparency = 0.55
 	else
-		D.stopSet("square-fill", "Stop", T.dim)
+		D.stopSet("square-fill", "Deanimate", T.dim)
 		UI.tween(D.stop, 0.2, { BackgroundColor3 = T.card, BackgroundTransparency = 0 })
 		D.stopStroke.Transparency = 1
 	end
@@ -6948,7 +8829,7 @@ function Detail.tick()
 		D.status.Text = "Running for " .. Util.fmtTime(os.clock() - rec.startedAt)
 		D.status.TextColor3 = T.sub
 	elseif rec then
-		D.status.Text = "Stopped, tap Run to start it again"
+		D.status.Text = "Stopped, tap Reanimate to start it again"
 		D.status.TextColor3 = T.sub
 	else
 		D.status.Text = "Not running"
@@ -6958,12 +8839,26 @@ end
 
 D.run.Activated:Connect(function()
 	local e = Detail.entry
-	if not e or Runner.pending[e.path] then return end
-	Runner.run(e)
+	if not e or Runner.pending[e.path] or Core.Reanim.busy then return end
+	if Runner.isActive(SHARED.running[e.path]) then return end
+	local cur = Core.Reanim.current()
+	if cur and cur ~= e.path then
+		notify("Atsuko Script", "Deanimate " .. Core.Reanim.name(cur) .. " first", "info", 2.5)
+		return
+	end
+	Core.Reanim.start(e)
 end)
 D.stop.Activated:Connect(function()
 	local e = Detail.entry
-	if e and Runner.isRunning(e.path) then Runner.stop(e.path) end
+	if not e then return end
+	if Core.Reanim.current() == e.path then
+		Core.Reanim.stop()
+	elseif Runner.isRunning(e.path) then
+		Runner.stop(e.path)
+	end
+end)
+Bus.on("reanim", function()
+	if Detail.isOpen then Detail.refresh() end
 end)
 D.heart.Activated:Connect(function()
 	local e = Detail.entry
@@ -7082,7 +8977,7 @@ UI.corner(D.gear, 12)
 UI.pad(D.gear, 12, 12, 10, 12)
 UI.list(D.gear, 6)
 
-local Gear = { file = LOCAL_DIR .. "/cache/gear.json", VER = 2, ROWS = 6, db = nil, owned = {}, ownQ = {}, open = {}, wide = {}, sts = {}, keys = {}, creators = {}, loads = 0, fails = 0, nextLoad = 0 }
+local Gear = { file = LOCAL_DIR .. "/cache/gear.json", VER = 3, ROWS = 6, db = nil, owned = {}, ownQ = {}, open = {}, wide = {}, sts = {}, keys = {}, creators = {}, loads = 0, fails = 0, nextLoad = 0 }
 Gear.ACC = { [8] = true, [41] = true, [42] = true, [43] = true, [44] = true, [45] = true, [46] = true, [47] = true, [57] = true, [58] = true }
 Gear.MESH = { [4] = true, [40] = true }
 Gear.GUN = { "gun", "rifle", "cannon", "blaster", "pistol", "shotgun", "railgun", "sniper", "launcher", "rpg", "revolver", "minigun", "smg", "musket", "uzi", "glock", "carbine", "firearm", "hyperlaser" }
@@ -7090,7 +8985,7 @@ Gear.SWORD = { "sword", "katana", "blade", "scythe", "saber", "sabre", "dagger",
 Gear.GUNCTX = { "muzzle", "barrel", "laser", "bullet" }
 Gear.OTHER = { "head", "torso", "arm", "leg", "larm", "rarm", "lleg", "rleg", "screen", "rig", "hair", "panel", "wing", "body", "limb", "partname", "texture", "emote", "song", "sound", "snd", "anim", "decal", "image", "icon", "music", "audio" }
 Gear.PLAIN = { handle = true, meshpart = true, mesh = true, accessory = true, model = true, union = true, untitled = true, part = true, gun = true, sword = true, object = true }
-Gear.CATS = { { "gun", "Guns" }, { "sword", "Swords" }, { "other", "Other hats" } }
+Gear.CATS = { { "body", "Rig hats" }, { "gun", "Guns" }, { "sword", "Swords" }, { "other", "Other hats" } }
 
 function Gear.has(text, words)
 	for _, w in ipairs(words) do
@@ -7147,7 +9042,7 @@ function Gear.load()
 		if type(c) ~= "table" or now - (tonumber(c.w) or 0) > 86400 * 30 then data.info[k] = nil end
 	end
 	for k, c in pairs(data.scripts) do
-		if type(c) ~= "table" or now - (tonumber(c.w) or 0) > 86400 * 3 then data.scripts[k] = nil end
+		if type(c) ~= "table" or now - (tonumber(c.w) or 0) > 86400 * 7 then data.scripts[k] = nil end
 	end
 	Gear.db = data
 	return data
@@ -7181,7 +9076,7 @@ end
 function Gear.print(list)
 	local h = 0
 	for _, ent in ipairs(list) do
-		local s = ent.id .. (ent.hint or "-")
+		local s = ent.id .. (ent.hint or "-") .. (ent.parts and table.concat(ent.parts, ",") or "")
 		for i = 1, #s do
 			h = (h * 31 + string.byte(s, i)) % 2147483629
 		end
@@ -7239,6 +9134,158 @@ function Gear.scan(src, st)
 		list[i] = { id = id, hint = found[id] or nil }
 	end
 	return list
+end
+
+Gear.MEDIA = { "sound", "snd", "sfx", "song", "music", "audio", "anim", "emote", "decal", "image", "icon", "texture", "effect", "fx", "vfx", "particle", "taunt", "voice", "shirt", "pants" }
+Gear.WEAR = { "hat", "accessor", "item", "gear", "limb", "body" }
+Gear.PARTS = { head = "Head", torso = "Torso", larm = "Left Arm", rarm = "Right Arm", lleg = "Left Leg", rleg = "Right Leg", leftarm = "Left Arm", rightarm = "Right Arm", leftleg = "Left Leg", rightleg = "Right Leg", arm = "Arms", arms = "Arms", leg = "Legs", legs = "Legs", limb = "Arms + Legs", limbs = "Arms + Legs" }
+Gear.ORDER = { "Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg" }
+
+function Gear.words(name)
+	return string.lower((string.gsub(string.gsub(name, "(%l)(%u)", "%1 %2"), "[_%.]", " ")))
+end
+
+function Gear.tableHint(name)
+	local n = Gear.words(name)
+	if Gear.has(n, Gear.MEDIA) then return false end
+	local h = Gear.hint(n)
+	if h then return h end
+	if Gear.has(n, Gear.WEAR) then return "other" end
+	return nil
+end
+
+function Gear.strip(src)
+	src = string.gsub(src, "%-%-%[(=*)%[.-%]%1%]", "")
+	return (string.gsub(src, "%-%-[^\n]*", ""))
+end
+
+function Gear.addParts(it, parts)
+	if not parts then return end
+	it.parts = it.parts or {}
+	for _, p in ipairs(parts) do
+		if not table.find(it.parts, p) then it.parts[#it.parts + 1] = p end
+	end
+end
+
+function Gear.partText(parts)
+	local has, out = {}, {}
+	for _, p in ipairs(parts) do
+		has[p] = true
+	end
+	for _, p in ipairs({ "Head", "Torso" }) do
+		if has[p] then
+			out[#out + 1] = p
+			has[p] = nil
+		end
+	end
+	for _, pr in ipairs({ { "Left Arm", "Right Arm", "Arms" }, { "Left Leg", "Right Leg", "Legs" } }) do
+		if has[pr[1]] and has[pr[2]] then
+			out[#out + 1] = pr[3]
+			has[pr[1]], has[pr[2]] = nil, nil
+		end
+	end
+	for _, p in ipairs(Gear.ORDER) do
+		if has[p] then
+			out[#out + 1] = p
+			has[p] = nil
+		end
+	end
+	for _, p in ipairs(parts) do
+		if has[p] then
+			out[#out + 1] = p
+			has[p] = nil
+		end
+	end
+	return table.concat(out, " + ")
+end
+
+function Gear.declared(src, st)
+	src = Gear.strip(src)
+	local list, byId, names, nameSeen = {}, {}, {}, {}
+	local function add(id, hint, part, tex)
+		if #id > 17 or string.find(id, "^%d00000+$") then return end
+		local ent = byId[id]
+		if not ent then
+			if #list >= 400 then return end
+			ent = { id = id, hint = hint, tex = tex or nil }
+			byId[id] = ent
+			list[#list + 1] = ent
+		else
+			if hint == "body" and ent.hint ~= "body" then ent.hint = "body" end
+			if not tex then ent.tex = nil end
+		end
+		if part and ent.hint == "body" then Gear.addParts(ent, { part }) end
+	end
+	local function ids(text, hint)
+		for id in string.gmatch(text, "%f[%w%.]%d%d%d%d%d%d%d+%f[^%w%.]") do
+			add(id, hint)
+		end
+	end
+	local stack = {}
+	local function near()
+		for i = #stack, 1, -1 do
+			local h = stack[i].h
+			if h ~= nil then return h or nil end
+		end
+		return nil
+	end
+	local len, pos, step = #src, 1, 0
+	while pos <= len do
+		local e = string.find(src, "\n", pos, true) or (len + 1)
+		local s = string.find(src, "[^ \t\r\n]", pos)
+		if not s then break end
+		if s < e then
+			local indent = s - pos
+			while #stack > 0 and stack[#stack].i >= indent do
+				stack[#stack] = nil
+			end
+			local raw = string.sub(src, s, e - 1)
+			if string.find(raw, "%d%d%d%d%d%d%d") or string.find(raw, "[Aa]ccessory[Nn]ame") then
+				local body = string.gsub(raw, "{([^{}]*)}", function(g)
+					local lg = string.lower(g)
+					local mesh = string.match(lg, "meshid%s*=%s*[\"']?[%a:/]*(%d+)")
+					local tex = string.match(lg, "textureid%s*=%s*[\"']?[%a:/]*(%d+)")
+					local acc = string.match(g, "[Aa]ccessory[Nn]ame%s*=%s*[\"']([^\"']+)")
+					if not (mesh or tex or acc) then return nil end
+					local part = string.match(g, "[Pp]art[Nn]ame%s*=%s*[\"']([^\"']+)")
+					local hint = part and "body" or near()
+					if not hint then
+						if not acc then return nil end
+						hint = "other"
+					end
+					if mesh then
+						add(mesh, hint, part)
+					elseif tex then
+						add(tex, hint, part, true)
+					elseif not nameSeen[acc] then
+						nameSeen[acc] = true
+						names[#names + 1] = acc
+					end
+					return ""
+				end)
+				body = string.gsub(body, "%[%s*[\"'](%d%d%d%d%d%d%d+)[\"']%s*%]%s*=%s*{%s*[\"'](%a+)[\"']", function(id, word)
+					local part = Gear.PARTS[string.lower(word)]
+					if not part then return nil end
+					add(id, "body", part)
+					return ""
+				end)
+				body = string.gsub(body, "([%w_]+)%s*=%s*(%b{})", function(name, grp)
+					local th = Gear.tableHint(name)
+					if th == nil then return nil end
+					if th then ids(grp, th) end
+					return ""
+				end)
+				local h = near()
+				if h then ids(body, h) end
+			end
+			local open = string.match(raw, "^local%s+([%w_]+)%s*=%s*{%s*$") or string.match(raw, "^([%w_%.%[%]\"']+)%s*=%s*{%s*$") or string.match(raw, "^([%w_%.%[%]\"']+)%s*=%s*[%w_%.]+%(%s*{%s*$")
+			if open then stack[#stack + 1] = { i = indent, h = Gear.tableHint(open) } end
+		end
+		pos = e + 1
+		step += 1
+		if step % 96 == 0 and not Gear.breathe(st, step % 1536 == 0) then return nil end
+	end
+	return list, names
 end
 
 function Gear.info(id)
@@ -7401,7 +9448,7 @@ function Gear.pick(near, info)
 	return nil
 end
 
-function Gear.meshItem(id, info, canLoad)
+function Gear.meshItem(id, info, canLoad, tex)
 	local db = Gear.load()
 	local c = db.mesh[id]
 	if c then return c, db.guess[id] == true end
@@ -7415,7 +9462,7 @@ function Gear.meshItem(id, info, canLoad)
 	end
 	table.sort(near, function(a, b) return a.d < b.d end)
 	local found, guess, blind = Gear.pick(near, info), false, false
-	if not found and near[1] then
+	if not found and near[1] and not tex then
 		if not canLoad then return nil, false, true end
 		for i = 1, math.min(3, #near) do
 			local m = Gear.itemMesh(near[i].it.id)
@@ -7494,15 +9541,16 @@ function Gear.checkOwned(id)
 end
 
 function Gear.add(st, ent, info, itemId, guess)
-	if not itemId or st.items[itemId] then return end
+	if not itemId then return end
+	if st.items[itemId] then return Gear.addParts(st.items[itemId], ent.parts) end
 	local ii = Gear.load().info[itemId]
 	if not ii then
 		ii = Gear.info(itemId)
-		if st.items[itemId] then return end
+		if st.items[itemId] then return Gear.addParts(st.items[itemId], ent.parts) end
 	end
 	if ii.t == -1 then ii = info end
-	local cat = Gear.kind(ii.n) or (ent.hint ~= "other" and ent.hint) or "other"
-	st.items[itemId] = { id = itemId, name = ii.n or "?", cat = cat, price = ii.p, sale = ii.s, guess = guess or nil, mesh = (itemId ~= ent.id) and ent.id or nil }
+	local cat = (ent.hint == "body" and "body") or Gear.kind(ii.n) or (ent.hint ~= "other" and ent.hint) or "other"
+	st.items[itemId] = { id = itemId, name = ii.n or "?", cat = cat, price = ii.p, sale = ii.s, guess = guess or nil, mesh = (itemId ~= ent.id) and ent.id or nil, parts = ent.parts and table.clone(ent.parts) or nil }
 end
 
 function Gear.step(st, ent, canLoad)
@@ -7510,8 +9558,8 @@ function Gear.step(st, ent, canLoad)
 	if info.t == -1 then return end
 	if Gear.ACC[info.t] then
 		Gear.add(st, ent, info, ent.id, false)
-	elseif Gear.MESH[info.t] and (ent.hint or info.c ~= "Roblox") then
-		local r, g, later = Gear.meshItem(ent.id, info, canLoad)
+	elseif (Gear.MESH[info.t] or (ent.tex and info.t == 1)) and (ent.hint or info.c ~= "Roblox") then
+		local r, g, later = Gear.meshItem(ent.id, info, canLoad, ent.tex)
 		if r then
 			Gear.add(st, ent, info, r, g)
 		elseif later then
@@ -7575,7 +9623,7 @@ function Gear.keep(st)
 	local db = Gear.load()
 	local items, miss = {}, {}
 	for _, it in pairs(st.items) do
-		items[#items + 1] = { i = it.id, n = it.name, c = it.cat, p = it.price, s = it.sale == true, g = it.guess == true, m = it.mesh }
+		items[#items + 1] = { i = it.id, n = it.name, c = it.cat, p = it.price, s = it.sale == true, g = it.guess == true, m = it.mesh, pt = it.parts }
 	end
 	for _, m in ipairs(st.missed) do
 		miss[#miss + 1] = m.hint or ""
@@ -7588,7 +9636,7 @@ function Gear.restore(st, c)
 	st.otherDone = c.o == 1
 	for _, it in ipairs(type(c.items) == "table" and c.items or {}) do
 		if type(it) == "table" and type(it.i) == "string" then
-			st.items[it.i] = { id = it.i, name = it.n or "?", cat = it.c or "other", price = tonumber(it.p), sale = it.s == true, guess = it.g == true or nil, mesh = it.m }
+			st.items[it.i] = { id = it.i, name = it.n or "?", cat = it.c or "other", price = tonumber(it.p), sale = it.s == true, guess = it.g == true or nil, mesh = it.m, parts = type(it.pt) == "table" and it.pt or nil }
 		end
 	end
 	st.missed = {}
@@ -7600,13 +9648,21 @@ end
 function Gear.steps(st)
 	local db = Gear.load()
 	if not st.list then
-		local list = Gear.scan(st.src, st)
+		local list, names = Gear.declared(st.src, st)
 		if not list then return end
+		if #list > 0 then
+			st.declared = true
+			st.names = names
+			st.showOther = true
+		else
+			list = Gear.scan(st.src, st)
+			if not list then return end
+		end
 		st.list = list
 		st.count = #list
 		st.fp = Gear.print(list)
 		local c = db.scripts[st.e.path]
-		if type(c) == "table" and c.f == st.fp and c.v == Gear.VER and os.time() - (tonumber(c.w) or 0) < 86400 * 3 then
+		if type(c) == "table" and c.f == st.fp and c.v == Gear.VER and os.time() - (tonumber(c.w) or 0) < 86400 * 7 then
 			Gear.restore(st, c)
 			if st.otherDone or not st.showOther then
 				st.cached = true
@@ -7672,7 +9728,7 @@ function Gear.render()
 	Gear.queued = false
 	local st = Gear.cur
 	local box = D.gear
-	if not st or not box or Detail.entry ~= st.e then return end
+	if not st or not box or not Detail.entry or Detail.entry.path ~= st.e.path then return end
 	for _, c in ipairs(box:GetChildren()) do
 		if c:IsA("GuiObject") then c:Destroy() end
 	end
@@ -7688,7 +9744,7 @@ function Gear.render()
 	end
 	local names, meshes = Gear.worn()
 	local itemMesh = Gear.load().item
-	local groups = { gun = {}, sword = {}, other = {} }
+	local groups = { body = {}, gun = {}, sword = {}, other = {} }
 	for _, it in pairs(st.items) do
 		local wearing = names[string.lower(it.name)] == true or (it.mesh ~= nil and meshes[it.mesh] == true) or meshes[tostring(itemMesh[it.id] or "")] == true
 		it.state = wearing and "wear" or nil
@@ -7708,7 +9764,7 @@ function Gear.render()
 				if ra ~= rb then return ra < rb end
 				return a.name < b.name
 			end)
-			local color = (def[1] == "gun" and T.orange) or (def[1] == "sword" and T.blue) or T.violet
+			local color = (def[1] == "body" and T.yellow) or (def[1] == "gun" and T.orange) or (def[1] == "sword" and T.blue) or T.violet
 			local hb = UI.button(box, { Name = def[2], BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 20), LayoutOrder = order })
 			local dot = UI.new("Frame", { BackgroundColor3 = color, Size = UDim2.fromOffset(6, 6), Position = UDim2.fromOffset(0, 7) }, hb)
 			UI.corner(dot, 3)
@@ -7728,7 +9784,7 @@ function Gear.render()
 					UI.corner(row, 10)
 					local bw = it.state and 62 or 0
 					UI.label(row, { Text = it.name, Font = FONT_B, TextSize = 11, Position = UDim2.fromOffset(10, 5), Size = UDim2.new(1, -(20 + bw), 0, 15), TextTruncate = Enum.TextTruncate.AtEnd })
-					local sub = it.id
+					local sub = it.parts and #it.parts > 0 and (Gear.partText(it.parts) .. "  ·  " .. it.id) or it.id
 					if it.price and it.price > 0 then
 						sub ..= "  ·  " .. it.price .. " R$"
 					elseif it.sale == false then
@@ -7760,22 +9816,34 @@ function Gear.render()
 			end
 		end
 	end
-	local missedGuns, missedSwords = 0, 0
+	local missedGuns, missedSwords, missedRig = 0, 0, 0
 	for _, m in ipairs(st.missed) do
-		if m.hint == "gun" then
+		if m.hint == "body" then
+			missedRig += 1
+		elseif m.hint == "gun" then
 			missedGuns += 1
 		elseif m.hint == "sword" then
 			missedSwords += 1
 		end
 	end
 	local notes = {}
+	if missedRig > 0 then notes[#notes + 1] = missedRig .. (missedRig == 1 and " rig hat" or " rig hats") end
 	if missedGuns > 0 then notes[#notes + 1] = missedGuns .. (missedGuns == 1 and " gun" or " guns") end
 	if missedSwords > 0 then notes[#notes + 1] = missedSwords .. (missedSwords == 1 and " sword" or " swords") end
-	if st.showOther and #groups.other == 0 and not st.busy and any then
+	if st.showOther and #groups.other == 0 and not st.busy and any and not st.declared then
 		UI.label(box, { Text = "No other hats found.", TextSize = 10, TextColor3 = T.dim, Size = UDim2.new(1, 0, 0, 14), LayoutOrder = 997 })
 	end
+	if st.names and #st.names > 0 and not st.busy then
+		local shown = {}
+		for i = 1, math.min(#st.names, 3) do
+			shown[i] = string.match(st.names[i], "^Accessory%s*%((.+)%)$") or st.names[i]
+		end
+		local more = #st.names > 3 and (" and " .. (#st.names - 3) .. " more") or ""
+		UI.label(box, { Text = "Also picks hats by name: " .. table.concat(shown, ", ") .. more, TextSize = 10, TextColor3 = T.dim, TextWrapped = true, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 996 })
+	end
 	if #notes > 0 and not st.busy then
-		UI.label(box, { Text = "Couldn't find " .. table.concat(notes, " and ") .. " from this script in the shop. Tap an item to copy its link.", TextSize = 10, TextColor3 = T.dim, TextWrapped = true, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 999 })
+		local joined = #notes > 1 and (table.concat(notes, ", ", 1, #notes - 1) .. " and " .. notes[#notes]) or notes[1]
+		UI.label(box, { Text = "Couldn't find " .. joined .. " from this script in the shop. Tap an item to copy its link.", TextSize = 10, TextColor3 = T.dim, TextWrapped = true, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 999 })
 	elseif any and not st.busy then
 		UI.label(box, { Text = "Tap an item to copy its shop link.", TextSize = 10, TextColor3 = T.dim, Size = UDim2.new(1, 0, 0, 14), LayoutOrder = 999 })
 	end
@@ -7792,14 +9860,16 @@ function Gear.show(e)
 		if D.gear then D.gear.Visible = false end
 		return
 	end
-	local st = Gear.sts[e.path]
-	if not st or st.src ~= src or st.e ~= e then
-		st = { e = e, src = src, items = {}, missed = {}, done = 0, total = 0, busy = true, showOther = Gear.open[e.path] == true }
+	local path = e.path
+	local st = Gear.sts[path]
+	if not st or st.src ~= src then
+		st = { e = e, src = src, items = {}, missed = {}, done = 0, total = 0, busy = true, showOther = Gear.open[path] == true }
 		st.live = function()
-			return Gear.cur == st and HUB.alive and Detail.isOpen and Detail.entry == e
+			return HUB.alive and Gear.sts[path] == st
 		end
-		Gear.sts[e.path] = st
+		Gear.sts[path] = st
 	end
+	st.e = e
 	Gear.cur = st
 	Gear.render()
 	if st.busy and not st.running then task.spawn(Gear.work, st) end
@@ -8049,7 +10119,7 @@ do
 	UI.label(w, { Name = "User", Text = "@" .. LP.Name, TextSize = 11, TextColor3 = T.sub, Position = UDim2.fromOffset(88, 44), Size = UDim2.new(1, -100, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
 	local chip = UI.new("Frame", { Name = "Version", BackgroundColor3 = T.card2, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 16), Size = UDim2.fromOffset(56, 20) }, w)
 	UI.corner(chip, 10)
-	local ver = UI.label(chip, { Text = "v" .. HUB_VERSION, Font = FONT_B, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromScale(1, 1) })
+	local ver = UI.label(chip, { Text = Core.BETA .. HUB_VERSION, Font = FONT_B, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromScale(1, 1) })
 	UI.accent(ver, "TextColor3")
 	chip.Size = UDim2.fromOffset(math.ceil(textWidth(ver.Text, 10, FONT_B)) + 18, 20)
 	local cells = { { "friends", "Friends" }, { "online", "Online" }, { "days", "Days old" } }
@@ -8207,13 +10277,7 @@ do
 	Home.rejoin.Activated:Connect(Core.confirmTap(function(text, armed)
 		Home.rejoinSet(armed and "check" or "rotate-ccw", armed and "Sure?" or text, armed and T.yellow or T.text)
 	end, "Rejoin", function()
-		notify("Rejoining", "See you in a moment", "info")
-		local ok = pcall(function()
-			game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, game.JobId, LP)
-		end)
-		if not ok then
-			pcall(function() game:GetService("TeleportService"):Teleport(game.PlaceId, LP) end)
-		end
+		Core.rejoin()
 	end))
 
 	local fw = Home.widget(B, 104, 103, "Friends online", nil, "friends", "Friends online")
@@ -8841,7 +10905,7 @@ function Home.tick(fps, ping)
 	else
 		smart = "limited"
 	end
-	Home.footer.Text = Home.executor .. "  ·  Smart Stop " .. smart .. "  ·  v" .. HUB_VERSION
+	Home.footer.Text = Home.executor .. "  ·  Smart Stop " .. smart .. "  ·  " .. Core.BETA .. HUB_VERSION
 	Home.clockSet(Util.shortTime(S.clock24) .. "   " .. os.date("%a %d"))
 	for _, c in ipairs(Home.clocks or {}) do
 		if c.time.Parent then
@@ -8857,7 +10921,230 @@ Home.onShow = function()
 	if os.clock() - Home.friendsAt > 90 then Home.loadFriends() end
 end
 
-local Scripts = newPage({ id = "scripts", title = "Atsuko Script", icon = "layout-list", tabs = { "All", "Favorites", "Recent" }, viewY = 40 })
+Core.libs = {}
+function Core.loadLib(name, key)
+	local have = GENV[key]
+	if type(have) == "table" then return have end
+	local slot = Core.libs[name]
+	if slot and slot.busy then
+		local t0 = os.clock()
+		while slot.busy and os.clock() - t0 < 25 do
+			task.wait(0.1)
+		end
+		return type(GENV[key]) == "table" and GENV[key] or nil, slot.err
+	end
+	slot = { busy = true }
+	Core.libs[name] = slot
+	local cache = LOCAL_DIR .. "/cache/" .. name .. ".lua"
+	local ok, src = Net.get(HOME_REPO .. HUB_DIR .. "/" .. name .. ".lua?t=" .. os.time())
+	if ok and type(src) == "string" and #src > 200 and string.find(src, key, 1, true) then
+		FS.write(cache, src)
+	else
+		src = FS.read(cache)
+	end
+	local out, err = nil, nil
+	if type(src) ~= "string" then
+		err = "couldn't download " .. name
+	elseif not X.loadstring then
+		err = "your executor has no loadstring"
+	else
+		local f, cerr = X.loadstring(src, "=" .. name)
+		if type(f) ~= "function" then
+			err = Util.firstLine(cerr or "?")
+		else
+			local okR, r = pcall(f)
+			if okR and type(r) == "table" then
+				out = r
+			else
+				err = Util.firstLine(tostring(r))
+			end
+		end
+	end
+	if out and GENV[key] ~= out then GENV[key] = out end
+	slot.busy, slot.err = false, err
+	if err then Log.add("error", "Hub", name .. ": " .. err) end
+	return out, err
+end
+
+Core.Reanim = { path = nil, busy = nil }
+do
+	local R = Core.Reanim
+	function R.entry(path)
+		if type(path) ~= "string" or path == "" then return nil end
+		return Repo.byPath[path] or Repo.remote[path]
+	end
+	function R.active(path)
+		return path ~= nil and Runner.isActive(SHARED.running[path]) and not Runner.pending[path]
+	end
+	function R.current()
+		if R.path and (Runner.isActive(SHARED.running[R.path]) or Runner.pending[R.path]) then return R.path end
+		R.path = nil
+		for path, rec in pairs(SHARED.running) do
+			if Repo.byPath[path] and Runner.isActive(rec) then
+				R.path = path
+				return path
+			end
+		end
+		return nil
+	end
+	function R.name(path)
+		local e = R.entry(path)
+		if e then return e.name end
+		local rec = path and SHARED.running[path]
+		return rec and rec.name or "?"
+	end
+	function R.select(path)
+		if S.reanimSel == path then return end
+		S.reanimSel = path
+		saveSettings()
+		Bus.fire("reanim")
+	end
+	function R.lumen()
+		local L = GENV.LumenReanim
+		if type(L) == "table" and type(L.isReanimated) == "function" then return L end
+		return nil
+	end
+	function R.on()
+		local L = R.lumen()
+		local ok, on = false, false
+		if L then ok, on = pcall(L.isReanimated) end
+		return ok and on == true
+	end
+	local function waitFor(f, limit)
+		local t0 = os.clock()
+		while HUB.alive and os.clock() - t0 < limit do
+			if f() then return true end
+			task.wait(0.1)
+		end
+		return false
+	end
+	function R.stopNow(path)
+		Runner.stop(path, true)
+		waitFor(function() return not Runner.isActive(SHARED.running[path]) end, 6)
+		if R.on() then
+			waitFor(function() return not R.on() end, 2.5)
+			local L = R.lumen()
+			if L and R.on() then pcall(L.stopreanimate) end
+		end
+	end
+	function R.start(e)
+		if R.busy or not e then return end
+		R.select(e.path)
+		R.busy = "starting"
+		Bus.fire("reanim")
+		task.spawn(function()
+			local cur = R.current()
+			if cur and cur ~= e.path then R.stopNow(cur) end
+			if not R.lumen() then Core.loadLib("Reanimate", "LumenReanim") end
+			if not R.active(e.path) then
+				Runner.run(e)
+				waitFor(function()
+					return not Runner.pending[e.path]
+				end, 40)
+				task.wait(0.9)
+			end
+			if R.active(e.path) then
+				R.path = e.path
+			end
+			R.busy = nil
+			Bus.fire("reanim")
+		end)
+	end
+	function R.stop()
+		if R.busy then return end
+		local path = R.current()
+		if not path then
+			if R.on() then pcall(R.lumen().stopreanimate) end
+			Bus.fire("reanim")
+			return
+		end
+		R.busy = "stopping"
+		Bus.fire("reanim")
+		task.spawn(function()
+			local name = R.name(path)
+			R.stopNow(path)
+			task.wait(0.4)
+			R.path = nil
+			R.busy = nil
+			notify(name, "Deanimated", "info", 2)
+			Bus.fire("reanim")
+		end)
+	end
+	function R.toggle(e)
+		if R.busy then return end
+		local cur = R.current()
+		if cur and (e == nil or cur == e.path) then
+			R.stop()
+			return
+		end
+		e = e or R.entry(S.reanimSel)
+		if not e then
+			notify("Atsuko Script", "Pick a script first", "info", 2)
+			return
+		end
+		if cur then
+			notify("Atsuko Script", "Deanimate " .. R.name(cur) .. " first", "info", 2.5)
+			return
+		end
+		R.start(e)
+	end
+	Bus.on("running", function()
+		Bus.fire("reanim")
+	end)
+end
+
+function Core.queueReload()
+	local q = X.queueteleport
+	if not q then return false end
+	local page = (Panel.open and Panel.page) or ""
+	local src = string.format('repeat task.wait() until game:IsLoaded()\nlocal g = (getgenv and getgenv()) or _G\ng.__AtsukoHubResume = %q\npcall(function()\n\tloadstring(game:HttpGet(%q))()\nend)', tostring(page), HOME_REPO .. HUB_DIR .. "/AtsukoHub.lua")
+	return (pcall(q, src))
+end
+
+function Core.rejoin()
+	local TS = game:GetService("TeleportService")
+	local queued = Core.queueReload()
+	notify("Rejoining", queued and "See you in a moment, the hub opens again once you're back" or "See you in a moment", "info")
+	if Core.tpFail then Core.tpFail:Disconnect() end
+	Core.tpFail = TS.TeleportInitFailed:Connect(function(who)
+		if who ~= LP then return end
+		if Core.tpFail then
+			Core.tpFail:Disconnect()
+			Core.tpFail = nil
+		end
+		notify("Rejoin", "Couldn't get back into this server, joining a new one", "info")
+		pcall(function() TS:Teleport(game.PlaceId, LP) end)
+	end)
+	task.delay(30, function()
+		if Core.tpFail then
+			Core.tpFail:Disconnect()
+			Core.tpFail = nil
+		end
+	end)
+	local alone = #Players:GetPlayers() <= 1
+	local ok = pcall(function()
+		if alone or game.JobId == "" then
+			TS:Teleport(game.PlaceId, LP)
+		else
+			TS:TeleportToPlaceInstance(game.PlaceId, game.JobId, LP)
+		end
+	end)
+	if not ok then pcall(function() TS:Teleport(game.PlaceId, LP) end) end
+end
+
+function Core.teleportTo(jobId, title, text)
+	local TS = game:GetService("TeleportService")
+	local queued = Core.queueReload()
+	notify(title, text .. (queued and "  ·  the hub comes with you" or ""), "info")
+	local ok = pcall(function() TS:TeleportToPlaceInstance(game.PlaceId, jobId, LP) end)
+	if not ok then notify(title, "Couldn't join that server, try again", "error") end
+end
+
+GENV.AtsukoHubRejoin = function()
+	return Core.queueReload()
+end
+
+local Scripts = newPage({ id = "scripts", title = "Atsuko Script", icon = "person-standing", tabs = { "All", "Favorites", "Recent" }, viewY = 40 })
 Scripts.head = function()
 	local n = #Repo.shown()
 	if n > 0 then return "Atsuko Script", n .. (n == 1 and " script ready to run" or " scripts ready to run") end
@@ -8914,38 +11201,55 @@ do
 end
 
 function Core.scriptRow(sf, e, order, viewIndex)
-	local row = UI.button(sf, { Name = "Row", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 50), LayoutOrder = order })
-	UI.corner(row, 12)
-	local box = UI.new("Frame", { BackgroundTransparency = 0.82, Size = UDim2.fromOffset(34, 34), Position = UDim2.fromOffset(8, 8) }, row)
-	UI.corner(box, 10)
+	local sel = S.reanimSel == e.path
+	local row = UI.button(sf, { Name = "Row", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 52), LayoutOrder = order })
+	UI.corner(row, 14)
+	local st = UI.stroke(row, accentColor(), 1.5, sel and 0.15 or 1)
+	UI.accent(st, "Color")
+	local box = UI.new("Frame", { BackgroundTransparency = sel and 0.55 or 0.82, Size = UDim2.fromOffset(36, 36), Position = UDim2.fromOffset(8, 8) }, row)
+	UI.corner(box, 11)
 	UI.accent(box, "BackgroundColor3")
-	local ic = UI.icon("file-code", 17, T.text, box, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+	local ic = UI.icon(sel and "person-standing" or "file-code", 17, T.text, box, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
 	UI.accent(ic, "ImageColor3")
-	UI.label(row, { Text = e.name, Font = FONT_B, TextSize = 13, Position = UDim2.fromOffset(52, 9), Size = UDim2.new(1, -112, 0, 17), TextTruncate = Enum.TextTruncate.AtEnd })
-	UI.label(row, {
-		Text = e.category .. (e.size > 0 and ("  ·  " .. Util.fmtSize(e.size)) or ""),
+	UI.label(row, { Text = e.name, Font = FONT_B, TextSize = 13, Position = UDim2.fromOffset(54, 9), Size = UDim2.new(1, -124, 0, 17), TextTruncate = Enum.TextTruncate.AtEnd })
+	local sub = UI.label(row, {
+		Name = "Sub",
+		Text = sel and "Selected  ·  " .. e.category or (e.category .. (e.size > 0 and ("  ·  " .. Util.fmtSize(e.size)) or "")),
 		TextSize = 11,
-		TextColor3 = T.sub,
-		Position = UDim2.fromOffset(52, 27),
-		Size = UDim2.new(1, -112, 0, 14),
+		TextColor3 = sel and T.text or T.sub,
+		Position = UDim2.fromOffset(54, 27),
+		Size = UDim2.new(1, -124, 0, 14),
 		TextTruncate = Enum.TextTruncate.AtEnd,
 	})
-	local heart = UI.icon("heart-fill", 13, T.text, row, { Position = UDim2.new(1, -58, 0.5, -6), Visible = S.favorites[e.path] == true })
+	local heart = UI.icon("heart-fill", 13, T.text, row, { Position = UDim2.new(1, -78, 0.5, -6), Visible = S.favorites[e.path] == true })
 	UI.accent(heart, "ImageColor3")
-	local dot = UI.new("Frame", { BackgroundColor3 = T.green, Size = UDim2.fromOffset(8, 8), Position = UDim2.new(1, -40, 0.5, -4), Visible = false }, row)
+	local dot = UI.new("Frame", { BackgroundColor3 = T.green, Size = UDim2.fromOffset(8, 8), Position = UDim2.new(1, -58, 0.5, -4), Visible = false }, row)
 	UI.corner(dot, 4)
-	UI.icon("chevron-right", 14, T.dim, row, { Position = UDim2.new(1, -24, 0.5, -7) })
+	local info = UI.button(row, { Name = "Info", BackgroundColor3 = T.card2, BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0), Size = UDim2.fromOffset(34, 34) })
+	UI.corner(info, 17)
+	UI.icon("chevron-right", 14, T.sub, info, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+	UI.pressable(info, 0.86)
+	UI.onHover(info, function(on)
+		UI.tween(info, 0.15, { BackgroundTransparency = on and 0.2 or 1 })
+	end)
+	info.Activated:Connect(function() Detail.open(e) end)
 	UI.pressable(row, 0.97)
 	UI.onHover(row, function(on)
 		UI.tween(row, 0.15, { BackgroundColor3 = on and T.card2 or T.card })
 	end)
-	row.Activated:Connect(function() Detail.open(e) end)
+	row.Activated:Connect(function()
+		if S.reanimSel == e.path then
+			Detail.open(e)
+		else
+			Core.Reanim.select(e.path)
+		end
+	end)
 	local list = Scripts.refs[e.path]
 	if not list then
 		list = {}
 		Scripts.refs[e.path] = list
 	end
-	list[#list + 1] = { view = viewIndex, dot = dot, heart = heart }
+	list[#list + 1] = { view = viewIndex, dot = dot, heart = heart, stroke = st, box = box, icon = ic, sub = sub, e = e }
 end
 
 function Scripts.updateStatus()
@@ -8960,13 +11264,477 @@ function Scripts.updateStatus()
 			col = T.dim
 		end
 		local fav = S.favorites[path] == true
+		local sel = S.reanimSel == path
 		for _, r in ipairs(list) do
 			r.dot.Visible = col ~= nil
 			if col then r.dot.BackgroundColor3 = col end
 			r.heart.Visible = fav
+			if r.sel ~= sel then
+				r.sel = sel
+				UI.tween(r.stroke, 0.2, { Transparency = sel and 0.15 or 1 })
+				UI.tween(r.box, 0.2, { BackgroundTransparency = sel and 0.55 or 0.82 })
+				UI.setIcon(r.icon, sel and "person-standing" or "file-code")
+				r.sub.Text = sel and ("Selected  ·  " .. r.e.category) or (r.e.category .. (r.e.size > 0 and ("  ·  " .. Util.fmtSize(r.e.size)) or ""))
+				r.sub.TextColor3 = sel and T.text or T.sub
+			end
 		end
 	end
 end
+
+function Core.actionBar(parent, icon)
+	local bar = UI.new("Frame", { Name = "ActionBar", BackgroundColor3 = T.card, AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.new(1, 0, 0, 58), ZIndex = 2 }, parent)
+	UI.corner(bar, 16)
+	local st = UI.stroke(bar, accentColor(), 1, 0.6)
+	UI.accent(st, "Color")
+	local glow = UI.new("Frame", { Name = "Glow", BorderSizePixel = 0, Size = UDim2.fromScale(1, 1), ZIndex = 2 }, bar)
+	UI.corner(glow, 16)
+	UI.accent(glow, "BackgroundColor3")
+	UI.new("UIGradient", { Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.84), NumberSequenceKeypoint.new(0.6, 0.96), NumberSequenceKeypoint.new(1, 1) }) }, glow)
+	local ib = UI.new("Frame", { Name = "Icon", BackgroundTransparency = 0.78, Position = UDim2.fromOffset(10, 10), Size = UDim2.fromOffset(38, 38), ZIndex = 3 }, bar)
+	UI.corner(ib, 12)
+	UI.accent(ib, "BackgroundColor3")
+	local ic = UI.icon(icon, 18, T.text, ib, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), ZIndex = 4 })
+	UI.accent(ic, "ImageColor3")
+	local title = UI.label(bar, { Name = "Title", Font = FONT_B, TextSize = 13, Position = UDim2.fromOffset(58, 10), Size = UDim2.new(1, -196, 0, 18), TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 3 })
+	local sub = UI.label(bar, { Name = "Sub", TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(58, 29), Size = UDim2.new(1, -196, 0, 15), TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 3 })
+	return bar, title, sub, ic
+end
+
+function Core.barButton(bar, w, x)
+	local b = UI.button(bar, { Name = "Btn", AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, x, 0.5, 0), Size = UDim2.fromOffset(w, 36), ZIndex = 3 })
+	UI.corner(b, 18)
+	local st = UI.stroke(b, T.red, 1, 1)
+	local t = UI.label(b, { Font = FONT_B, TextSize = 12, TextColor3 = T.ink, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromScale(1, 1), ZIndex = 4 })
+	UI.pressable(b, 0.94)
+	return b, t, st
+end
+
+do
+	for _, v in ipairs(Scripts.views) do
+		v.Size = UDim2.new(1, 0, 1, -106)
+	end
+	local bar, title, sub = Core.actionBar(Scripts.frame, "person-standing")
+	Scripts.rBar, Scripts.rTitle, Scripts.rSub = bar, title, sub
+	Scripts.rBtn, Scripts.rText, Scripts.rStroke = Core.barButton(bar, 124, -10)
+	Scripts.rBtn.Activated:Connect(function()
+		Core.Reanim.toggle()
+	end)
+	local ab = UI.button(bar, { Name = "Align", BackgroundColor3 = T.card2, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -142, 0.5, 0), Size = UDim2.fromOffset(36, 36), ZIndex = 3, Visible = false })
+	UI.corner(ab, 18)
+	UI.icon("crosshair", 15, T.text, ab, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), ZIndex = 4 })
+	UI.pressable(ab, 0.9)
+	ab.Activated:Connect(function()
+		if Core.Align then Core.Align.toggle() end
+	end)
+	Scripts.aBtn = ab
+end
+
+function Scripts.paintReanim()
+	if not Scripts.rBar then return end
+	local R = Core.Reanim
+	local cur = R.current()
+	local sel = R.entry(S.reanimSel)
+	Scripts.rTitle.Text = "Running: " .. (cur and R.name(cur) or "NONE")
+	local canAlign = cur ~= nil and not R.busy and Core.Align ~= nil and Core.Align.api() ~= nil
+	if Scripts.aBtn then
+		Scripts.aBtn.Visible = canAlign
+		Scripts.rTitle.Size = UDim2.new(1, canAlign and -240 or -196, 0, 18)
+		Scripts.rSub.Size = UDim2.new(1, canAlign and -240 or -196, 0, 15)
+	end
+	local b, t, st = Scripts.rBtn, Scripts.rText, Scripts.rStroke
+	local acc = accentColor()
+	if R.busy == "starting" then
+		t.Text, t.TextColor3 = "Starting...", T.ink
+		UI.tween(b, 0.2, { BackgroundColor3 = acc, BackgroundTransparency = 0.4 })
+		st.Transparency = 1
+		Scripts.rSub.Text = "Getting " .. (sel and sel.name or "it") .. " ready..."
+	elseif R.busy == "stopping" then
+		t.Text, t.TextColor3 = "Stopping...", T.red
+		UI.tween(b, 0.2, { BackgroundColor3 = T.card2, BackgroundTransparency = 0 })
+		st.Transparency = 0.5
+		Scripts.rSub.Text = "Putting your character back..."
+	elseif cur then
+		t.Text, t.TextColor3 = "* Deanimate *", T.red
+		UI.tween(b, 0.2, { BackgroundColor3 = T.card2, BackgroundTransparency = 0 })
+		st.Transparency = 0.45
+		if sel and sel.path ~= cur then
+			Scripts.rSub.Text = "Selected: " .. sel.name .. "  ·  deanimate to switch"
+		else
+			Scripts.rSub.Text = canAlign and "Round button: align guns" or "Emotes work now, open the Emotes tab"
+		end
+	else
+		t.Text, t.TextColor3 = "* Reanimate *", T.ink
+		UI.tween(b, 0.2, { BackgroundColor3 = acc, BackgroundTransparency = sel and 0 or 0.55 })
+		st.Transparency = 1
+		Scripts.rSub.Text = sel and ("Selected: " .. sel.name) or "Pick a script, then Reanimate"
+	end
+end
+
+
+Core.Align = { cur = 1, mi = 2, ti = 2, undo = {}, hold = 0 }
+do
+	local A = Core.Align
+	A.MOVE = { 0.01, 0.05, 0.1, 0.25, 0.5, 1 }
+	A.TURN = { 1, 5, 15, 45, 90 }
+	A.LABEL = { "Move X", "Move Y", "Move Z", "Turn X", "Turn Y", "Turn Z" }
+
+	function A.api()
+		local a = GENV.AtsukoAlign
+		if type(a) ~= "table" or type(a.get) ~= "function" or type(a.set) ~= "function" then return nil end
+		local ok, alive = pcall(function() return a.alive == nil or a.alive() end)
+		if not ok or not alive then return nil end
+		return a
+	end
+
+	function A.fmt(n, rot)
+		n = tonumber(n) or 0
+		if rot then
+			local s = string.format("%.1f", n)
+			return s == "-0.0" and "0.0" or s
+		end
+		local s = string.format("%.3f", n)
+		s = string.gsub(s, "0+$", "")
+		s = string.gsub(s, "%.$", "")
+		return s == "-0" and "0" or s
+	end
+
+	function A.toggle()
+		if Win.isOpen("align") then
+			Win.close("align")
+		else
+			A.open()
+		end
+	end
+
+	function A.open()
+		local a = A.api()
+		if not a then
+			notify("Alignment", "Reanimate Studio Dummy or Snake Banisher first, then tap Align", "info", 3)
+			return nil
+		end
+		return Win.show("align", {
+			title = "Alignment",
+			icon = "crosshair",
+			sub = tostring(a.title or "Script"),
+			w = 300,
+			h = math.max(260, math.min(480, L.H - 130)),
+			minW = 262,
+			minH = 200,
+			maxW = 440,
+			maxH = 760,
+			build = function(w, body) A.build(w, body, a) end,
+			onClose = function()
+				pcall(function() a.open = false end)
+				if A.unwatch then pcall(A.unwatch) end
+				A.unwatch = nil
+				A.ui = nil
+				Bus.fire("align")
+			end,
+		})
+	end
+
+	function A.say(text, color, long)
+		local u = A.ui
+		if not u then return end
+		A.sayTok = (A.sayTok or 0) + 1
+		local my = A.sayTok
+		u.status.Text = text
+		u.status.TextColor3 = color or T.sub
+		task.delay(long and 7 or 3, function()
+			if A.sayTok == my and A.ui == u and u.status.Parent then
+				u.status.Text = u.hint
+				u.status.TextColor3 = T.dim
+			end
+		end)
+	end
+
+	function A.paint()
+		local u, a = A.ui, A.api()
+		if not (u and a) then return end
+		local v = a.get(A.cur)
+		if v then
+			for k = 1, 6 do
+				local box = u.rows[k].box
+				if not box:IsFocused() then box.Text = A.fmt(v[k], k > 3) end
+			end
+		end
+		u.saveSet("save", a.dirty and "Save *" or "Save", a.dirty and T.green or T.text)
+		u.undoSet("undo-2", #A.undo > 0 and ("Undo (" .. #A.undo .. ")") or "Undo", T.text)
+		u.part.render(true)
+		if u.opts then
+			for _, o in ipairs(u.opts) do
+				o.render(true)
+			end
+		end
+		if u.speed then u.speed.render(true) end
+	end
+
+	function A.pushUndo()
+		local a = A.api()
+		local v = a and a.get(A.cur)
+		if not v then return end
+		A.undo[#A.undo + 1] = { A.cur, v }
+		if #A.undo > 40 then table.remove(A.undo, 1) end
+	end
+
+	function A.step(k, dir)
+		local a = A.api()
+		local v = a and a.get(A.cur)
+		if not v then return end
+		local d = k > 3 and A.TURN[A.ti] or A.MOVE[A.mi]
+		a.set(A.cur, k, v[k] + d * dir)
+		A.paint()
+	end
+
+	function A.bindHold(b, fn)
+		b.InputBegan:Connect(function(input)
+			local t = input.UserInputType
+			if t ~= MOUSE1 and t ~= TOUCH then return end
+			A.hold += 1
+			local my = A.hold
+			local touch = t == TOUCH
+			local start = input.Position
+			local p = { fn = fn, touch = touch, fired = false }
+			function p.moved()
+				return touch and (input.Position - start).Magnitude > 12
+			end
+			A.press = p
+			if not touch then
+				A.pushUndo()
+				p.fired = true
+				fn()
+			end
+			task.delay(0.4, function()
+				if A.hold ~= my or p.moved() then return end
+				if not p.fired then
+					A.pushUndo()
+					p.fired = true
+				end
+				while A.hold == my and HUB.alive and A.ui and not p.moved() do
+					fn()
+					task.wait(0.05)
+				end
+			end)
+		end)
+	end
+
+	function A.row(parent, order, k)
+		local row = UI.new("Frame", { Name = "Row" .. k, BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 40), LayoutOrder = order }, parent)
+		UI.corner(row, 12)
+		local lab = UI.label(row, { Text = A.LABEL[k], Font = FONT_B, TextSize = 11, TextColor3 = k > 3 and T.yellow or accentColor(), Position = UDim2.fromOffset(12, 0), Size = UDim2.new(0, 54, 1, 0) })
+		if k <= 3 then UI.accent(lab, "TextColor3") end
+		local function btn(name, icon, ax, x)
+			local b = UI.button(row, { Name = name, BackgroundColor3 = T.card2, AnchorPoint = Vector2.new(ax, 0.5), Position = UDim2.new(ax, x, 0.5, 0), Size = UDim2.fromOffset(32, 28) })
+			UI.corner(b, 10)
+			UI.icon(icon, 13, T.text, b, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+			UI.pressable(b, 0.88)
+			return b
+		end
+		local minus = btn("Minus", "minus", 0, 68)
+		local plus = btn("Plus", "plus", 1, -8)
+		local box = UI.new("TextBox", {
+			Name = "Value",
+			BackgroundColor3 = T.card2,
+			Position = UDim2.new(0, 106, 0.5, -14),
+			Size = UDim2.new(1, -152, 0, 28),
+			Font = FONT_B,
+			TextSize = 12,
+			TextColor3 = T.text,
+			Text = "0",
+			PlaceholderText = "0",
+			ClearTextOnFocus = false,
+			TextXAlignment = Enum.TextXAlignment.Center,
+		}, row)
+		UI.corner(box, 10)
+		local st = UI.stroke(box, T.stroke, 1, 1)
+		box.Focused:Connect(function() UI.tween(st, 0.2, { Transparency = 0.2 }) end)
+		box.FocusLost:Connect(function()
+			UI.tween(st, 0.2, { Transparency = 1 })
+			local a = A.api()
+			local v = a and a.get(A.cur)
+			if not v then return end
+			local n = tonumber((string.gsub(box.Text, "[^%d%.%-]", "")))
+			if n and n == n and math.abs(n) < 1e5 and n ~= v[k] then
+				A.pushUndo()
+				a.set(A.cur, k, n)
+			end
+			A.paint()
+		end)
+		A.bindHold(minus, function() A.step(k, -1) end)
+		A.bindHold(plus, function() A.step(k, 1) end)
+		return { row = row, box = box }
+	end
+
+	function A.build(w, body, a)
+		A.undo = {}
+		pcall(function() a.open = true end)
+		local u = { rows = {} }
+		A.ui = u
+		local tabs = type(a.tabs) == "table" and a.tabs or { "Gun", "Screen", "Muzzle" }
+		if A.cur > #tabs then A.cur = 1 end
+		local found = Ctl.note(body, 1, "")
+		local part = {}
+		for i, name in ipairs(tabs) do
+			part[i] = { i, tostring(name) }
+		end
+		u.part = Ctl.choice(body, 2, "What to line up", part, function() return A.cur end, function(v)
+			A.cur = v
+			A.paint()
+		end)
+		for k = 1, 6 do
+			u.rows[k] = A.row(body, 2 + k, k)
+		end
+		local moves = {}
+		for i, s in ipairs(A.MOVE) do
+			moves[i] = { i, (string.gsub(A.fmt(s), "^0%.", ".")) }
+		end
+		local turns = {}
+		for i, s in ipairs(A.TURN) do
+			turns[i] = { i, tostring(s) }
+		end
+		Ctl.choice(body, 10, "Move step (studs)", moves, function() return A.mi end, function(v) A.mi = v end)
+		Ctl.choice(body, 11, "Turn step (degrees)", turns, function() return A.ti end, function(v) A.ti = v end)
+		local row1 = Ctl.buttons(body, 9, {
+			{ "save", "Save", function()
+				local ok, e = a.save()
+				if ok then
+					local g = a.gun and a.gun()
+					A.say(g and ("Saved for " .. tostring(g)) or ("Saved to " .. tostring(a.file or "your file")), T.green)
+				else
+					A.say("Not saved: " .. tostring(e), T.red, true)
+				end
+				A.paint()
+			end },
+			{ "undo-2", "Undo", function()
+				local x = table.remove(A.undo)
+				if not x then
+					A.say("Nothing to undo", T.yellow)
+				else
+					A.cur = x[1]
+					a.put(x[1], x[2])
+					A.say("Undid a change on " .. tostring(tabs[x[1]] or "it"), accentColor())
+				end
+				A.paint()
+			end },
+			{ "rotate-ccw", "Reset", function()
+				A.pushUndo()
+				a.reset(A.cur)
+				A.say(tostring(tabs[A.cur]) .. " reset, Undo brings it back", T.yellow)
+				A.paint()
+			end },
+		})
+		local row2 = Ctl.buttons(body, 13, {
+			{ "refresh-cw", "Reload", function()
+				A.pushUndo()
+				local ok, e = a.load()
+				A.say(ok and "Loaded your saved spot" or tostring(e), ok and T.green or T.yellow)
+				A.paint()
+			end },
+			{ "copy", "Copy", function()
+				local v = a.get(A.cur)
+				if not v then return end
+				copyText(string.format("%s: move %s, %s, %s / turn %s, %s, %s", tostring(tabs[A.cur]), A.fmt(v[1]), A.fmt(v[2]), A.fmt(v[3]), A.fmt(v[4], true), A.fmt(v[5], true), A.fmt(v[6], true)), "Alignment")
+			end },
+			{ "flip-horizontal", "Flip", function()
+				local v = a.get(A.cur)
+				if not v then return end
+				A.pushUndo()
+				a.set(A.cur, 5, v[5] + 180)
+				A.say(tostring(tabs[A.cur]) .. " flipped (Turn Y + 180)", accentColor())
+				A.paint()
+			end },
+		})
+		u.saveSet, u.undoSet = row1[1].set, row1[2].set
+		u.reload = row2[1]
+		local st = type(a.optList) == "table" and type(a.opts) == "function" and a.opts() or nil
+		if type(st) == "table" then
+			section(body, "Screen", 14)
+			u.opts = {}
+			for i, o in ipairs(a.optList) do
+				if st[o[1]] ~= nil then
+					u.opts[#u.opts + 1] = Ctl.toggle(body, 14 + i, tostring(o[2]), nil, function()
+						local x = a.opts()
+						return type(x) == "table" and x[o[1]] == true
+					end, function(v)
+						a.setOpt(o[1], v)
+						A.say(tostring(o[2]) .. (v and " on" or " off") .. " (saved)", v and T.green or T.yellow)
+					end)
+				end
+			end
+			if st.speed ~= nil and type(a.speeds) == "table" then
+				local sp = {}
+				for i, s in ipairs(a.speeds) do
+					sp[i] = { s, tostring(s) }
+				end
+				u.speed = Ctl.choice(body, 24, "Spin speed", sp, function()
+					local x = a.opts()
+					return type(x) == "table" and x.speed or 1
+				end, function(v)
+					a.setSpeed(v)
+					A.say("Spin speed " .. tostring(v) .. " (saved)", accentColor())
+				end)
+			end
+		end
+		u.hint = "The red ball shows the muzzle while this is open. " .. (Core.mobile() and "Say -align to open it again." or ("Press " .. tostring(a.key or "J") .. " or say -align to open it again."))
+		u.status = Ctl.note(body, 30, u.hint)
+		if a.watch then
+			A.unwatch = a.watch(function(what)
+				if what == "stop" then
+					task.defer(function()
+						if w.alive then
+							w:close()
+							notify("Alignment", "Closed, the script stopped", "info", 2)
+						end
+					end)
+					return
+				end
+				if what == "gun" and a.gun and a.gun() then
+					A.undo = {}
+					A.say("Gun: " .. tostring(a.gun()) .. ", its own spot is saved just for this gun", accentColor(), true)
+				end
+				task.defer(A.paint)
+			end)
+		end
+		local acc, last = 0, nil
+		w:conn(RunService.Heartbeat:Connect(function(dt)
+			acc += dt
+			if acc < 0.4 then return end
+			acc = 0
+			if not A.api() then return end
+			local ok, f = pcall(function() return a.found and a.found() or "" end)
+			f = ok and tostring(f or "") or ""
+			if f ~= last then
+				last = f
+				found.Text = f ~= "" and f or "Pick what to line up, then nudge it with - and +"
+			end
+		end))
+		w:conn(UserInputService.InputEnded:Connect(function(input)
+			if input.UserInputType ~= MOUSE1 and input.UserInputType ~= TOUCH then return end
+			local p = A.press
+			A.press = nil
+			A.hold += 1
+			if p and p.touch and not p.fired and not p.moved() then
+				A.pushUndo()
+				p.fn()
+			end
+		end))
+		A.paint()
+	end
+end
+
+Bus.on("align", function()
+	if Scripts.paintReanim then Scripts.paintReanim() end
+	if Win.isOpen("align") and not Core.Align.api() then Win.close("align") end
+end)
+
+Bus.on("reanim", function()
+	Scripts.paintReanim()
+	Scripts.updateStatus()
+	if Panel.open and Panel.page == "scripts" then Panel.refreshHead() end
+end)
+Bus.on("accent", function()
+	Scripts.paintReanim()
+end)
 
 function Scripts.updateInfo()
 	local l = Scripts.info
@@ -9070,8 +11838,477 @@ Scripts.onTab = function(i)
 	if Scripts.dirty[i] then Scripts.render(i) end
 end
 Scripts.onShow = function()
+	Scripts.paintReanim()
 	if Scripts.dirty[Scripts.tab] then Scripts.render(Scripts.tab) end
 	if Repo.state ~= "loading" and os.clock() - (Repo.lastTry or 0) > 120 then Repo.refresh(false) end
+end
+
+Bus.on("repo", function() Scripts.paintReanim() end)
+
+Core.EmotesPage = newPage({ id = "emotes", title = "Emotes", icon = "party-popper", tabs = { "All", "Favorites", "Setup" }, viewY = 40 })
+do
+	local EP = Core.EmotesPage
+	EP.query = ""
+	EP.dirty = { true, true, true }
+	EP.state = "idle"
+	EP.lib = nil
+	EP.head = function()
+		local E = EP.lib
+		local now, wait = nil, nil
+		if E then now, wait = E.playing() end
+		if now then return "Emotes", "Dancing: " .. now end
+		if wait then return "Emotes", "Getting " .. wait .. " ready" end
+		if not Core.Reanim.on() then return "Emotes", "Reanimate a script to dance" end
+		local n = E and E.ready() and #E.all() or 0
+		if n > 0 then return "Emotes", n .. (n == 1 and " dance ready" or " dances ready") end
+		return "Emotes", "Dances from Uhhhhhh"
+	end
+	EP.spinWhileLoading = false
+	function EP.keyName(k)
+		if Core.keyShort then
+			local ok, r = pcall(Core.keyShort, k)
+			if ok and type(r) == "string" and r ~= "None" then return r end
+		end
+		return tostring(k)
+	end
+	EP.right = { icon = "shuffle", fn = function() EP.random() end }
+
+	local bar = UI.new("Frame", { BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 32) }, EP.frame)
+	UI.corner(bar, 10)
+	local barStroke = UI.stroke(bar, T.stroke, 1, 1)
+	UI.icon("search", 14, T.dim, bar, { Position = UDim2.fromOffset(11, 9) })
+	local box = UI.new("TextBox", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(32, 0),
+		Size = UDim2.new(1, -64, 1, 0),
+		Font = FONT_M,
+		TextSize = 12,
+		TextColor3 = T.text,
+		PlaceholderText = "Search dances",
+		PlaceholderColor3 = T.dim,
+		Text = "",
+		ClearTextOnFocus = false,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ClipsDescendants = true,
+	}, bar)
+	local clear = UI.button(bar, { BackgroundTransparency = 1, Size = UDim2.fromOffset(28, 28), Position = UDim2.new(1, -30, 0, 2), Visible = false })
+	UI.icon("x", 13, T.sub, clear, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+	clear.Activated:Connect(function() box.Text = "" end)
+	box.Focused:Connect(function() UI.tween(barStroke, 0.2, { Transparency = 0.2 }) end)
+	box.FocusLost:Connect(function() UI.tween(barStroke, 0.2, { Transparency = 1 }) end)
+	local seq = 0
+	box:GetPropertyChangedSignal("Text"):Connect(function()
+		clear.Visible = box.Text ~= ""
+		seq += 1
+		local my = seq
+		task.delay(0.15, function()
+			if my ~= seq then return end
+			EP.query = Util.trim(box.Text)
+			for _, v in ipairs(EP.views) do
+				v.CanvasPosition = Vector2.new(0, 0)
+			end
+			EP.invalidate()
+		end)
+	end)
+	EP.box = box
+	for i = 1, 3 do
+		EP.views[i] = newScroll(EP.frame, 40, i == 1)
+		EP.views[i].Size = UDim2.new(1, 0, 1, -106)
+	end
+
+	local ab, title, sub = Core.actionBar(EP.frame, "party-popper")
+	EP.bar, EP.barTitle, EP.barSub = ab, title, sub
+	EP.rndBtn, EP.rndText, EP.rndStroke = Core.barButton(ab, 74, -86)
+	EP.stopBtn, EP.stopText, EP.stopStroke = Core.barButton(ab, 68, -10)
+	EP.rndText.Text = "Random"
+	EP.stopText.Text = "Stop"
+	UI.accent(EP.rndBtn, "BackgroundColor3")
+	EP.rndBtn.Activated:Connect(function() EP.random() end)
+	EP.stopBtn.Activated:Connect(function()
+		local E = EP.lib
+		if E and (E.playing()) then
+			E.stop()
+		elseif E then
+			local _, w = E.playing()
+			if w then E.stop() end
+		end
+	end)
+
+	function EP.ensure()
+		if EP.lib or EP.state == "loading" then return end
+		EP.state = "loading"
+		EP.invalidate()
+		task.spawn(function()
+			local E, err = Core.loadLib("Emotes", "AtsukoEmotes")
+			if not HUB.alive then return end
+			if not E then
+				EP.state = "error"
+				EP.err = err or "couldn't load it"
+				EP.invalidate()
+				return
+			end
+			EP.lib = E
+			EP.state = "ready"
+			E.onNote = function(t)
+				notify("Emotes", tostring(t), "info", 3)
+			end
+			E.onOpen = function(show)
+				if show == false then
+					if Panel.open and Panel.page == "emotes" then Panel.closeAll() end
+				else
+					Panel.go("emotes")
+				end
+			end
+			EP.palette()
+			E.onChange(function()
+				EP.changed()
+			end)
+			E.load()
+			EP.invalidate()
+			EP.paintBar()
+		end)
+	end
+
+	function EP.palette()
+		if EP.lib then EP.lib.setPalette({ ink = T.text, soft = T.sub, dim = T.dim, card2 = T.card2, accent = accentColor(), font = FONT_M, bold = FONT_B }) end
+	end
+
+	function EP.random()
+		EP.ensure()
+		local E = EP.lib
+		if not E then return end
+		if not E.ready() then return notify("Emotes", "Still getting the dances, one sec", "info", 2) end
+		E.random()
+	end
+
+	EP.changeQueued = false
+	function EP.changed()
+		EP.paintBar()
+		if EP.changeQueued then return end
+		EP.changeQueued = true
+		task.delay(0.15, function()
+			EP.changeQueued = false
+			if not HUB.alive then return end
+			EP.invalidate()
+			if Panel.open and Panel.page == "emotes" then Panel.refreshHead() end
+			if EP.cur and EP.detailOpen then EP.fillDetail(EP.cur) end
+		end)
+	end
+
+	function EP.paintBar()
+		local E = EP.lib
+		local now, wait = nil, nil
+		if E then now, wait = E.playing() end
+		local on = Core.Reanim.on()
+		EP.barTitle.Text = "Dancing: " .. (now or "NONE")
+		if wait then
+			local w, total = E.pendingInfo()
+			EP.barSub.Text = "Getting " .. wait .. " ready" .. ((w and total and total > 0) and ("  ·  " .. (total - w) .. " of " .. total) or "...")
+		elseif not on then
+			EP.barSub.Text = "Reanimate a script in Atsuko Script first"
+		elseif E and E.hostName() then
+			EP.barSub.Text = "With " .. E.hostName()
+		elseif Core.Reanim.current() then
+			EP.barSub.Text = "With " .. Core.Reanim.name(Core.Reanim.current())
+		else
+			EP.barSub.Text = "Ready to dance"
+		end
+		local live = now ~= nil or wait ~= nil
+		EP.stopText.TextColor3 = live and T.red or T.dim
+		UI.tween(EP.stopBtn, 0.2, { BackgroundColor3 = T.card2, BackgroundTransparency = live and 0 or 0.4 })
+		EP.stopStroke.Transparency = live and 0.45 or 1
+		EP.rndBtn.BackgroundTransparency = on and 0 or 0.55
+	end
+
+	function EP.match(info)
+		local q = string.lower(EP.query)
+		return q == "" or string.find(string.lower(info.name), q, 1, true) ~= nil or string.find(string.lower(info.short or ""), q, 1, true) ~= nil
+	end
+
+	function EP.row(sf, info, order)
+		local E = EP.lib
+		local now, wait = E.playing()
+		local playing = now == info.name or wait == info.name
+		local row = UI.button(sf, { Name = "Dance", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 50), LayoutOrder = order })
+		UI.corner(row, 14)
+		local st = UI.stroke(row, accentColor(), 1.5, playing and 0.15 or 1)
+		UI.accent(st, "Color")
+		local bx = UI.new("Frame", { BackgroundTransparency = playing and 0.5 or 0.82, Size = UDim2.fromOffset(34, 34), Position = UDim2.fromOffset(8, 8) }, row)
+		UI.corner(bx, 11)
+		UI.accent(bx, "BackgroundColor3")
+		UI.accent(UI.icon(playing and "audio-lines" or "party-popper", 16, T.text, bx, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) }), "ImageColor3")
+		local right = info.key and 104 or 78
+		UI.label(row, { Text = info.name, Font = FONT_B, TextSize = 13, Position = UDim2.fromOffset(52, 8), Size = UDim2.new(1, -(52 + right), 0, 17), TextTruncate = Enum.TextTruncate.AtEnd })
+		UI.label(row, {
+			Text = playing and (wait == info.name and "Getting it ready..." or "Dancing now  ·  tap to stop") or (info.short ~= "" and info.short or "No description"),
+			TextSize = 10,
+			TextColor3 = playing and T.text or T.sub,
+			Position = UDim2.fromOffset(52, 26),
+			Size = UDim2.new(1, -(52 + right), 0, 14),
+			TextTruncate = Enum.TextTruncate.AtEnd,
+		})
+		if info.key then
+			local chip = UI.new("Frame", { BackgroundColor3 = T.card2, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -78, 0.5, 0), Size = UDim2.fromOffset(24, 20) }, row)
+			UI.corner(chip, 6)
+			UI.label(chip, { Text = EP.keyName(info.key), Font = FONT_B, TextSize = 10, TextColor3 = T.sub, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromScale(1, 1) })
+		end
+		local fav = UI.button(row, { Name = "Fav", BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -42, 0.5, 0), Size = UDim2.fromOffset(32, 32) })
+		local star = UI.icon("star", 15, info.fav and accentColor() or T.dim, fav, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+		if info.fav then UI.accent(star, "ImageColor3") end
+		UI.pressable(fav, 0.8)
+		fav.Activated:Connect(function()
+			E.setFav(info.name, not E.isFav(info.name))
+		end)
+		local more = UI.button(row, { Name = "Info", BackgroundColor3 = T.card2, BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0), Size = UDim2.fromOffset(32, 32) })
+		UI.corner(more, 16)
+		UI.icon("chevron-right", 14, T.sub, more, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+		UI.pressable(more, 0.86)
+		UI.onHover(more, function(on)
+			UI.tween(more, 0.15, { BackgroundTransparency = on and 0.2 or 1 })
+		end)
+		more.Activated:Connect(function() EP.openDetail(info.name) end)
+		UI.pressable(row, 0.97)
+		UI.onHover(row, function(on)
+			UI.tween(row, 0.15, { BackgroundColor3 = on and T.card2 or T.card })
+		end)
+		row.Activated:Connect(function()
+			local a, b = E.playing()
+			if a == info.name or b == info.name then
+				E.stop()
+			else
+				E.play(info.name)
+			end
+		end)
+	end
+
+	function EP.render(i)
+		EP.dirty[i] = false
+		local sf = EP.views[i]
+		clearList(sf)
+		local order = 0
+		local function nextOrder()
+			order += 1
+			return order
+		end
+		if i == 3 then return EP.renderSetup(sf) end
+		local E = EP.lib
+		if EP.state == "error" then
+			emptyState(sf, "wifi", "Couldn't get the emotes", Util.firstLine(EP.err or "No connection"), 1, "Try again", function()
+				EP.state = "idle"
+				EP.ensure()
+			end)
+			return
+		end
+		if not E or not E.ready() then
+			skeleton(sf, 4)
+			return
+		end
+		local all = E.all()
+		if #all == 0 then
+			emptyState(sf, "party-popper", "No dances yet", "They come from Uhhhhhh, check your connection", 1, "Try again", function()
+				E.state = "idle"
+				E.load()
+			end)
+			return
+		end
+		local shown = 0
+		for _, info in ipairs(all) do
+			if (i == 1 or info.fav) and EP.match(info) then
+				EP.row(sf, info, nextOrder())
+				shown += 1
+			end
+		end
+		if shown == 0 then
+			if i == 2 and EP.query == "" then
+				emptyState(sf, "star", "No favorites yet", "Tap the star on a dance to keep it here", 1)
+			else
+				emptyState(sf, "search", "Nothing matches", "Try another name", 1)
+			end
+		else
+			UI.label(sf, { Name = "Info", Text = "Dances from Uhhhhhh by STEVETHEREALONE", TextSize = 10, TextColor3 = T.dim, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.new(1, 0, 0, 24), LayoutOrder = nextOrder() })
+		end
+	end
+
+	function EP.renderSetup(sf)
+		local E = EP.lib
+		if not E then
+			skeleton(sf, 3)
+			return
+		end
+		section(sf, "Sound", 1)
+		Ctl.slider(sf, 2, "Dance music volume", 0, 3, 0.1, function() return E.volume end, function(v, final)
+			E.setVolume(v)
+			if final ~= false then E.save() end
+		end, function(v) return string.format("%d%%", math.floor(v * 100 + 0.5)) end, true)
+		section(sf, "Keys", 3)
+		Ctl.toggle(sf, 4, "Dance keys", UserInputService.KeyboardEnabled and "Press a dance's key to play or stop it" or "These need a keyboard", function() return E.keysOn end, function(v) E.setKeysOn(v) end)
+		local keys = E.keys()
+		if #keys == 0 then
+			Ctl.note(sf, 5, "No keys yet. Open a dance (the arrow on its row) and tap Set a key.")
+		else
+			for k, it in ipairs(keys) do
+				local row = UI.button(sf, { Name = "Key", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 40), LayoutOrder = 5 + k })
+				UI.corner(row, 12)
+				local chip = UI.new("Frame", { BackgroundColor3 = T.card2, Position = UDim2.fromOffset(10, 9), Size = UDim2.fromOffset(34, 22) }, row)
+				UI.corner(chip, 7)
+				UI.label(chip, { Text = EP.keyName(it.key), Font = FONT_B, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromScale(1, 1) })
+				UI.label(row, { Text = it.name, TextSize = 12, Position = UDim2.fromOffset(54, 0), Size = UDim2.new(1, -96, 1, 0), TextTruncate = Enum.TextTruncate.AtEnd })
+				local x = UI.button(row, { BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -6, 0.5, 0), Size = UDim2.fromOffset(30, 30) })
+				UI.icon("x", 12, T.sub, x, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+				x.Activated:Connect(function() E.setKey(it.name, nil) end)
+				Ctl.hoverable(row)
+				row.Activated:Connect(function() EP.openDetail(it.name) end)
+			end
+		end
+		section(sf, "About", 100)
+		Ctl.note(sf, 101, "Emotes only work while one of your scripts is reanimated. Pick one in Atsuko Script and tap Reanimate.")
+		Ctl.note(sf, 102, "Dances, songs and moves come from Uhhhhhh by STEVETHEREALONE (MIT license). They download into your UhhhhhhReanim folder the first time you play them, and you can drop your own dance files into UhhhhhhReanim/Modules.")
+		Ctl.action(sf, 103, "Go to Atsuko Script", "person-standing", false, function() Panel.go("scripts") end)
+	end
+
+	function EP.invalidate()
+		EP.dirty = { true, true, true }
+		if Panel.open and Panel.page == "emotes" then EP.render(EP.tab) end
+	end
+
+	EP.onTab = function(i)
+		if EP.dirty[i] then EP.render(i) end
+	end
+	EP.onShow = function()
+		EP.ensure()
+		if EP.dirty[EP.tab] then EP.render(EP.tab) end
+		EP.paintBar()
+	end
+
+	local DF = UI.new("Frame", { Name = "Dance", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false }, Aside.content)
+	EP.detailFrame = DF
+	local _, _, cap = Aside.header(DF, "DANCE", function() Aside.hide() end)
+	EP.capLabel = cap
+	local dbox = UI.new("Frame", { BackgroundTransparency = 1, Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -20, 1, 0) }, DF)
+	EP.dscroll = newScroll(dbox, 40)
+
+	function EP.openDetail(name)
+		if not EP.lib then return end
+		EP.cur = name
+		EP.detailOpen = true
+		EP.fillDetail(name)
+		EP.dscroll.CanvasPosition = Vector2.new(0, 0)
+		Aside.show("dance", DF, "emotes", function()
+			EP.detailOpen = false
+			if EP.lib then EP.lib.capturing = false end
+		end)
+	end
+
+	function EP.fillDetail(name)
+		local E = EP.lib
+		local info = E and E.info(name)
+		local sf = EP.dscroll
+		clearList(sf)
+		if not info then
+			emptyState(sf, "party-popper", "That dance is gone", "Pick another one", 1)
+			return
+		end
+		local now, wait = E.playing()
+		local playing = now == name or wait == name
+		local top = card(sf, 0, 1)
+		top.AutomaticSize = Enum.AutomaticSize.Y
+		top:FindFirstChildOfClass("UICorner").CornerRadius = UDim.new(0, 16)
+		UI.pad(top, 14, 14, 14, 14)
+		UI.list(top, 6)
+		local ib = UI.new("Frame", { BackgroundTransparency = 0.78, Size = UDim2.fromOffset(46, 46), LayoutOrder = 1 }, top)
+		UI.corner(ib, 14)
+		UI.accent(ib, "BackgroundColor3")
+		UI.accent(UI.icon(playing and "audio-lines" or "party-popper", 22, T.text, ib, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) }), "ImageColor3")
+		UI.label(top, { Text = info.name, Font = FONT_B, TextSize = 16, Size = UDim2.new(1, 0, 0, 22), TextTruncate = Enum.TextTruncate.AtEnd, LayoutOrder = 2 })
+		UI.label(top, { Text = info.desc ~= "" and info.desc or "No description", TextSize = 11, TextColor3 = T.sub, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 3 })
+		UI.label(top, { Text = "from " .. tostring(info.from or "Uhhhhhh"), TextSize = 10, TextColor3 = T.dim, Size = UDim2.new(1, 0, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd, LayoutOrder = 4 })
+		local row = UI.new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 40), LayoutOrder = 2 }, sf)
+		local play = UI.button(row, { Size = UDim2.new(1, -48, 1, 0) })
+		UI.corner(play, 20)
+		if playing then
+			play.BackgroundColor3 = T.card2
+			UI.stroke(play, T.red, 1, 0.45)
+			iconText(play, "square-fill", "Stop Dance", T.red, 12)
+		else
+			UI.accent(play, "BackgroundColor3")
+			iconText(play, "play-fill", "Play Dance", T.ink, 12)
+		end
+		UI.pressable(play, 0.95)
+		play.Activated:Connect(function()
+			local a, b = E.playing()
+			if a == name or b == name then E.stop() else E.play(name) end
+		end)
+		local fav = UI.button(row, { BackgroundColor3 = T.card, AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0), Size = UDim2.fromOffset(40, 40) })
+		UI.corner(fav, 20)
+		local star = UI.icon("star", 17, info.fav and accentColor() or T.sub, fav, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+		if info.fav then UI.accent(star, "ImageColor3") end
+		UI.pressable(fav, 0.86)
+		fav.Activated:Connect(function() E.setFav(name, not E.isFav(name)) end)
+		local keyText = info.key and ("Key: " .. (EP.keyName(info.key)) .. "  ·  tap to change") or "Set a key"
+		local _, keyLab = Ctl.action(sf, 3, keyText, "keyboard", false, function()
+			EP.capture(name)
+		end)
+		EP.keyLab = keyLab
+		section(sf, "Options", 4)
+		local opts = UI.new("Frame", { Name = "Options", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 5 }, sf)
+		UI.corner(opts, 12)
+		UI.pad(opts, 8, 8, 8, 8)
+		UI.list(opts, 4)
+		EP.palette()
+		local n = E.buildOptions(name, opts)
+		if n == 0 then
+			opts:Destroy()
+			Ctl.note(sf, 5, "This dance has no options.")
+		end
+	end
+
+	function EP.capture(name)
+		local E = EP.lib
+		if not E then return end
+		if not UserInputService.KeyboardEnabled then
+			notify("Emotes", "Keys need a keyboard", "info", 2)
+			return
+		end
+		if EP.keyConn then EP.keyConn:Disconnect() end
+		E.capturing = true
+		if EP.keyLab then EP.keyLab.Text = "Press a key  ·  Backspace removes it" end
+		local tk = {}
+		EP.keyTk = tk
+		EP.keyConn = UserInputService.InputBegan:Connect(function(input)
+			if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+			EP.keyConn:Disconnect()
+			EP.keyConn = nil
+			local k = input.KeyCode.Name
+			task.delay(0.15, function() E.capturing = false end)
+			if k == "Backspace" or k == "Delete" or k == "Escape" then
+				E.setKey(name, nil)
+			elseif E.validKey(k) then
+				E.setKey(name, k)
+				if not E.keysOn then E.setKeysOn(true) end
+				notify("Emotes", EP.keyName(k) .. " plays " .. name, "ok", 2)
+			else
+				notify("Emotes", "That key is taken by the game. Try Z X C V B N G H J K L T U P Y I O, 0 to 9 or F1 to F8", "info", 4)
+			end
+			if EP.detailOpen and EP.cur == name then EP.fillDetail(name) end
+		end)
+		task.delay(8, function()
+			if EP.keyTk == tk and EP.keyConn then
+				EP.keyConn:Disconnect()
+				EP.keyConn = nil
+				E.capturing = false
+				if EP.detailOpen and EP.cur == name then EP.fillDetail(name) end
+			end
+		end)
+	end
+
+	Bus.on("reanim", function()
+		EP.paintBar()
+		if Panel.open and Panel.page == "emotes" then Panel.refreshHead() end
+	end)
+	Bus.on("accent", function()
+		EP.palette()
+	end)
+	EP.paintBar()
 end
 
 -- your own scripts, saved as files in AtsukoHub/myscripts
@@ -10046,23 +13283,36 @@ do
 	end)
 	Ed.dot = UI.new("Frame", { Name = "Unsaved", BackgroundColor3 = T.yellow, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.5, 0), Size = UDim2.fromOffset(7, 7), Visible = false }, nameBg)
 	UI.corner(Ed.dot, 4)
-	local function tool(icon, i, fn, filled)
-		local b = UI.button(bar, { Name = icon, BackgroundColor3 = filled and accentColor() or T.card, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -(i - 1) * 40, 0, 0), Size = UDim2.fromOffset(34, 34) })
+	local tools = UI.new("Frame", { Name = "Tools", BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0), Size = UDim2.new(0, 0, 1, 0), AutomaticSize = Enum.AutomaticSize.X }, bar)
+	local tl = UI.list(tools, 6, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Right)
+	tl.VerticalAlignment = Enum.VerticalAlignment.Center
+	local function tool(icon, order, fn, name)
+		local b = UI.button(tools, { Name = name, BackgroundColor3 = T.card, Size = UDim2.fromOffset(34, 34), LayoutOrder = order })
 		UI.corner(b, 12)
-		if filled then UI.accent(b, "BackgroundColor3") end
-		local ic = UI.icon(icon, 15, filled and T.ink or T.text, b, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+		local ic = UI.icon(icon, 15, T.text, b, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
 		UI.pressable(b, 0.88)
-		if not filled then Ctl.hoverable(b) end
+		Ctl.hoverable(b)
 		b.Activated:Connect(fn)
 		return b, ic
 	end
-	Ed.runBtn, Ed.runIcon = tool("play-fill", 1, function() Ed.run() end, true)
-	tool("save", 2, function() Ed.save() end)
-	tool("folder-open", 3, function() Ed.toggleOverlay("open") end)
-	tool("ellipsis", 4, function() Ed.toggleOverlay("menu") end)
+	Ed.aiBtn = tool("sparkles", 1, function() Ed.askAI() end, "AskAI")
+	UI.accent(Ed.aiBtn:FindFirstChild("Icon"), "ImageColor3")
+	Ed.openBtn = tool("folder-open", 2, function() Ed.toggleOverlay("open") end, "Open")
+	tool("save", 3, function() Ed.save() end, "Save")
+	tool("ellipsis", 4, function() Ed.toggleOverlay("menu") end, "Menu")
+	local run = UI.button(tools, { Name = "Run", BackgroundColor3 = accentColor(), Size = UDim2.fromOffset(76, 34), LayoutOrder = 5 })
+	UI.corner(run, 12)
+	UI.accent(run, "BackgroundColor3")
+	Ed.runSet, Ed.runIcon, Ed.runLabel = iconText(run, "play-fill", "Run", T.ink, 12)
+	UI.pressable(run, 0.9)
+	run.Activated:Connect(function() Ed.run() end)
+	Ed.runBtn = run
+	Ed.nameBg = nameBg
+	Ed.tools = tools
 
-	local area = UI.new("Frame", { Name = "Code", BackgroundColor3 = T.card, Position = UDim2.fromOffset(0, 42), Size = UDim2.new(1, 0, 1, -66), ClipsDescendants = true }, view)
-	UI.corner(area, 12)
+	local area = UI.new("Frame", { Name = "Code", BackgroundColor3 = T.card, Position = UDim2.fromOffset(0, 42), Size = UDim2.new(1, 0, 1, -76), ClipsDescendants = true }, view)
+	UI.corner(area, 14)
+	UI.stroke(area, T.stroke, 1, 0.6)
 	Ed.area = area
 	local scroll = UI.new("ScrollingFrame", {
 		Name = "Scroll",
@@ -10110,7 +13360,86 @@ do
 		Text = "",
 		ZIndex = 3,
 	})
-	Ed.status = UI.label(view, { Name = "Status", Text = "", TextSize = 10, TextColor3 = T.dim, AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 4, 1, 0), Size = UDim2.new(1, -8, 0, 18), TextTruncate = Enum.TextTruncate.AtEnd })
+	Ed.box.ZIndex = 2
+	Ed.mark = UI.new("Frame", { Name = "FindMark", BorderSizePixel = 0, BackgroundTransparency = 0.72, Size = UDim2.new(1, 0, 0, 14), Visible = false, ZIndex = 1 }, scroll)
+	UI.corner(Ed.mark, 4)
+	UI.accent(Ed.mark, "BackgroundColor3")
+	local strip = UI.new("Frame", { Name = "Strip", BackgroundTransparency = 1, AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.new(1, 0, 0, 28) }, view)
+	Ed.status = UI.label(strip, { Name = "Status", Text = "", TextSize = 10, TextColor3 = T.dim, Position = UDim2.fromOffset(4, 0), Size = UDim2.new(1, -184, 1, 0), TextTruncate = Enum.TextTruncate.AtEnd })
+	local sb = UI.new("Frame", { Name = "Buttons", BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0), Size = UDim2.new(0, 0, 1, 0), AutomaticSize = Enum.AutomaticSize.X }, strip)
+	local sl = UI.list(sb, 4, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Right)
+	sl.VerticalAlignment = Enum.VerticalAlignment.Center
+	local function mini(icon, order, fn, name)
+		local b = UI.button(sb, { Name = name, BackgroundColor3 = T.card, Size = UDim2.fromOffset(26, 24), LayoutOrder = order })
+		UI.corner(b, 8)
+		local ic = UI.icon(icon, 12, T.sub, b, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
+		UI.pressable(b, 0.86)
+		Ctl.hoverable(b)
+		b.Activated:Connect(fn)
+		return b, ic
+	end
+	mini("undo-2", 1, function() Ed.undo() end, "Undo")
+	mini("redo-2", 2, function() Ed.redo() end, "Redo")
+	mini("search", 3, function() Ed.openFind() end, "Find")
+	Ed.wrapBtn, Ed.wrapIc = mini("wrap-text", 4, function()
+		S.editorWrap = not S.editorWrap
+		saveSettings()
+		Ed.lineCount = nil
+		Ed.refresh()
+		notify("Editor", S.editorWrap and "Long lines wrap now" or "Long lines scroll sideways now", "info", 1.5)
+	end, "Wrap")
+	mini("zoom-out", 5, function()
+		S.editorFontSize = math.max(10, S.editorFontSize - 1)
+		saveSettings()
+		Ed.refresh()
+	end, "Smaller")
+	mini("plus", 6, function()
+		S.editorFontSize = math.min(20, S.editorFontSize + 1)
+		saveSettings()
+		Ed.refresh()
+	end, "Bigger")
+
+	local fb = UI.new("Frame", { Name = "FindBar", BackgroundColor3 = T.panel, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -8, 0, 8), Size = UDim2.fromOffset(260, 32), Visible = false, ZIndex = 8 }, area)
+	UI.corner(fb, 10)
+	UI.stroke(fb, T.stroke, 1, 0.2)
+	UI.icon("search", 12, T.dim, fb, { Position = UDim2.fromOffset(10, 10), ZIndex = 9 })
+	Ed.findBox = UI.new("TextBox", {
+		Name = "Box",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(28, 0),
+		Size = UDim2.new(1, -140, 1, 0),
+		Font = FONT_M,
+		TextSize = 12,
+		TextColor3 = T.text,
+		PlaceholderText = "Find",
+		PlaceholderColor3 = T.dim,
+		Text = "",
+		ClearTextOnFocus = false,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ClipsDescendants = true,
+		ZIndex = 9,
+	}, fb)
+	Ed.findCount = UI.label(fb, { Name = "Count", Text = "", TextSize = 10, TextColor3 = T.sub, TextXAlignment = Enum.TextXAlignment.Right, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -86, 0, 0), Size = UDim2.fromOffset(42, 32), ZIndex = 9 })
+	local function fbtn(icon, x, fn)
+		local b = UI.button(fb, { BackgroundColor3 = T.card, BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, x, 0.5, 0), Size = UDim2.fromOffset(24, 24), ZIndex = 9 })
+		UI.corner(b, 8)
+		UI.icon(icon, 12, T.sub, b, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), ZIndex = 10 })
+		UI.onHover(b, function(on)
+			UI.tween(b, 0.15, { BackgroundTransparency = on and 0 or 1 })
+		end)
+		b.Activated:Connect(fn)
+	end
+	fbtn("arrow-up", -58, function() Ed.find(-1) end)
+	fbtn("arrow-down", -32, function() Ed.find(1) end)
+	fbtn("x", -6, function() Ed.closeFind() end)
+	Ed.findBar = fb
+	Ed.findBox:GetPropertyChangedSignal("Text"):Connect(function()
+		Ed.findIdx = 0
+		Ed.find(1)
+	end)
+	Ed.findBox.FocusLost:Connect(function(enter)
+		if enter then Ed.find(1) end
+	end)
 
 	-- overlays: the file list and the menu
 	Ed.shade = UI.button(view, { Name = "Shade", BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.55, Size = UDim2.fromScale(1, 1), Visible = false, ZIndex = 10 })
@@ -10149,6 +13478,7 @@ do
 		if Ed.loading then return end
 		Ed.setDirty(true)
 		Ed.queue()
+		if not Ed.undoing then Ed.snapSoon() end
 	end)
 	area:GetPropertyChangedSignal("AbsoluteSize"):Connect(function() Ed.queue() end)
 end
@@ -10169,42 +13499,83 @@ function Ed.queue()
 	end)
 end
 
--- sizes the text box to the code so the whole thing scrolls, and redraws the colors
+function Ed.visualLines(text, fs, w)
+	local cw = math.max(1, textWidth("M", fs, Enum.Font.Code))
+	local per = math.max(1, math.floor(w / cw))
+	local rows = {}
+	local total = 0
+	for line in string.gmatch(text .. "\n", "([^\n]*)\n") do
+		local n = math.max(1, math.ceil(#string.gsub(line, "\t", "    ") / per))
+		rows[#rows + 1] = n
+		total += n
+	end
+	return rows, total
+end
+
 function Ed.refresh()
 	local text = Ed.box.Text
 	local fs = S.editorFontSize
+	local wrap = S.editorWrap == true
 	local lines, longest = 0, ""
 	for line in string.gmatch(text .. "\n", "([^\n]*)\n") do
 		lines += 1
 		if #line > #longest then longest = line end
 	end
 	lines = math.max(1, lines)
-	if lines ~= Ed.lineCount or fs ~= Ed.lineFs then
-		Ed.lineCount, Ed.lineFs = lines, fs
-		local nums = table.create(lines)
-		for k = 1, lines do
-			nums[k] = tostring(k)
-		end
-		Ed.gutter.Text = table.concat(nums, "\n")
-	end
 	local digits = #tostring(lines)
 	local gw = math.max(30, math.ceil(textWidth(string.rep("9", digits), fs, Enum.Font.Code)) + 10)
 	local x = gw + 14
 	local sc = math.max(0.01, L.scale)
 	local viewW = Ed.area.AbsoluteSize.X / sc
 	local viewH = Ed.area.AbsoluteSize.Y / sc
-	local w = math.max(math.ceil(textWidth(string.gsub(longest, "\t", "    "), fs, Enum.Font.Code)) + 60, viewW - x - 6)
-	local h = math.max(lines * fs + 60, viewH - 16)
-	Ed.gutter.Size = UDim2.fromOffset(gw, lines * fs + 4)
+	local w, rowsTotal
+	if wrap then
+		w = math.max(60, viewW - x - 10)
+		local rows
+		rows, rowsTotal = Ed.visualLines(text, fs, w)
+		local key = table.concat({ lines, fs, math.floor(w), rowsTotal }, ":")
+		if key ~= Ed.wrapKey or Ed.lineCount ~= lines then
+			Ed.wrapKey = key
+			Ed.rows = rows
+			local nums = table.create(rowsTotal)
+			for k, n in ipairs(rows) do
+				nums[#nums + 1] = tostring(k)
+				for _ = 2, n do
+					nums[#nums + 1] = ""
+				end
+			end
+			Ed.gutter.Text = table.concat(nums, "\n")
+			Ed.lineCount, Ed.lineFs = lines, fs
+		end
+	else
+		Ed.rows = nil
+		Ed.wrapKey = nil
+		rowsTotal = lines
+		if lines ~= Ed.lineCount or fs ~= Ed.lineFs or Ed.wasWrap then
+			Ed.lineCount, Ed.lineFs = lines, fs
+			local nums = table.create(lines)
+			for k = 1, lines do
+				nums[k] = tostring(k)
+			end
+			Ed.gutter.Text = table.concat(nums, "\n")
+		end
+		w = math.max(math.ceil(textWidth(string.gsub(longest, "\t", "    "), fs, Enum.Font.Code)) + 60, viewW - x - 6)
+	end
+	Ed.wasWrap = wrap
+	local h = math.max(rowsTotal * fs + 60, viewH - 16)
+	Ed.gutter.Size = UDim2.fromOffset(gw, rowsTotal * fs + 4)
 	Ed.gutterBg.Size = UDim2.new(0, gw + 8, 1, 0)
 	Ed.box.Position = UDim2.fromOffset(x, 8)
 	Ed.box.Size = UDim2.fromOffset(w, h)
 	Ed.hl.Position = UDim2.fromOffset(x, 8)
 	Ed.hl.Size = UDim2.fromOffset(w, h)
+	Ed.box.TextWrapped = wrap
+	Ed.hl.TextWrapped = wrap
 	for _, o in ipairs({ Ed.box, Ed.hl, Ed.gutter }) do
 		o.TextSize = fs
 	end
-	Ed.scroll.CanvasSize = UDim2.fromOffset(x + w + 8, h + 16)
+	Ed.scroll.CanvasSize = UDim2.fromOffset(wrap and 0 or (x + w + 8), h + 16)
+	Ed.scroll.ScrollingDirection = wrap and Enum.ScrollingDirection.Y or Enum.ScrollingDirection.XY
 	local colored = S.editorHighlight and #text > 0 and #text <= 40000
 	if colored then
 		local ok, rich = pcall(Ed.highlight, text)
@@ -10212,16 +13583,144 @@ function Ed.refresh()
 		if colored then Ed.hl.Text = rich end
 	end
 	Ed.hl.Visible = colored
-	-- the plain text stays under the colors so the cursor still shows
 	Ed.box.TextColor3 = colored and T.sub or T.text
 	local running = Runner.isRunning(Ed.path())
-	UI.setIcon(Ed.runIcon, running and "square-fill" or "play-fill")
+	Ed.runSet(running and "square-fill" or "play-fill", running and "Stop" or "Run")
+	UI.tint(Ed.wrapIc, wrap and accentColor() or T.sub, 0)
+	local vw = Ed.view.AbsoluteSize.X / sc
+	Ed.openBtn.Visible = vw >= 430
+	Ed.nameBg.Size = UDim2.new(1, -(76 + (Ed.openBtn.Visible and 4 or 3) * 40 + 8), 1, 0)
 	local bits = { "Lua", lines .. (lines == 1 and " line" or " lines") }
 	if #text > 40000 and S.editorHighlight then bits[#bits + 1] = "colors off for big files" end
 	bits[#bits + 1] = Ed.dirty and "not saved" or (Ed.file and "saved" or "not saved yet")
 	if running then bits[#bits + 1] = "running" end
-	if UserInputService.KeyboardEnabled then bits[#bits + 1] = "Ctrl+S save  ·  F5 run" end
+	if UserInputService.KeyboardEnabled and vw >= 560 then bits[#bits + 1] = "Ctrl+S save  ·  Ctrl+F find  ·  F5 run" end
 	Ed.status.Text = table.concat(bits, "  ·  ")
+	if Ed.findBar.Visible and Ed.findPos and #Ed.findPos > 0 then Ed.placeMark() end
+end
+
+Ed.hist, Ed.hpos = {}, 0
+function Ed.snap()
+	local t = Ed.box.Text
+	if Ed.hist[Ed.hpos] == t then return end
+	for k = #Ed.hist, Ed.hpos + 1, -1 do
+		table.remove(Ed.hist, k)
+	end
+	table.insert(Ed.hist, t)
+	while #Ed.hist > 80 do
+		table.remove(Ed.hist, 1)
+	end
+	Ed.hpos = #Ed.hist
+end
+Ed.snapSeq = 0
+function Ed.snapSoon()
+	Ed.snapSeq += 1
+	local my = Ed.snapSeq
+	task.delay(0.6, function()
+		if my == Ed.snapSeq and HUB.alive then Ed.snap() end
+	end)
+end
+function Ed.setText(t)
+	Ed.undoing = true
+	Ed.box.Text = t
+	Ed.undoing = false
+	Ed.setDirty(true)
+	Ed.queue()
+end
+function Ed.undo()
+	Ed.snapSeq += 1
+	Ed.snap()
+	if Ed.hpos <= 1 then return notify("Editor", "Nothing to undo", "info", 1.5) end
+	Ed.hpos -= 1
+	Ed.setText(Ed.hist[Ed.hpos])
+end
+function Ed.redo()
+	if Ed.hpos >= #Ed.hist then return notify("Editor", "Nothing to redo", "info", 1.5) end
+	Ed.hpos += 1
+	Ed.setText(Ed.hist[Ed.hpos])
+end
+
+function Ed.openFind()
+	Ed.findBar.Visible = true
+	Ed.findBox:CaptureFocus()
+	if Ed.findBox.Text ~= "" then Ed.find(0) end
+end
+function Ed.closeFind()
+	Ed.findBar.Visible = false
+	Ed.mark.Visible = false
+	Ed.findPos = nil
+	pcall(function() Ed.findBox:ReleaseFocus() end)
+end
+function Ed.placeMark()
+	local s = Ed.findPos and Ed.findPos[Ed.findIdx]
+	if not s then
+		Ed.mark.Visible = false
+		return
+	end
+	local text = Ed.box.Text
+	local before = string.sub(text, 1, s - 1)
+	local _, nl = string.gsub(before, "\n", "")
+	local row = nl
+	if Ed.rows then
+		row = 0
+		for k = 1, nl do
+			row += Ed.rows[k] or 1
+		end
+	end
+	local fs = S.editorFontSize
+	local y = 8 + row * fs
+	Ed.mark.Position = UDim2.fromOffset(Ed.box.Position.X.Offset - 4, y)
+	Ed.mark.Size = UDim2.new(0, Ed.box.Size.X.Offset + 8, 0, fs + 2)
+	Ed.mark.Visible = true
+	local sc = math.max(0.01, L.scale)
+	local viewH = Ed.area.AbsoluteSize.Y / sc
+	local cy = Ed.scroll.CanvasPosition.Y / sc
+	if y < cy + 10 or y > cy + viewH - fs * 3 then
+		Ed.scroll.CanvasPosition = Vector2.new(Ed.scroll.CanvasPosition.X, math.max(0, (y - viewH * 0.35) * sc))
+	end
+end
+function Ed.find(dir)
+	local q = Ed.findBox.Text
+	if q == "" then
+		Ed.findCount.Text = ""
+		Ed.findPos = nil
+		Ed.mark.Visible = false
+		return
+	end
+	local lower, lq = string.lower(Ed.box.Text), string.lower(q)
+	local pos, i = {}, 1
+	while #pos < 999 do
+		local s, e = string.find(lower, lq, i, true)
+		if not s then break end
+		pos[#pos + 1] = s
+		i = e + 1
+	end
+	Ed.findPos = pos
+	if #pos == 0 then
+		Ed.findCount.Text = "0/0"
+		Ed.findCount.TextColor3 = T.red
+		Ed.mark.Visible = false
+		return
+	end
+	Ed.findCount.TextColor3 = T.sub
+	Ed.findIdx = ((Ed.findIdx or 0) + (dir == 0 and 0 or dir) - 1) % #pos + 1
+	Ed.findCount.Text = Ed.findIdx .. "/" .. #pos
+	Ed.placeMark()
+end
+
+function Ed.askAI()
+	Panel.go("ai")
+	task.spawn(function()
+		local t0 = os.clock()
+		while HUB.alive and os.clock() - t0 < 20 and not (Pages.ai and Pages.ai.api) do
+			task.wait(0.1)
+		end
+		local api = Pages.ai and Pages.ai.api
+		if not api then return end
+		if api.setWithCode then pcall(api.setWithCode, true) end
+		if api.show then pcall(api.show, "chat") end
+		if api.box and UserInputService.KeyboardEnabled then pcall(function() api.box:CaptureFocus() end) end
+	end)
 end
 
 function Ed.name()
@@ -10251,6 +13750,9 @@ function Ed.load(name, code, file, dirty)
 	Ed.nameBox.Text = name or ""
 	Ed.box.Text = code or ""
 	Ed.loading = false
+	Ed.hist, Ed.hpos = { Ed.box.Text }, 1
+	Ed.snapSeq += 1
+	if Ed.findBar and Ed.findBar.Visible then Ed.closeFind() end
 	Ed.file = file
 	Ed.setDirty(dirty == true)
 	Ed.scroll.CanvasPosition = Vector2.new(0, 0)
@@ -10323,6 +13825,30 @@ function Ed.run()
 	task.delay(0.2, function()
 		if HUB.alive then Ed.refresh() end
 	end)
+end
+
+function Core.runCode(code, name)
+	code = tostring(code or "")
+	name = Util.trim(tostring(name or "")) ~= "" and name or "AI script"
+	if Util.trim(code) == "" then return end
+	if not X.loadstring then return notify("Can't run here", "Your executor has no loadstring", "error") end
+	local f, err = X.loadstring(code, "=Atsuko/" .. name)
+	if type(f) ~= "function" then
+		local line = string.match(tostring(err or ""), ":(%d+):")
+		notify("Syntax error" .. (line and (" on line " .. line) or ""), Util.firstLine(string.gsub(tostring(err or "?"), "^.-:%d+:%s*", "")), "error", 5)
+		return
+	end
+	local path = "ai:" .. Mine.safe(name)
+	if SHARED.running[path] then Runner.unload(path, true, true) end
+	local e = Repo.remote[path]
+	if not e then
+		e = { path = path, name = name, category = "AI", size = 0, ext = "lua", editor = true }
+		Repo.remote[path] = e
+	end
+	e.name, e.size = name, #code
+	e.remote = function() return true, code, "ai" end
+	Repo.src[path], Repo.meta[path] = nil, nil
+	Runner.run(e)
 end
 
 function Ed.toggleOverlay(kind)
@@ -10481,10 +14007,16 @@ end)
 hubConn(UserInputService.InputBegan:Connect(function(input)
 	if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
 	local focused = UserInputService:GetFocusedTextBox()
-	if focused ~= Ed.box and focused ~= Ed.nameBox then return end
+	if focused == Ed.findBox and input.KeyCode == Enum.KeyCode.Escape then
+		Ed.closeFind()
+		return
+	end
+	if focused ~= Ed.box and focused ~= Ed.nameBox and focused ~= Ed.findBox then return end
 	local ctrl = UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
 	if ctrl and input.KeyCode == Enum.KeyCode.S then
 		task.defer(Ed.save)
+	elseif ctrl and input.KeyCode == Enum.KeyCode.F then
+		task.defer(Ed.openFind)
 	elseif input.KeyCode == Enum.KeyCode.F5 then
 		Ed.run()
 	end
@@ -10578,6 +14110,16 @@ function Core.aiContext()
 			end,
 			code = function() return Ed.box.Text, Ed.name() end,
 		},
+		runCode = Core.runCode,
+		errors = function()
+			local out = {}
+			for i = #Log.items, 1, -1 do
+				local it = Log.items[i]
+				if it.kind == "error" then out[#out + 1] = tostring(it.src) .. ": " .. tostring(it.msg) end
+				if #out >= 6 then break end
+			end
+			return table.concat(out, "\n")
+		end,
 	}
 end
 
@@ -11753,11 +15295,9 @@ do
 
 	Cmd.add({
 		id = "rejoin", name = "Rejoin", icon = "repeat-2", cat = "Utility", kind = "action",
-		usage = "rejoin", aliases = { "rj" }, desc = "Join this same server again.",
+		usage = "rejoin", aliases = { "rj" }, desc = "Join this same server again, the hub opens again by itself once you're back.",
 		run = function()
-			notify("Rejoining", "See you in a moment", "info")
-			local ok = pcall(function() TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LP) end)
-			if not ok then pcall(function() TeleportService:Teleport(game.PlaceId, LP) end) end
+			Core.rejoin()
 			return true
 		end,
 	})
@@ -11786,11 +15326,48 @@ do
 					notify("Server hop", "Couldn't find another server with room", "error")
 					return
 				end
-				notify("Server hop", "Joining another server...", "info")
 				local id = list[math.random(1, #list)]
-				pcall(function() TeleportService:TeleportToPlaceInstance(game.PlaceId, id, LP) end)
+				Core.teleportTo(id, "Server hop", "Joining another server...")
 			end)
 			return true, "Looking for a server..."
+		end,
+	})
+
+	Cmd.add({
+		id = "align", name = "Alignment", icon = "crosshair", cat = "Utility", kind = "action",
+		usage = "align", aliases = { "gunalign" }, desc = "Line up the guns and parts of the Atsuko script you're running.",
+		run = function()
+			if not Core.Align.api() then return false, "Reanimate Studio Dummy or Snake Banisher first" end
+			task.defer(Core.Align.toggle)
+			return true
+		end,
+	})
+
+	Cmd.add({
+		id = "moveui", name = "Move the UI", icon = "move", cat = "Utility", kind = "action",
+		usage = "moveui", aliases = { "editui", "moveit" }, desc = "Drag the hub, the dock, the top bar and the rest anywhere you like.",
+		run = function()
+			task.defer(function() Core.Move.start() end)
+			return true
+		end,
+	})
+
+	Cmd.add({
+		id = "design", name = "Change design", icon = "layout-template", cat = "Utility", kind = "action",
+		usage = "design <original|sidebar|window>", aliases = { "layout" }, desc = "Switch between the Original, Sidebar and Window designs.",
+		run = function(arg)
+			local want = string.lower(Util.trim(tostring(arg or "")))
+			local list = { "original", "sidebar", "window" }
+			if want == "" then
+				local i = table.find(list, S.layout) or 1
+				want = list[i % #list + 1]
+			end
+			if not table.find(list, want) then return false, "Pick original, sidebar or window" end
+			S.layout = want
+			saveSettings()
+			Shell.layout()
+			Dock.select(Dock.sel)
+			return true, "Design: " .. want
 		end,
 	})
 
@@ -13113,23 +16690,26 @@ function Cmd.pal.build()
 	if P2.frame then return end
 	P2.back = UI.button(Root, { Name = "CmdBack", BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false, ZIndex = 4400, AutoButtonColor = false })
 	P2.back.Activated:Connect(function() Cmd.pal.close() end)
-	local f = UI.new("Frame", { Name = "CmdBar", BackgroundColor3 = T.panel, BackgroundTransparency = 0.02, AnchorPoint = Vector2.new(0.5, 0), Size = UDim2.fromOffset(460, 120), Visible = false, ZIndex = 4401, Active = true, ClipsDescendants = true }, Root)
-	UI.corner(f, 18)
-	UI.stroke(f, T.stroke, 1, 0.2)
+	local f = UI.new("Frame", { Name = "CmdBar", BackgroundColor3 = T.panel, BackgroundTransparency = 0.02, AnchorPoint = Vector2.new(0.5, 0), Size = UDim2.fromOffset(460, 140), Visible = false, ZIndex = 4401, Active = true }, Root)
+	UI.corner(f, 20)
+	P2.stroke = UI.stroke(f, T.stroke, 1, 0.25)
 	P2.frame = f
 	P2.scale = UI.new("UIScale", {}, f)
-	local glow = UI.new("Frame", { Name = "Glow", BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 52) }, f)
+	local g = UI.new("CanvasGroup", { Name = "Clip", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 4401 }, f)
+	UI.corner(g, 20)
+	P2.group = g
+	local glow = UI.new("Frame", { Name = "Glow", BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 72) }, g)
 	UI.accent(glow, "BackgroundColor3")
-	UI.new("UIGradient", { Rotation = 90, Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.86), NumberSequenceKeypoint.new(1, 1) }) }, glow)
-	local ib = UI.new("Frame", { Name = "IconBox", BackgroundTransparency = 0.8, Position = UDim2.fromOffset(12, 10), Size = UDim2.fromOffset(32, 32) }, f)
-	UI.corner(ib, 10)
+	UI.new("UIGradient", { Rotation = 90, Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.8), NumberSequenceKeypoint.new(1, 1) }) }, glow)
+	local ib = UI.new("Frame", { Name = "IconBox", BackgroundTransparency = 0.78, Position = UDim2.fromOffset(14, 12), Size = UDim2.fromOffset(34, 34) }, g)
+	UI.corner(ib, 11)
 	UI.accent(ib, "BackgroundColor3")
 	UI.accent(UI.icon("command", 16, T.text, ib, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) }), "ImageColor3")
 	P2.box = UI.new("TextBox", {
 		Name = "Box",
 		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(54, 8),
-		Size = UDim2.new(1, -104, 0, 36),
+		Position = UDim2.fromOffset(58, 12),
+		Size = UDim2.new(1, -150, 0, 34),
 		Font = FONT_M,
 		TextSize = 15,
 		TextColor3 = T.text,
@@ -13139,33 +16719,40 @@ function Cmd.pal.build()
 		ClearTextOnFocus = false,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ClipsDescendants = true,
-	}, f)
-	local close = UI.button(f, { Name = "Close", BackgroundColor3 = T.card, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 12), Size = UDim2.fromOffset(28, 28) })
+	}, g)
+	local kc = UI.new("Frame", { Name = "Key", BackgroundColor3 = T.card2, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -52, 0, 18), Size = UDim2.fromOffset(28, 22) }, g)
+	UI.corner(kc, 7)
+	UI.stroke(kc, T.stroke, 1, 0.5)
+	P2.keyText = UI.label(kc, { Font = FONT_B, TextSize = 10, TextColor3 = T.sub, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromScale(1, 1), Text = ";" })
+	P2.keyChip = kc
+	local close = UI.button(g, { Name = "Close", BackgroundColor3 = T.card, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -14, 0, 15), Size = UDim2.fromOffset(28, 28) })
 	UI.corner(close, 14)
 	UI.icon("x", 12, T.sub, close, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
 	UI.pressable(close, 0.85)
 	close.Activated:Connect(function() Cmd.pal.close() end)
-	UI.new("Frame", { Name = "Line", BackgroundColor3 = T.line, BorderSizePixel = 0, Position = UDim2.fromOffset(0, 52), Size = UDim2.new(1, 0, 0, 1) }, f)
+	UI.new("Frame", { Name = "Line", BackgroundColor3 = T.line, BorderSizePixel = 0, Position = UDim2.fromOffset(0, 58), Size = UDim2.new(1, 0, 0, 1) }, g)
+	P2.section = UI.label(g, { Name = "Section", Font = FONT_B, TextSize = 9, TextColor3 = T.dim, Position = UDim2.fromOffset(18, 62), Size = UDim2.new(1, -36, 0, 18), Text = "SUGGESTIONS" })
 	P2.list = UI.new("ScrollingFrame", {
 		Name = "List",
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(8, 58),
-		Size = UDim2.new(1, -16, 1, -88),
+		Position = UDim2.fromOffset(8, 82),
+		Size = UDim2.new(1, -16, 1, -122),
 		CanvasSize = UDim2.fromOffset(0, 0),
 		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		ScrollBarThickness = 3,
 		ScrollBarImageColor3 = T.dim,
 		ScrollingDirection = Enum.ScrollingDirection.Y,
-	}, f)
+	}, g)
 	UI.list(P2.list, 4)
-	P2.hint = UI.label(f, { Name = "Hint", Text = "", TextSize = 10, TextColor3 = T.dim, TextXAlignment = Enum.TextXAlignment.Center, AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 10, 1, -6), Size = UDim2.new(1, -20, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+	local foot = UI.new("Frame", { Name = "Foot", BackgroundColor3 = T.card, BackgroundTransparency = 0.35, BorderSizePixel = 0, AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.new(1, 0, 0, 32) }, g)
+	UI.new("Frame", { Name = "Line", BackgroundColor3 = T.line, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 1) }, foot)
+	P2.hint = UI.label(foot, { Name = "Hint", Text = "", TextSize = 10, TextColor3 = T.dim, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -20, 1, 0), TextTruncate = Enum.TextTruncate.AtEnd })
 	P2.box:GetPropertyChangedSignal("Text"):Connect(function()
 		if string.find(P2.box.Text, "\t", 1, true) then
 			P2.box.Text = string.gsub(P2.box.Text, "\t", "")
 			return
 		end
-		-- the key that opened the bar can land in the box a frame or two late, take it back out once
 		local ch = P2.stripChar
 		if ch and os.clock() < (P2.stripUntil or 0) and string.sub(P2.box.Text, 1, #ch) == ch then
 			P2.stripChar = nil
@@ -13180,14 +16767,14 @@ function Cmd.pal.build()
 	end)
 	hubConn(UserInputService.InputBegan:Connect(function(input)
 		if not Cmd.pal.open or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
-		local kc = input.KeyCode
-		if kc == Enum.KeyCode.Down then
+		local kc2 = input.KeyCode
+		if kc2 == Enum.KeyCode.Down then
 			Cmd.pal.move(1)
-		elseif kc == Enum.KeyCode.Up then
+		elseif kc2 == Enum.KeyCode.Up then
 			Cmd.pal.move(-1)
-		elseif kc == Enum.KeyCode.Tab then
+		elseif kc2 == Enum.KeyCode.Tab then
 			Cmd.pal.fill()
-		elseif kc == Enum.KeyCode.Escape then
+		elseif kc2 == Enum.KeyCode.Escape then
 			Cmd.pal.close()
 		end
 	end))
@@ -13281,7 +16868,8 @@ function Cmd.pal.suggest()
 		UI.label(list, { Text = "No command starts with that", TextSize = 11, TextColor3 = T.dim, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.new(1, 0, 0, 34), LayoutOrder = 1 })
 	end
 	local rows = math.max(1, math.min(#items, 7))
-	local h = 58 + rows * 46 + 30
+	local h = 82 + rows * 46 + 38
+	P2.section.Text = word == "" and "RECENT AND POPULAR" or (#items > 0 and "COMMANDS" or "NOTHING FOUND")
 	UI.tween(P2.frame, 0.2, { Size = UDim2.fromOffset(P2.width or 460, h) }, Enum.EasingStyle.Quad)
 	P2.hint.Text = UserInputService.KeyboardEnabled and "Up / Down to pick  ·  Tab fills it in  ·  Enter runs  ·  Esc closes" or "Tap a command to run it  ·  type a number after it to change it"
 	Cmd.pal.paint()
@@ -13404,8 +16992,9 @@ function Cmd.pal.layout()
 	if not P2.frame then return end
 	P2.width = math.min(460, L.W - 24)
 	local top = (S.barPos == "top" and S.statsBar) and 46 or 16
-	P2.frame.Position = UDim2.new(0.5, 0, 0, math.max(top, math.floor(L.H * 0.14)))
+	P2.frame.Position = UDim2.new(0.5, 0, 0, math.max(top, math.floor(L.H * 0.14))) + Core.moved("cmdbar")
 end
+Core.cmdLayout = Cmd.pal.layout
 
 function Cmd.openBar(focus, byKey)
 	local P2 = Cmd.pal
@@ -13424,6 +17013,13 @@ function Cmd.openBar(focus, byKey)
 		UI.tween(P2.scale, 0.35, { Scale = 1 }, Enum.EasingStyle.Back)
 		P2.frame.BackgroundTransparency = 0.3
 		UI.tween(P2.frame, 0.25, { BackgroundTransparency = 0.02 })
+		P2.group.GroupTransparency = 0.6
+		UI.tween(P2.group, 0.22, { GroupTransparency = 0 }, Enum.EasingStyle.Quad)
+		P2.stroke.Transparency = 0.25
+		local kt = Core.keyShort and Core.keyShort(S.cmdKey) or ";"
+		P2.keyText.Text = kt
+		P2.keyChip.Size = UDim2.fromOffset(math.max(28, math.ceil(textWidth(kt, 10, FONT_B)) + 14), 22)
+		P2.keyChip.Visible = UserInputService.KeyboardEnabled
 		Z.front(P2.back)
 		Z.front(P2.frame)
 		P2.back.ZIndex = 4400
@@ -13458,9 +17054,17 @@ function Cmd.pal.close()
 	pcall(function() P2.box:ReleaseFocus() end)
 	UI.tween(P2.back, 0.2, { BackgroundTransparency = 1 })
 	UI.tween(P2.scale, 0.2, { Scale = 0.95 }, Enum.EasingStyle.Quad)
+	UI.tween(P2.group, 0.16, { GroupTransparency = 1 }, Enum.EasingStyle.Quad)
+	UI.tween(P2.stroke, 0.2, { Transparency = 1 })
 	local tw = UI.tween(P2.frame, 0.2, { BackgroundTransparency = 1 })
 	UI.done(tw, function()
 		if P2.token == tk then
+			P2.back.Visible = false
+			P2.frame.Visible = false
+		end
+	end)
+	task.delay(0.45 / math.max(0.5, S.animSpeed), function()
+		if P2.token == tk and not P2.open then
 			P2.back.Visible = false
 			P2.frame.Visible = false
 		end
@@ -14152,7 +17756,7 @@ Bus.on("playerFx", function()
 end)
 
 local Settings = newPage({ id = "settings", title = "Settings", icon = "settings", tabs = { "General", "Themes", "AI", "Scripts", "Commands", "About" } })
-Settings.head = function() return "Settings", "Atsuko Hub v" .. HUB_VERSION .. "  ·  make it yours" end
+Settings.head = function() return "Settings", "Atsuko Hub " .. Core.BETA .. HUB_VERSION .. "  ·  make it yours" end
 Settings.views = { newScroll(Settings.frame, 0, true), newScroll(Settings.frame, 0, false), newScroll(Settings.frame, 0, false), newScroll(Settings.frame, 0, false), newScroll(Settings.frame, 0, false), newScroll(Settings.frame, 0, false) }
 Settings.controls = {}
 local waitingKey = nil
@@ -14713,27 +18317,102 @@ do
 	end)
 
 	section(v, "Layout", 32)
-	reg(Ctl.choice(v, 33, "Top bar spot", { { "top", "Top" }, { "left", "Left" }, { "right", "Right" }, { "bottom", "Bottom" } }, function() return S.barPos end, function(x)
+	do
+		local dc = card(v, 136, 33)
+		dc.Name = "Design"
+		UI.label(dc, { Text = "Design", TextSize = 12, Position = UDim2.fromOffset(12, 8), Size = UDim2.new(0.5, -12, 0, 18) })
+		local hint = UI.label(dc, { TextSize = 10, TextColor3 = T.sub, TextXAlignment = Enum.TextXAlignment.Right, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 8), Size = UDim2.new(0.5, -12, 0, 18), TextTruncate = Enum.TextTruncate.AtEnd })
+		local row = UI.new("Frame", { BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 32), Size = UDim2.new(1, -24, 0, 94) }, dc)
+		local DESIGNS = { { "original", "Original", "panels and a dock" }, { "sidebar", "Sidebar", "big menu on the left" }, { "window", "Window", "one window, all in" } }
+		local tiles = {}
+		local function paint()
+			for _, t in ipairs(tiles) do
+				local on = S.layout == t.id
+				UI.tween(t.stroke, 0.2, { Transparency = on and 0.05 or 1 })
+				t.name.TextColor3 = on and T.text or T.sub
+			end
+			local cur = Shell.mode or S.layout
+			if cur ~= S.layout then
+				hint.Text = "Needs a bigger screen, using Original"
+			else
+				for _, d in ipairs(DESIGNS) do
+					if d[1] == S.layout then hint.Text = d[3] end
+				end
+			end
+		end
+		for i, d in ipairs(DESIGNS) do
+			local b = UI.button(row, { Name = d[1], BackgroundColor3 = T.card2, Size = UDim2.new(1 / 3, -6, 1, 0), Position = UDim2.new((i - 1) / 3, (i - 1) * 3, 0, 0) })
+			UI.corner(b, 12)
+			local st = UI.stroke(b, accentColor(), 2, 1)
+			UI.accent(st, "Color")
+			local pv = UI.new("Frame", { Name = "Preview", BackgroundColor3 = T.ink, Position = UDim2.fromOffset(6, 6), Size = UDim2.new(1, -12, 0, 60) }, b)
+			UI.corner(pv, 8)
+			local function box(x, y, w, h, col, r, acc)
+				local f = UI.new("Frame", { BackgroundColor3 = col, BorderSizePixel = 0, Position = UDim2.fromScale(x, y), Size = UDim2.fromScale(w, h) }, pv)
+				UI.corner(f, r or 3)
+				if acc then UI.accent(f, "BackgroundColor3") end
+				return f
+			end
+			if d[1] == "original" then
+				box(0.07, 0.1, 0.24, 0.12, T.card2, 3)
+				box(0.07, 0.28, 0.4, 0.54, T.card, 4)
+				box(0.58, 0.28, 0.35, 0.54, T.card, 4)
+				box(0.3, 0.87, 0.4, 0.07, T.text, 3, true)
+			elseif d[1] == "sidebar" then
+				box(0.04, 0.08, 0.2, 0.84, T.card2, 4)
+				box(0.07, 0.3, 0.14, 0.07, T.text, 2, true)
+				box(0.07, 0.44, 0.14, 0.05, T.dim, 2)
+				box(0.07, 0.55, 0.14, 0.05, T.dim, 2)
+				box(0.3, 0.08, 0.24, 0.12, T.card2, 3)
+				box(0.3, 0.26, 0.34, 0.66, T.card, 4)
+				box(0.68, 0.26, 0.28, 0.66, T.card, 4)
+			else
+				box(0.08, 0.08, 0.84, 0.84, T.card, 6)
+				box(0.08, 0.26, 0.84, 0.02, T.card2, 0)
+				box(0.13, 0.12, 0.08, 0.1, T.text, 2, true)
+				box(0.12, 0.33, 0.2, 0.52, T.card2, 3)
+				box(0.15, 0.4, 0.14, 0.06, T.text, 2, true)
+				box(0.36, 0.33, 0.52, 0.52, T.card2, 3)
+			end
+			local name = UI.label(b, { Text = d[2], Font = FONT_B, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.fromOffset(0, 68), Size = UDim2.new(1, 0, 0, 20) })
+			UI.pressable(b, 0.95)
+			b.Activated:Connect(function()
+				if S.layout == d[1] then return end
+				S.layout = d[1]
+				saveSettings()
+				Shell.layout()
+				Dock.select(Dock.sel)
+				paint()
+			end)
+			tiles[i] = { id = d[1], stroke = st, name = name }
+		end
+		paint()
+		reg({ render = paint })
+	end
+	Ctl.action(v, 34, "Move things around", "move", false, function()
+		Core.Move.start()
+	end)
+	reg(Ctl.choice(v, 35, "Top bar spot", { { "top", "Top" }, { "left", "Left" }, { "right", "Right" }, { "bottom", "Bottom" } }, function() return S.barPos end, function(x)
 		S.barPos = x
 		saveSettings()
 		Shell.layout()
 	end))
-	reg(Ctl.choice(v, 34, "Dock spot", { { "bottom", "Bottom" }, { "left", "Left" }, { "right", "Right" } }, function() return S.dockPos end, function(x)
+	reg(Ctl.choice(v, 36, "Dock spot", { { "bottom", "Bottom" }, { "left", "Left" }, { "right", "Right" } }, function() return S.dockPos end, function(x)
 		S.dockPos = x
 		saveSettings()
 		Shell.layout()
 		Dock.select(Dock.sel)
 	end))
-	reg(Ctl.toggle(v, 35, "Show the page name in the dock", nil, function() return S.dockLabels end, function(x)
+	reg(Ctl.toggle(v, 37, "Show the page name in the dock", nil, function() return S.dockLabels end, function(x)
 		S.dockLabels = x
 		saveSettings()
 		Dock.layout(true)
 	end))
-	Ctl.note(v, 36, "On a small screen the hub shows one card at a time. Tap back to go back.")
+	Ctl.note(v, 38, "Dock spot is for the Original design. On a small screen the hub shows one card at a time, tap back to go back.")
 
 	if X.setfpscap then
-		section(v, "Performance", 37)
-		reg(Ctl.slider(v, 38, "FPS cap", 0, 360, 30, function() return S.fpsCap end, function(x, final)
+		section(v, "Performance", 39)
+		reg(Ctl.slider(v, 40, "FPS cap", 0, 360, 30, function() return S.fpsCap end, function(x, final)
 			if final then
 				S.fpsCap = x
 				saveSettings()
@@ -15433,10 +19112,50 @@ do
 	end)
 end
 
+Core.CREDITS = {
+	{ "Vulnerali / padero", "Made the original Studio Dummy V4", nil },
+	{ "andrfix", "The Studio Dummy version the modes and fly came from", nil },
+	{ "MLG Super Killer", "Made the original Snake Banisher", nil },
+	{ "Epic", "Converted Snake Banisher, the V3 the hub runs", nil },
+	{ "STEVETHEREALONE", "Uhhhhhh: the dances, their songs and the reanimate style Reanimate and Emotes are built on", "https://discord.gg/NASNUKRBVM" },
+	{ "Dubmood & Solary-3", "Some of the Uhhhhhh dance songs and animations", nil },
+	{ "Edge & the Infinite Yield team", "Lots of the commands came from Infinite Yield (Moon, Zwolf, Sleaze, Toon, Peyton, ATP)", "https://discord.gg/78ZuWSq" },
+	{ "ScriptBlox", "Everything in the Scripts tab", "https://discord.com/invite/HrPBC2DKCu" },
+	{ "Phineas (Lanyard)", "Free Spotify through Discord", "https://discord.gg/UrXF2cfJ7F" },
+	{ "yt-dlp", "How the hub talks to YouTube, youtube.json follows its list", "https://discord.gg/H5MNcFW63r" },
+	{ "LRCLIB (tranxuanthang)", "The song lyrics", nil },
+	{ "ntfy (Philipp C. Heckel)", "The relay the hub chat goes through", "https://discord.gg/cT7ECsZj9w" },
+	{ "Lucide", "The icons", "https://discord.gg/EH6nSts" },
+}
+
+function Core.creditRow(parent, order, c)
+	local row = UI.new("Frame", { Name = "Credit", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = order }, parent)
+	UI.corner(row, 12)
+	local inner = UI.new("Frame", { Name = "Text", BackgroundTransparency = 1, Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, c[3] and -100 or -24, 0, 0), AutomaticSize = Enum.AutomaticSize.Y }, row)
+	UI.pad(inner, 0, 0, 9, 9)
+	UI.list(inner, 2)
+	UI.label(inner, { Name = "Who", Text = c[1], Font = FONT_B, TextSize = 12, Size = UDim2.new(1, 0, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd, LayoutOrder = 1 })
+	UI.label(inner, { Name = "What", Text = c[2], TextSize = 10, TextColor3 = T.sub, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 2 })
+	if c[3] then
+		local b = UI.button(row, { Name = "Discord", BackgroundColor3 = T.card2, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -10, 0.5, 0), Size = UDim2.fromOffset(78, 26) })
+		UI.corner(b, 13)
+		local set = iconText(b, "message-circle", "Discord", T.text, 10)
+		UI.pressable(b, 0.9)
+		b.Activated:Connect(function()
+			copyText(c[3], c[1] .. " Discord")
+			set("check", "Copied", T.green)
+			task.delay(1.5, function()
+				if b.Parent then set("message-circle", "Discord", T.text) end
+			end)
+		end)
+	end
+	return row
+end
+
 do
 	local v = Settings.views[6]
 	section(v, "Atsuko Hub", 1)
-	Settings.verInfo = Ctl.info(v, 2, "Version", "v" .. HUB_VERSION)
+	Settings.verInfo = Ctl.info(v, 2, "Version", Core.BETA .. HUB_VERSION)
 	Ctl.action(v, 3, "What's new", "sparkles", false, function() Ver.showNews() end)
 	Ctl.action(v, 4, "Check for updates", "download", false, function() Ver.check(true) end)
 	Ctl.action(v, 5, "Copy the hub loadstring", "copy", false, function()
@@ -15496,9 +19215,23 @@ do
 	Ctl.action(v, 15, "Close the hub", "power", true, function()
 		HUB.Destroy()
 	end, true)
+	section(v, "Credits", 16)
+	Ctl.note(v, 17, "Everyone who made the hub and the Atsuko scripts possible. Tap Discord to copy their server link.")
+	local cl = UI.new("Frame", { Name = "Credits", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 18 }, v)
+	UI.list(cl, 6)
+	for i, c in ipairs(Core.CREDITS) do
+		Core.creditRow(cl, i, c)
+	end
+	Ctl.action(v, 19, "Copy all the credits", "heart-handshake", false, function()
+		local out = {}
+		for _, c in ipairs(Core.CREDITS) do
+			out[#out + 1] = c[1] .. " - " .. c[2] .. (c[3] and (" - " .. c[3]) or "")
+		end
+		copyText(table.concat(out, "\n"), "Credits")
+	end)
 	Settings.footer = UI.label(v, {
 		Name = "Footer",
-		Text = "Atsuko Hub v" .. HUB_VERSION .. "  ·  made by atsukohakari",
+		Text = "Atsuko Hub " .. Core.BETA .. HUB_VERSION .. "  ·  made by atsukohakari",
 		TextSize = 10,
 		TextColor3 = T.dim,
 		TextXAlignment = Enum.TextXAlignment.Center,
@@ -15619,6 +19352,11 @@ function NP.like(src)
 	if i.src == "spotify" then
 		if i.canLike then Spot.setLike(i.uri, not i.liked) end
 	else
+		if i.track.temp and not i.track.fav then
+			local ok, err = Player.keep(i.track)
+			if not ok then return notify("Music Player", err, "error", 3) end
+			notify("Music Player", "Saved to your library", "ok", 2)
+		end
 		i.track.fav = not i.track.fav
 		Player.save()
 		Bus.fire("playerLib")
@@ -15934,8 +19672,15 @@ end
 function NP.viz(dt)
 	local s = Player.sound
 	local loud = 0
-	if Player.state == "playing" and s then loud = math.clamp((s.PlaybackLoudness or 0) / 320, 0, 1) end
 	local now = os.clock()
+	if Player.state == "playing" and s then
+		if Player.isVF(s) then
+			local beat = (now * 2.05) % 1
+			loud = math.clamp(0.28 + math.exp(-beat * 5.5) * 0.5 + (0.5 + 0.5 * math.sin(now * 0.7)) * 0.18, 0, 1)
+		else
+			loud = math.clamp((s.PlaybackLoudness or 0) / 320, 0, 1)
+		end
+	end
 	local spot = NP.spotLoud(now)
 	local k = math.clamp(dt * 12, 0, 1)
 	for _, v in ipairs(NP.views) do
@@ -16237,8 +19982,8 @@ do
 	MP.speed = Ctl.slider(sb, 3, "Speed", 0.5, 2, 0.05, function() return Player.cfg.speed end, function(x, final)
 		if final then
 			Player.setSpeed(x)
-		elseif Player.sound then
-			Player.sound.PlaybackSpeed = x
+		elseif Player.snd then
+			Player.snd.PlaybackSpeed = x
 		end
 	end, function(x) return string.format("%.2fx", x) end, true)
 	MP.fxRows = {
@@ -16291,11 +20036,139 @@ do
 		MP.connectBanner.Visible = spot and not Spot.live()
 		MP.status.Text = spot and Spot.err or ""
 		MP.status.Visible = spot and Spot.err ~= nil
-		MP.soundBox.Visible = not spot
+		MP.soundBox.Visible = not spot and not Player.isVF(Player.sound)
+		if MP.hereBanner then MP.hereBanner.Visible = spot and Spot.free() and i.has end
 		MP.clearQ.Visible = not spot and #Player.queue > 0
 		MP.upNote.Visible = spot and Spot.connected()
 	end
 	NP.add(v)
+end
+
+do
+	local v = MP.nowV
+	local nv = MP.views[1]
+	local hero = v.hero
+	local prog = nv:FindFirstChild("Progress")
+	local ctl = nv:FindFirstChild("Controls")
+	local vc = nv:FindFirstChild("Volume")
+	local hb = hero:FindFirstChild("Like")
+	hero:FindFirstChildOfClass("UICorner").CornerRadius = UDim.new(0, 20)
+	v.backdrop:FindFirstChildOfClass("UICorner").CornerRadius = UDim.new(0, 20)
+	UI.stroke(hero, T.stroke, 1, 0.55)
+	for _, c in ipairs(hero:GetChildren()) do
+		if c.Name == "Shade" then
+			local sc = c:FindFirstChildOfClass("UICorner")
+			if sc then sc.CornerRadius = UDim.new(0, 20) end
+		end
+	end
+	prog.Parent = hero
+	ctl.Parent = hero
+	vc.Parent = hero
+	vc.BackgroundColor3 = T.card2
+	vc.BackgroundTransparency = 0.35
+	local vcc = vc:FindFirstChildOfClass("UICorner")
+	if vcc then vcc.CornerRadius = UDim.new(0, 14) end
+
+	local disc = UI.new("Frame", { Name = "Disc", BackgroundColor3 = Color3.fromRGB(78, 78, 90), AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(150, 150), ZIndex = 1, Visible = false }, hero)
+	UI.new("UICorner", { CornerRadius = UDim.new(0.5, 0) }, disc)
+	UI.stroke(disc, Color3.new(1, 1, 1), 1, 0.8)
+	UI.new("UIGradient", {
+		Rotation = 35,
+		Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(120, 120, 128)),
+			ColorSequenceKeypoint.new(0.3, Color3.fromRGB(70, 70, 78)),
+			ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
+			ColorSequenceKeypoint.new(0.7, Color3.fromRGB(70, 70, 78)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(120, 120, 128)),
+		}),
+	}, disc)
+	for _, s in ipairs({ 0.9, 0.78, 0.66, 0.54 }) do
+		local r = UI.new("Frame", { Name = "Groove", BackgroundTransparency = 1, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(s, s), ZIndex = 1 }, disc)
+		UI.new("UICorner", { CornerRadius = UDim.new(0.5, 0) }, r)
+		UI.stroke(r, Color3.new(0, 0, 0), 1, 0.6)
+	end
+	local lab = UI.new("Frame", { Name = "Label", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(0.36, 0.36), ZIndex = 1 }, disc)
+	UI.new("UICorner", { CornerRadius = UDim.new(0.5, 0) }, lab)
+	UI.accent(lab, "BackgroundColor3")
+	local hole = UI.new("Frame", { Name = "Hole", BackgroundColor3 = T.ink, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(0.2, 0.2), ZIndex = 1 }, lab)
+	UI.new("UICorner", { CornerRadius = UDim.new(0.5, 0) }, hole)
+	v.disc = disc
+	v.art.frame.ZIndex = 2
+	UI.stroke(v.art.frame, Color3.new(0, 0, 0), 1, 0.7)
+
+	function MP.placeDisc(anim)
+		local b = v.discBase
+		if not b then return end
+		local i = NP.info(NP.src)
+		local out = i.has and not i.stopped
+		local k = out and (i.playing and b.max or b.max * 0.55) or 0.02
+		disc.Visible = true
+		UI.tween(disc, anim and 0.7 or 0, { Position = UDim2.fromOffset(b.x + b.a * k, b.y) }, Enum.EasingStyle.Quint)
+	end
+
+	MP.layout = function(w, h)
+		local cw = w - 20
+		local a, y
+		if (h or 999) >= 420 then
+			a = math.clamp(math.floor((cw - 24) * 0.5), 116, 176)
+			local cx = math.floor(cw / 2 - a * 0.16)
+			v.art.frame.AnchorPoint = Vector2.new(0.5, 0)
+			v.art.frame.Position = UDim2.fromOffset(cx, 44)
+			v.art.frame.Size = UDim2.fromOffset(a, a)
+			v.discBase = { x = cx, y = 44 + a / 2, a = a, max = 0.34 }
+			y = 44 + a + 16
+			v.title.Position, v.title.Size = UDim2.fromOffset(16, y), UDim2.new(1, -70, 0, 20)
+			v.artist.Position, v.artist.Size = UDim2.fromOffset(16, y + 21), UDim2.new(1, -70, 0, 15)
+			v.ctx.Position, v.ctx.Size = UDim2.fromOffset(16, y + 38), UDim2.new(1, -32, 0, 14)
+			hb.Position = UDim2.new(1, -14, 0, y - 2)
+			y += 58
+		else
+			a = math.clamp(math.floor((cw - 24) * 0.3), 84, 112)
+			v.art.frame.AnchorPoint = Vector2.new(0, 0)
+			v.art.frame.Position = UDim2.fromOffset(14, 40)
+			v.art.frame.Size = UDim2.fromOffset(a, a)
+			v.discBase = { x = 14 + a / 2, y = 40 + a / 2, a = a, max = 0.27 }
+			local x = 26 + a + math.floor(a * 0.27)
+			v.title.Position, v.title.Size = UDim2.fromOffset(x, 46), UDim2.new(1, -(x + 12), 0, 20)
+			v.artist.Position, v.artist.Size = UDim2.fromOffset(x, 68), UDim2.new(1, -(x + 12), 0, 15)
+			v.ctx.Position, v.ctx.Size = UDim2.fromOffset(x, 86), UDim2.new(1, -(x + 56), 0, 14)
+			hb.Position = UDim2.new(1, -14, 0, 40 + a - 36)
+			y = 50 + a
+		end
+		prog.Position, prog.Size = UDim2.fromOffset(4, y), UDim2.new(1, -8, 0, 34)
+		y += 30
+		ctl.Position, ctl.Size = UDim2.fromOffset(0, y), UDim2.new(1, 0, 0, 56)
+		y += 60
+		vc.Position, vc.Size = UDim2.fromOffset(10, y), UDim2.new(1, -20, 0, 40)
+		y += 52
+		hero.Size = UDim2.new(1, 0, 0, y)
+		local ds = math.floor(a * 0.94)
+		disc.Size = UDim2.fromOffset(ds, ds)
+		MP.placeDisc(false)
+		local size = v.art.frame.Size.X.Offset
+		local n = #v.art.bars
+		local gap = math.max(2, math.floor(size / 24))
+		local bw = math.max(2, math.floor((size * 0.7 - (n - 1) * gap) / n))
+		local x0 = math.floor((size - (n * bw + (n - 1) * gap)) / 2)
+		for k, b in ipairs(v.art.bars) do
+			b.w = bw
+			b.f.Position = UDim2.new(0, x0 + (k - 1) * (bw + gap), 1, -math.floor(size * 0.16))
+			b.f.Size = UDim2.new(0, bw, b.h, 0)
+		end
+	end
+
+	local oldExtra = v.extra
+	v.extra = function(i, src)
+		oldExtra(i, src)
+		if i.has and i.art and v.backdrop.Image == "" then v.backdrop.Image = i.art end
+		MP.discSpin = i.playing == true
+		MP.placeDisc(true)
+	end
+	hubConn(RunService.Heartbeat:Connect(function(dt)
+		if MP.discSpin and S.animations and disc.Visible and MP.shown(1) then
+			disc.Rotation = (disc.Rotation + dt * 70) % 360
+		end
+	end))
 end
 
 MP.upKey = nil
@@ -16874,6 +20747,7 @@ do
 	local clear = UI.button(bar, { Name = "Clear", BackgroundTransparency = 1, Size = UDim2.fromOffset(28, 28), Position = UDim2.new(1, -31, 0, 3), Visible = false })
 	UI.icon("x", 13, T.sub, clear, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5) })
 	clear.Activated:Connect(function() box.Text = "" end)
+	MP.spotBox = box
 	MP.results = MP.listFrame(lv, 2)
 	MP.libBody = MP.listFrame(lv, 3)
 	local seq = 0
@@ -16885,7 +20759,13 @@ do
 		section(MP.results, "Songs", 0)
 		skeleton(MP.results, 3)
 		task.spawn(function()
-			local got, err = Spot.search(q)
+			local free = not Spot.connected()
+			local got, err
+			if free then
+				got, err = Tube.search(q)
+			else
+				got, err = Spot.search(q)
+			end
 			if not HUB.alive or my ~= seq then return end
 			clearList(MP.results)
 			section(MP.results, "Songs", 0)
@@ -16893,6 +20773,14 @@ do
 				emptyState(MP.results, "circle-alert", "Search didn't work", err or "Try again", 1)
 			elseif #got == 0 then
 				emptyState(MP.results, "search", "No songs found", "Try another word", 1)
+			elseif free then
+				for k, it in ipairs(got) do
+					local row = { name = it.title, artist = it.by, duration = (it.len or 0) * 1000, thumb = it.thumb, uri = "yt:" .. it.id }
+					MP.trackRow(MP.results, row, k, function()
+						NP.setSource("local")
+						Player.playSongs({ { name = it.title, by = it.by, len = it.len, yt = it.id } }, 1, nil)
+					end, false)
+				end
 			else
 				for k, t in ipairs(got) do
 					MP.trackRow(MP.results, t, k, function() Spot.playUris({ t.uri }) end, true)
@@ -16916,21 +20804,96 @@ do
 	end)
 end
 
+function MP.playHere()
+	local s = Spot.state
+	if not (s and s.title and s.title ~= "") then return end
+	NP.setSource("local")
+	local at = s.free and (Spot.progressNow() / 1000) or nil
+	Player.playSongs({ { name = s.title, by = s.artist or "", len = math.floor((s.duration or 0) / 1000), uri = s.uri } }, 1, nil, at and at > 3 and at or nil)
+	notify("Music Player", "Finding " .. s.title .. ", pause it in Spotify so you don't hear it twice", "info", 3)
+end
+
+MP.hereBanner = MP.banner(MP.nowV.root, 6, "headphones", "Hear it in the game", "The hub can play this song itself, right from where it is.", "Play here", function() MP.playHere() end)
+MP.hereBanner.Name = "PlayHere"
+MP.hereBanner.Visible = false
+
 function MP.reconnectBanner(parent, order)
 	return MP.banner(parent, order, "sparkles", "Unlock playlists and likes", "Log in again once so the hub can see your library.", "Log in", function() Spot.reconnect() end)
+end
+
+function MP.freeRows(l)
+	local out = {}
+	for _, t in ipairs(l.tracks) do
+		out[#out + 1] = { name = t.name, artist = t.by or "", duration = (t.len or 0) * 1000, uri = t.uri }
+	end
+	return out
+end
+
+function MP.importFree(text)
+	if MP.freeBusy then return end
+	text = Util.trim(tostring(text or ""))
+	if text == "" then return notify("Spotify", "Paste a Spotify link first", "info", 2) end
+	MP.freeBusy = true
+	notify("Spotify", "Getting it...", "info", 1.5)
+	task.spawn(function()
+		local l, err = Tube.spotify(text)
+		MP.freeBusy = false
+		if not HUB.alive then return end
+		if not l then return notify("Couldn't add it", err, "error", 4) end
+		Tube.addList(l)
+		MP.freeTyped = nil
+		notify("Spotify", "Added " .. l.name .. "  ·  " .. #l.tracks .. (#l.tracks == 1 and " song" or " songs"), "ok", 3)
+		if MP.lib.side == "spotify" then MP.renderSpotLib() end
+	end)
+end
+
+function MP.renderFreeLib(body)
+	section(body, "Spotify, no Premium", 1)
+	Ctl.note(body, 2, "Paste a Spotify song, album or playlist link and it plays right here in the game, or search any song above. The sound comes from YouTube, so once in a while a song might be a different version.")
+	MP.freeBox = Ctl.input(body, 3, "Spotify link", "https://open.spotify.com/playlist/...", function() return MP.freeTyped or "" end, function(x, enter)
+		MP.freeTyped = x ~= "" and x or nil
+		if enter and x ~= "" then MP.importFree(x) end
+	end)
+	MP.freeBox.box.ClearTextOnFocus = false
+	Ctl.buttons(body, 4, { { "download", "Add it", function()
+		MP.importFree(MP.freeTyped or MP.freeBox.box.Text)
+	end } })
+	section(body, "Your Spotify lists", 5)
+	local lists = Tube.loadLists()
+	if #lists == 0 then
+		emptyState(body, "list-music", "Nothing here yet", "Add a playlist link above, it has to be public on Spotify", 6)
+	end
+	for k, l in ipairs(lists) do
+		local row = UI.button(body, { Name = "Playlist", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 56), LayoutOrder = 10 + k })
+		UI.corner(row, 12)
+		MP.thumb(row, 44, 8, UDim2.fromOffset(6, 6), l.image, l.kind == "track" and "music" or "list-music")
+		UI.label(row, { Text = l.name, Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(60, 11), Size = UDim2.new(1, -96, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd })
+		local bits = {}
+		if l.by ~= "" then bits[#bits + 1] = l.kind == "playlist" and ("by " .. l.by) or l.by end
+		bits[#bits + 1] = #l.tracks .. (#l.tracks == 1 and " song" or " songs")
+		UI.label(row, { Text = table.concat(bits, "  ·  "), TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(60, 29), Size = UDim2.new(1, -96, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd })
+		UI.icon("chevron-right", 14, T.dim, row, { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -14, 0.5, 0) })
+		Ctl.hoverable(row)
+		row.Activated:Connect(function()
+			MP.openList({ kind = "free", id = l.id, name = l.name, image = l.image, sub = l.by ~= "" and l.by or nil, caption = string.upper(l.kind == "track" and "song" or l.kind), list = l })
+		end)
+	end
+	if not Spot.free() then
+		Ctl.note(body, 998, "Your liked songs can't be read without Premium. Put them in a public playlist and paste its link here.")
+		Ctl.action(body, 999, "Premium? Connect your own Spotify app", "settings", false, function() Panel.setTab(MP, 5) end)
+	else
+		Ctl.note(body, 999, "Your liked songs can't be read without Premium. Put them in a public playlist and paste its link here.")
+	end
 end
 
 function MP.renderSpotLib()
 	local body = MP.libBody
 	clearList(body)
-	MP.spotSearch.Visible = Spot.connected()
+	MP.spotSearch.Visible = true
 	clearList(MP.results)
+	if MP.spotBox then MP.spotBox.PlaceholderText = Spot.connected() and "Search songs on Spotify" or "Search any song" end
 	if not Spot.connected() then
-		if Spot.free() then
-			emptyState(body, "music", "Playlists need a Spotify app", "Free Spotify shows what's playing, your playlists need the Premium setup in More", 1)
-		else
-			emptyState(body, "music", "Spotify isn't connected", "Connect it in the More tab to see your playlists here", 1, "Set it up", function() Panel.setTab(MP, 5) end)
-		end
+		MP.renderFreeLib(body)
 		return
 	end
 	local tiles = UI.new("Frame", { Name = "Tiles", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 60), LayoutOrder = 2 }, body)
@@ -17030,7 +20993,7 @@ function MP.openList(pl)
 	pad.PaddingLeft, pad.PaddingRight = UDim.new(0, 10), UDim.new(0, 10)
 	local hc = card(sc, 96, 1)
 	hc.Name = "Head"
-	if pl.kind == "playlist" then
+	if pl.kind == "playlist" or pl.kind == "free" then
 		MP.thumb(hc, 72, 10, UDim2.fromOffset(12, 12), pl.image, "list-music")
 	else
 		local tile = UI.new("Frame", { Name = "Thumb", Size = UDim2.fromOffset(72, 72), Position = UDim2.fromOffset(12, 12) }, hc)
@@ -17064,6 +21027,17 @@ function MP.openList(pl)
 	end
 	local function start(index, shuffle)
 		if not tracks or #tracks == 0 then return end
+		if pl.kind == "free" then
+			NP.setSource("local")
+			local sh = nil
+			if shuffle == true then
+				sh = true
+			elseif index == nil then
+				sh = false
+			end
+			Player.playSongs(pl.list.tracks, index, sh)
+			return
+		end
 		NP.setSource("spotify")
 		task.spawn(function()
 			local want = shuffle == true
@@ -17090,11 +21064,23 @@ function MP.openList(pl)
 	play.Activated:Connect(function() start(nil, false) end)
 	shuf.Activated:Connect(function() start(nil, true) end)
 	MP.listSel = pl
+	if pl.kind == "free" then
+		Ctl.action(sc, 4, "Remove this from my lists", "trash-2", true, function()
+			Tube.removeList(pl.list.id)
+			Aside.hide()
+			if MP.lib.side == "spotify" then MP.renderSpotLib() end
+		end, true)
+	end
 	Aside.show("spotlist", f, "player", function()
 		if MP.listSel == pl then MP.listSel = nil end
 	end)
 	task.spawn(function()
-		local got, err = Spot.fetchTracks(pl.kind, pl.id)
+		local got, err
+		if pl.kind == "free" then
+			got = MP.freeRows(pl.list)
+		else
+			got, err = Spot.fetchTracks(pl.kind, pl.id)
+		end
 		if not HUB.alive or MP.listSel ~= pl then return end
 		clearList(list)
 		if not got then
@@ -17108,7 +21094,7 @@ function MP.openList(pl)
 			return
 		end
 		for k, t in ipairs(got) do
-			MP.trackRow(list, t, k, function() start(k, nil) end, true)
+			MP.trackRow(list, t, k, function() start(k, nil) end, pl.kind ~= "free")
 		end
 	end)
 end
@@ -17228,7 +21214,7 @@ do
 		end)
 	end
 	dl = Ctl.buttons(av, 9, { { "download", "Download", function() download(false) end }, { "play-fill", "Download and play", function() download(true) end } })
-	Ctl.note(av, 10, "Direct links (Discord, catbox, GitHub raw) work right away. Dropbox, Google Drive and GitHub page links get fixed by themselves. YouTube needs a converter, set it up in More. Songs are saved in " .. Player.dir .. " and never added twice.")
+	Ctl.note(av, 10, "Direct links (Discord, catbox, GitHub raw) and YouTube links work right away, no converter needed. Dropbox, Google Drive and GitHub page links get fixed by themselves. Songs are saved in " .. Player.dir .. " and never added twice.")
 	section(av, "Your music folder", 11)
 	Ctl.note(av, 12, "Put .mp3 or .ogg files in " .. Player.dir .. " inside your executor's workspace folder, then tap Scan.")
 	Ctl.action(av, 13, "Scan my music folder", "folder-open", false, function()
@@ -17251,12 +21237,10 @@ do
 		manyBox.render()
 		notify("Music Player", "Added " .. added .. (added == 1 and " song" or " songs") .. (skipped > 0 and (", skipped " .. skipped) or ""), added > 0 and "ok" or "info", 2.5)
 	end } })
-	section(av, "Video (beta)", 20)
+	section(av, "Video", 20)
 	Ctl.action(av, 21, "Open the video player", "video", false, function() Core.Video.open() end)
-	Ctl.note(av, 22, "For testing: YouTube (through your converter), .webm or .mp4 links and Roblox video IDs. Roblox only plays some video files from an executor.")
+	Ctl.note(av, 22, "YouTube links play straight from YouTube (no converter), plus .webm or .mp4 links and Roblox video IDs. Videos up to 20 minutes.")
 
-	-- YouTube music search: YouTube's own search with your free API key, only the music category,
-	-- and picks go through your converter into the music folder like any other link
 	local YT = { results = {}, nextPage = nil, q = "", busy = {}, searching = false, typed = nil, keyTyped = nil }
 	Core.YT = YT
 	YT.CONSOLE = "https://console.cloud.google.com/apis/library/youtube.googleapis.com"
@@ -17292,6 +21276,15 @@ do
 		return "YouTube said " .. code
 	end
 	function YT.search(q, page, done)
+		task.spawn(function()
+			local items, err = Tube.search(q)
+			if not HUB.alive then return end
+			if items then return done(items, nil, nil) end
+			if S.ytSearchKey ~= "" then return YT.apiSearch(q, page, done) end
+			done(nil, err)
+		end)
+	end
+	function YT.apiSearch(q, page, done)
 		local key = S.ytSearchKey
 		if key == "" then return done(nil, "Add your YouTube API key first") end
 		local url = "https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=15&q=" .. Util.urlEncode(q) .. "&key=" .. Util.urlEncode(key)
@@ -17339,10 +21332,6 @@ do
 		local have = YT.have(it)
 		if have then
 			if play then Player.play(have) end
-			return
-		end
-		if S.ytApi == "" then
-			notify("Music Player", "Set up a converter in More > YouTube first, it turns songs into mp3s", "info", 3.5)
 			return
 		end
 		if YT.busy[it.id] then return end
@@ -17418,43 +21407,18 @@ do
 	function YT.draw()
 		if not (YT.list and YT.list.Parent) then return end
 		local hasKey = S.ytSearchKey ~= ""
-		YT.setup.Visible = not hasKey
-		YT.box.row.Visible = hasKey
-		YT.goBtn.Visible = hasKey
 		YT.keyAction.Visible = hasKey
 		clearList(YT.list)
 		for i, it in ipairs(YT.results) do
 			YT.row(it, i)
 		end
-		YT.more.Visible = hasKey and YT.nextPage ~= nil and not YT.searching and #YT.results > 0
+		YT.more.Visible = YT.nextPage ~= nil and not YT.searching and #YT.results > 0
 	end
 
 	section(av, "Search YouTube", -30)
-	-- first time: get a free key
 	YT.setup = UI.new("Frame", { Name = "YouTubeSetup", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = -29 }, av)
 	UI.list(YT.setup, 6)
-	Ctl.note(YT.setup, 1, "Find songs on YouTube right here. It needs a free YouTube API key (about 100 searches a day):  1  Open the Google Cloud console and make a project.  2  Turn on YouTube Data API v3.  3  Go to Credentials, make an API key and paste it below. Songs you pick go through your converter (More > YouTube).")
-	Ctl.action(YT.setup, 2, "Copy the Google Cloud link", "link", false, function()
-		copyText(YT.CONSOLE, "Google Cloud link, open it in your browser")
-	end)
-	local keyBox = Ctl.input(YT.setup, 3, "YouTube API key", "AIza...", function() return YT.keyTyped or "" end, function(x, enter)
-		YT.keyTyped = x ~= "" and x or nil
-		if enter and x ~= "" then YT.saveKey(x) end
-	end)
-	keyBox.box.ClearTextOnFocus = false
-	Ctl.buttons(YT.setup, 4, { { "check", "Save key", function()
-		YT.saveKey(YT.keyTyped or keyBox.box.Text)
-	end } })
-	function YT.saveKey(x)
-		x = string.gsub(tostring(x or ""), "%s", "")
-		if #x < 20 then return notify("YouTube", "That doesn't look like an API key, it's a long code starting with AIza", "error", 3) end
-		S.ytSearchKey = x
-		YT.keyTyped = nil
-		keyBox.render()
-		saveSettings()
-		notify("YouTube", "Key saved, search for a song", "ok", 2.5)
-		YT.draw()
-	end
+	Ctl.note(YT.setup, 1, "Find any song on YouTube right here. No key and no converter, tap play and it plays straight from YouTube.")
 	-- searching
 	YT.box = Ctl.input(av, -28, "Find a song", "song or artist", function() return YT.typed or YT.q end, function(x, enter)
 		YT.typed = x
@@ -17472,7 +21436,7 @@ do
 	iconText(YT.more, "chevron-down", "Show more", T.sub, 11)
 	Ctl.hoverable(YT.more)
 	YT.more.Activated:Connect(function() YT.run(YT.q, true) end)
-	YT.keyAction = Ctl.action(av, -23, "Remove my YouTube key", "key-round", true, function()
+	YT.keyAction = Ctl.action(av, -23, "Remove my old YouTube key", "key-round", true, function()
 		S.ytSearchKey = ""
 		saveSettings()
 		YT.results, YT.nextPage = {}, nil
@@ -17523,7 +21487,7 @@ do
 			Spot.stopDiscord()
 			notify("Spotify", "Stopped showing Spotify from Discord", "ok", 2)
 		end, true)
-		Ctl.note(MP.spotFreeOn, 4, "Shows the song, the time, lyrics and the visualizer. Spotify only lets Premium apps play, pause or skip, so do that in your Spotify app.")
+		Ctl.note(MP.spotFreeOn, 4, "Shows the song, the time, lyrics and the visualizer. Spotify only lets Premium apps press play or skip in the app, so tap Play here on the Now tab to hear it in the game, or play your playlists from Library > Spotify.")
 	end
 	-- free account setup
 	MP.spotFreeSetup = UI.new("Frame", { Name = "FreeSetup", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 3 }, MP.spotState)
@@ -17531,11 +21495,17 @@ do
 	do
 		local fv = MP.spotFreeSetup
 		section(fv, "Free account", 1)
-		Ctl.note(fv, 2, "No Premium needed. Discord shows what you play on Spotify, and the hub reads it from there.  1  In Discord, open Settings > Connections and add Spotify.  2  Join the Lanyard server.  3  Turn on Developer Mode (Settings > Advanced), tap your name, Copy User ID and paste it below.")
-		Ctl.action(fv, 3, "Copy the Lanyard server invite", "link", false, function()
+		Ctl.note(fv, 2, "No Premium needed. Your Spotify songs play right here in the game: open Library > Spotify and paste a playlist, album or song link, or search any song there.")
+		section(fv, "See what's on in your Spotify app", 6)
+		Ctl.note(fv, 7, "Discord shows what you play on Spotify and the hub reads it from there, then Play here plays it in the game.  1  In Discord, open Settings > Connections and add Spotify.  2  Join the Lanyard server.  3  Turn on Developer Mode (Settings > Advanced), tap your name, Copy User ID and paste it below.")
+		Ctl.action(fv, 3, "Open my Spotify library", "library", false, function()
+			MP.lib.side = "spotify"
+			if MP.libSwitch then MP.libSwitch(true) end
+			Panel.setTab(MP, 3)
+		end)
+		Ctl.action(fv, 8, "Copy the Lanyard server invite", "link", false, function()
 			copyText(Core.LANYARD_INVITE, "Lanyard invite, join it on Discord")
 		end)
-		-- what you typed stays in the box until it works, even when the box loses focus to the button
 		MP.discordPending = nil
 		local function useIt(text)
 			local ok, err = Spot.useDiscord(text)
@@ -17548,11 +21518,11 @@ do
 			end
 			if MP.discordBox then MP.discordBox.render() end
 		end
-		MP.discordBox = Ctl.input(fv, 4, "Your Discord user ID", "123456789012345678", function() return MP.discordPending or Spot.cfg.discord end, function(x, enter)
+		MP.discordBox = Ctl.input(fv, 9, "Your Discord user ID", "123456789012345678", function() return MP.discordPending or Spot.cfg.discord end, function(x, enter)
 			MP.discordPending = x ~= "" and x or nil
 			if enter and x ~= "" then useIt(x) end
 		end)
-		Ctl.buttons(fv, 5, { { "check", "Use Discord", function()
+		Ctl.buttons(fv, 10, { { "check", "Use Discord", function()
 			local text = MP.discordPending or MP.discordBox.box.Text
 			if Util.trim(text) == "" then return notify("Spotify (free)", "Paste your Discord user ID first", "info", 2) end
 			useIt(text)
@@ -17654,8 +21624,8 @@ do
 	end
 
 	section(ov, "YouTube", 3)
-	Ctl.note(ov, 4, "YouTube doesn't hand out mp3 files, so links go through a converter you pick. Paste a cobalt server link (like https://your-cobalt-server/), or any converter link with {id} or {url} in it that gives back an mp3 or a link to one.")
-	MP.ytBox = Ctl.input(ov, 5, "Converter", "https://...", function() return S.ytApi end, function(x)
+	Ctl.note(ov, 4, "YouTube songs play straight from YouTube, there's nothing to set up. A converter is optional: add one and YouTube songs come through it as mp3s instead, so speed and effects work on them too. Paste a cobalt server link (like https://your-cobalt-server/), or any converter link with {id} or {url} in it.")
+	MP.ytBox = Ctl.input(ov, 5, "Converter (optional)", "https://...", function() return S.ytApi end, function(x)
 		S.ytApi = Util.trim(x)
 		saveSettings()
 	end)
@@ -17758,6 +21728,116 @@ do
 		Bus.fire("player")
 		notify("Music Player", "Library cleared", "ok", 2)
 	end, true)
+	section(ov, "YouTube on this executor", 40)
+	MP.checkBox = UI.new("Frame", { Name = "TubeCheck", BackgroundColor3 = T.card, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 41, Visible = false }, ov)
+	UI.corner(MP.checkBox, 12)
+	UI.pad(MP.checkBox, 12, 12, 10, 12)
+	UI.list(MP.checkBox, 6)
+	MP.checkBtn = Ctl.action(ov, 42, "Check if YouTube songs work here", "badge-check", false, function() MP.tubeCheck() end)
+	Ctl.note(ov, 43, "It tries everything YouTube songs need on your executor and tells you what works. Nothing is changed.")
+	Ctl.note(ov, 44, "Should work on executors with full file and web support (100% sUNC), like Wave, Volt, Potassium, Velocity, Real, Volcano, Delta, Opiumware and MacSploit. Xeno, Solara and JJSploit are hit or miss, and external ones like Matcha or Severe can't do it.")
+end
+
+function MP.tubeCheck()
+	if MP.checking then return end
+	MP.checking = true
+	local box = MP.checkBox
+	clearList(box)
+	box.Visible = true
+	local ex = "this executor"
+	pcall(function()
+		if X.identifyexecutor then
+			local n, v = X.identifyexecutor()
+			if type(n) == "string" and n ~= "" then ex = n .. ((type(v) == "string" and v ~= "") and (" " .. v) or "") end
+		end
+	end)
+	local head = UI.label(box, { Text = "Checking " .. ex .. "...", Font = FONT_B, TextSize = 12, Size = UDim2.new(1, 0, 0, 18), LayoutOrder = 1 })
+	local n = 1
+	local function row(ok, title, detail)
+		n += 1
+		local r = UI.new("Frame", { Name = "Row", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = n }, box)
+		local col = ok == true and T.green or (ok == false and T.red or T.yellow)
+		UI.icon(ok == true and "check" or (ok == false and "x" or "circle-alert"), 13, col, r, { Position = UDim2.fromOffset(0, 2) })
+		UI.label(r, { Text = title, TextSize = 11, Font = FONT_B, TextColor3 = T.text, Position = UDim2.fromOffset(20, 0), Size = UDim2.new(1, -20, 0, 16) })
+		if detail and detail ~= "" then
+			UI.label(r, { Text = detail, TextSize = 10, TextColor3 = T.sub, TextWrapped = true, TextYAlignment = Enum.TextYAlignment.Top, Position = UDim2.fromOffset(20, 16), Size = UDim2.new(1, -20, 0, 0), AutomaticSize = Enum.AutomaticSize.Y })
+		end
+		return ok
+	end
+	task.spawn(function()
+		local need = true
+		if not row(X.request ~= nil, "Web requests", X.request and "It can talk to YouTube" or "No request function, YouTube can't be reached") then need = false end
+		local binOk = false
+		if X.request then
+			local ok, data = Net.get(Repo.raw(HUB_DIR .. "/logo.png"))
+			binOk = ok and type(data) == "string" and #data > 1000 and string.sub(data, 1, 8) == "\137PNG\r\n\26\n"
+			row(binOk, "Downloads come through whole", binOk and "Song files arrive in one piece" or "Downloaded files come back broken, songs can't play")
+			if not binOk then need = false end
+		end
+		local fsOk = false
+		local testPath = LOCAL_DIR .. "/cache/check.bin"
+		if HAS_FS then
+			local blob = "\0\1\2\255\254" .. string.rep("\0", 32)
+			FS.write(testPath, blob)
+			fsOk = FS.read(testPath) == blob
+		end
+		if not row(fsOk, "Saves files", fsOk and "It can keep songs on your device" or "It can't save files the right way") then need = false end
+		local assetOk = false
+		if fsOk and X.getcustomasset then
+			local ok, id = pcall(X.getcustomasset, testPath)
+			assetOk = ok and type(id) == "string" and id ~= ""
+		end
+		if not row(assetOk, "Opens saved files in the game", assetOk and "getcustomasset works" or "No getcustomasset, saved songs can't be opened") then need = false end
+		pcall(function() FS.delete(testPath) end)
+		local vfOk = pcall(function()
+			local f = Instance.new("VideoFrame")
+			f:Destroy()
+		end)
+		if not row(vfOk, "Can play the audio", vfOk and "The game can play the song files" or "VideoFrame is blocked here") then need = false end
+		local reach = nil
+		if X.request then
+			local okS, list = pcall(Tube.search, "never gonna give you up")
+			reach = okS and type(list) == "table" and #list > 0
+			row(reach, "YouTube answers", reach and "Search works" or "YouTube didn't answer, it might be your internet or YouTube blocking it")
+		end
+		local cached = nil
+		pcall(function()
+			for _, p in ipairs(X.listfiles and X.listfiles(Tube.dir) or {}) do
+				if string.find(tostring(p), "%.webm$") then
+					cached = tostring(p)
+					break
+				end
+			end
+		end)
+		local playOk = nil
+		if cached and assetOk and vfOk then
+			local ok, id = pcall(X.getcustomasset, cached)
+			if ok and type(id) == "string" then
+				local f = Instance.new("VideoFrame")
+				f.Visible = false
+				f.Volume = 0
+				f.Video = id
+				f.Parent = Gui
+				local t0 = os.clock()
+				while os.clock() - t0 < 5 and not f.IsLoaded do
+					task.wait(0.1)
+				end
+				playOk = f.IsLoaded == true
+				f:Destroy()
+			end
+			row(playOk, "Played a saved song", playOk and "A song you played before loaded fine" or "A saved song wouldn't load here")
+		else
+			row(nil, "Played a saved song", "Play any YouTube song once, then check again to test this too")
+		end
+		if not HUB.alive then return end
+		local works = need and reach ~= false and playOk ~= false
+		head.Text = works and ("YouTube songs should work on " .. ex) or ("YouTube songs won't work on " .. ex)
+		head.TextColor3 = works and T.green or T.red
+		if not works then
+			row(nil, "What you can do", "Add a converter link above (they come through as mp3s), or use an executor that has request, getcustomasset and file saving.")
+		end
+		MP.checking = false
+	end)
 end
 
 function MP.syncSpotify()
@@ -17920,6 +22000,8 @@ do
 	Island.inner = inner
 	local v = { root = inner, shown = function() return Island.open end, lyOn = true }
 	Island.v = v
+	local bgBtn = UI.button(f, { Name = "Bg", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 3990, Text = "" })
+	bgBtn.Activated:Connect(function() Island.hide() end)
 	v.art = NP.art(inner, 62, 14, UDim2.fromOffset(12, 12), 22, 5)
 	local head = UI.new("Frame", { Name = "Head", BackgroundTransparency = 1, Position = UDim2.fromOffset(84, 12), Size = UDim2.new(1, -96, 0, 14) }, inner)
 	v.live = UI.new("Frame", { Name = "Live", BackgroundColor3 = T.dim, Size = UDim2.fromOffset(6, 6), Position = UDim2.fromOffset(0, 4) }, head)
@@ -18052,7 +22134,12 @@ function Island.hide(instant)
 		f.Visible = false
 		return
 	end
-	-- words fade first, then the shape shrinks back into the top bar and melts into it
+	task.delay(1.1 / math.max(0.5, S.animSpeed), function()
+		if Island.token == tk and not Island.open then
+			inner.GroupTransparency = 1
+			f.Visible = false
+		end
+	end)
 	UI.tween(inner, 0.12, { GroupTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 	task.delay(0.08, function()
 		if Island.token ~= tk then return end
@@ -18303,7 +22390,7 @@ end)
 
 Bus.on("update", function(v)
 	Home.banner.Visible = v ~= nil
-	if v then Home.bannerTitle.Text = "Update ready  ·  v" .. v end
+	if v then Home.bannerTitle.Text = "Update ready  ·  " .. Core.BETA .. v end
 end)
 
 local fps, frames, acc, tickAcc, rainbowAcc, hue, posAcc = 60, 0, 0, 0, 0, 0, 0
@@ -19552,7 +23639,7 @@ Cmd.add({
 })
 
 -- video player (for testing) ------------------------------------------------------------------------
--- YouTube through the same converter as music, direct video links, files in your videos folder and
+-- YouTube straight from YouTube (the picture and the sound put together into one WebM), direct video links, files in your videos folder and
 -- Roblox video IDs. Roblox only plays some video files from an executor (WebM works best), so when
 -- one won't load it says so instead of sitting on a black box.
 local Video = { dir = LOCAL_DIR .. "/videos", busy = {}, token = 0, frame = nil, cur = nil }
@@ -19586,8 +23673,21 @@ function Video.scan()
 	return out
 end
 
--- asks the converter for the video itself (WebM when it can, that's what Roblox likes)
 function Video.ytVideo(info)
+	local data, why = Tube.video(info.id, function(t)
+		Video.say(t, T.sub)
+	end)
+	if data then return data end
+	local api = S.ytApi
+	if api ~= "" and not string.find(api, "{id}", 1, true) and not string.find(api, "{url}", 1, true) then
+		local cdata = Video.ytConvert(info)
+		if cdata then return cdata end
+	end
+	return nil, why
+end
+
+-- asks the converter for the video itself (WebM when it can, that's what Roblox likes)
+function Video.ytConvert(info)
 	local api = S.ytApi
 	if api == "" then return nil, "YouTube needs a converter first. Add one in Music > More > YouTube" end
 	if not string.find(api, "^https?://") then api = "https://" .. api end
@@ -19806,7 +23906,7 @@ function Video.fillPicker()
 	local list = Video.pickList
 	if not (list and list.Parent) then return end
 	clearList(list)
-	Ctl.note(list, 1, "Paste a YouTube link (uses your converter from Music > More), a direct .webm or .mp4 link, or a Roblox video ID. Videos are saved in " .. Video.dir .. ".")
+	Ctl.note(list, 1, "Paste a YouTube link (it plays straight from YouTube, no converter needed), a direct .webm or .mp4 link, or a Roblox video ID. Videos are saved in " .. Video.dir .. ".")
 	Video.linkBox = Ctl.input(list, 2, "Link or video ID", "https://...", function() return Video.typed or "" end, function(x, enter)
 		Video.typed = x
 		if enter and x ~= "" then Video.load(x) end
@@ -19853,7 +23953,7 @@ function Video.open(src)
 	local w = Win.show("video", {
 		title = "Video",
 		icon = "video",
-		sub = "Beta",
+		sub = "YouTube, links and files",
 		w = 420,
 		h = 330,
 		minW = 260,
@@ -19977,7 +24077,7 @@ end
 Cmd.add({
 	id = "video", name = "Video player", icon = "video", cat = "Utility", kind = "action",
 	usage = "video [link or id]",
-	desc = "Plays a YouTube link (through your converter), a .webm or .mp4 link, a saved video or a Roblox video ID. For testing.",
+	desc = "Plays a YouTube link (straight from YouTube), a .webm or .mp4 link, a saved video or a Roblox video ID.",
 	run = function(arg)
 		Video.open(arg)
 		return true
@@ -20304,13 +24404,16 @@ do
 	local rl = GENV.__AtsukoHubReload
 	GENV.__AtsukoHubReload = nil
 	Core.reloadInfo = type(rl) == "table" and rl or nil
+	local rs = GENV.__AtsukoHubResume
+	GENV.__AtsukoHubResume = nil
+	if type(rs) == "string" then Core.resumeInfo = { page = rs, open = rs ~= "" } end
 end
 
 if Repo.loadCache() then Scripts.invalidate() end
 Panel.openBar()
 do
 	-- run it and it opens on Home; a reload comes back on the page you were on
-	local rl = Core.reloadInfo
+	local rl = Core.reloadInfo or Core.resumeInfo
 	local first = rl and Pages[rl.page] and rl.page or "home"
 	Core.startPage = first
 	if (rl and rl.open) or (not rl and S.openOnLoad) then
@@ -20369,12 +24472,14 @@ end)
 Core.running = Runner.count()
 if Core.reloadInfo then
 	Core.reportReload(Core.reloadInfo)
+elseif Core.resumeInfo then
+	notify("Atsuko Hub", "You're back, the hub came with you", "ok")
 elseif Core.running > 0 then
 	notify("Atsuko Hub", Core.running .. (Core.running == 1 and " script is" or " scripts are") .. " still running", "ok")
 else
 	local ex = Home.executor ~= "unknown" and (" on " .. Home.executor) or ""
 	local key = (S.toggleKey ~= "" and UserInputService.KeyboardEnabled) and ("  ·  " .. Core.keyShort(S.toggleKey) .. " opens and closes it") or ""
-	notify("Atsuko Hub", "v" .. HUB_VERSION .. " loaded" .. ex .. key, "ok")
+	notify("Atsuko Hub", Core.BETA .. HUB_VERSION .. " loaded" .. ex .. key, "ok")
 end
 
 if S.lastVersion ~= HUB_VERSION then
@@ -20387,5 +24492,5 @@ if S.lastVersion ~= HUB_VERSION then
 		end)
 	end
 end
-Log.add("ok", "Hub", "Atsuko Hub v" .. HUB_VERSION .. " loaded")
+Log.add("ok", "Hub", "Atsuko Hub " .. Core.BETA .. HUB_VERSION .. " loaded")
 HUB.ready = true

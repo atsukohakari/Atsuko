@@ -1,3 +1,8 @@
+Beta v1.2.2
+- the scripts don't carry credit text anymore, everyone is credited in settings > about
+- credits without a discord server just say what they made
+- the old reanimate is gone, the scripts and the hub only use Reanimate now
+
 Beta v1.2.1
 - renamed AtsukoReanimate.lua and AtsukoEmotes.lua to Reanimate.lua and Emotes.lua, the hub and the scripts use the new names
 - studio dummy and snake banisher download the new files by themselves
@@ -6,7 +11,7 @@ Beta v1.2.0
 - the biggest update yet, almost everything got rebuilt
 - atsuko script: tap a script to pick it, then tap reanimate. deanimate stops it. the bar at the bottom shows what's running
 - only one script runs at a time now, deanimate the one that's on before you start another
-- the scripts use the new Reanimate instead of fdless, a smoother uhhhhhh style reanimate that lives in its own file (Hub/Reanimate.lua)
+- the scripts use the new Reanimate, a smoother uhhhhhh style reanimate that lives in its own file (Hub/Reanimate.lua)
 - studio dummy v4 and snake banisher v3 run on Reanimate now
 - new emotes page right next to atsuko script, no studio dummy needed
 - emotes work while you're reanimated with any of the scripts, the page tells you when you need to reanimate first

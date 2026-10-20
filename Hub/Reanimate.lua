@@ -1,7 +1,6 @@
 --[[
 	Reanimate (Atsuko Hub)
 	the reanimate style comes from Uhhhhhh by STEVETHEREALONE: https://discord.gg/NASNUKRBVM
-	the fdless(aligns) setup follows the fdless reanimate by MyWorld & rqz (Patchma Hub): https://discord.com/invite/QMy5f6DrbH
 ]]
 
 local Players = game:GetService("Players")
@@ -1743,7 +1742,7 @@ module.moveRoot = function(cf)
 	end
 	return false
 end
-module.fdless = function(cfg)
+module.rig = function(cfg)
 	cfg = type(cfg) == "table" and cfg or {}
 	local fd = {}
 	fd.reanimate = function()
