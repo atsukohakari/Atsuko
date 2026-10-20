@@ -70,7 +70,27 @@ local getasset = function(a)
 	end
 end
 
-local patchma=loadstring(game:HttpGetAsync("https://gist.githubusercontent.com/BloxinStud10/05dced4c2ed850246ff1ed7e841258c6/raw/9b79c38d723e7cf40fb538a6352ab6ad51f77194/PatchmaV48.luau"))()
+local patchma=(function()
+	local src=game:HttpGetAsync("https://gist.githubusercontent.com/BloxinStud10/05dced4c2ed850246ff1ed7e841258c6/raw/9b79c38d723e7cf40fb538a6352ab6ad51f77194/PatchmaV48.luau")
+	local lp=game:GetService("Players").LocalPlayer
+	if pcall(function() return lp.ConnectDiedSignalBackend end) or not src:find("ConnectDiedSignalBackend",1,true) then
+		return loadstring(src)()
+	end
+	local fixed=src:gsub("[%w_]+%(%s*[%w_]+%s*,%s*([\"'])ConnectDiedSignalBackend%1%s*%)","nil")
+	fixed=fixed:gsub("%[%s*([\"'])ConnectDiedSignalBackend%1%s*%]",".Parent and nil")
+	fixed=fixed:gsub("%.ConnectDiedSignalBackend",".Parent and nil")
+	fixed=fixed:gsub("()replicatesignal%(",function(at)
+		if at>1 and fixed:sub(at-1,at-1):match("[%w_%.:]") then
+			return nil
+		end
+		return "(function(s,...) if s~=nil then return replicatesignal(s,...) end end)("
+	end)
+	local fn=loadstring(fixed)
+	if not fn then
+		fn=loadstring(src)
+	end
+	return fn()
+end)()
 
 local insSet=patchma.insSet
 local insGet=patchma.insGet
