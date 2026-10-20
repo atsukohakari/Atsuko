@@ -1,3 +1,10 @@
+Beta v1.2.7
+- the dubstep gun runs on the hub's Reanimate now instead of patchma, so the roblox change that broke patchma (ConnectDiedSignalBackend) doesn't matter anymore
+- emotes work with the dubstep gun, and the gun stays in your hand while you dance
+- it wears the same rig hats as studio dummy (plus the ones Reanimate already knows), the gun hats, aura and bullet hat line up like before
+- deanimate cleans the dubstep gun up fully now, no rejoin needed
+- if a dubstep gun song can't download, it plays without it instead of stopping with an error
+
 Beta v1.2.6
 - the dubstep gun runs again: roblox removed ConnectDiedSignalBackend, and the patchma v48 it loads still looked it up, so it errored right away. it now skips that one signal (roblox had already patched it to do nothing), the rest of patchma is untouched
 

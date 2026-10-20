@@ -1,5 +1,5 @@
 --[[
-	atsuko hub beta v1.2.5
+	atsuko hub beta v1.2.7
 	by atsukohakari
 
 	icons from lucide.dev (ISC), license in Hub/LUCIDE_LICENSE.txt
@@ -13,7 +13,7 @@ Core.SELF = SELF_CHUNK
 Core.OWNER_TAG = "Atsuko Hakari"
 Core.BETA = "Beta v"
 
-local HUB_VERSION = "1.2.5"
+local HUB_VERSION = "1.2.7"
 local HUB_DIR = "Hub"
 local SRC = { owner = "atsukohakari", repo = "Atsuko", branch = "main" }
 local HOME_REPO = "https://raw.githubusercontent.com/" .. SRC.owner .. "/" .. SRC.repo .. "/" .. SRC.branch .. "/"
@@ -111,7 +111,7 @@ do
 	end
 	if type(old) == "table" and type(old.Destroy) == "function" then pcall(old.Destroy) end
 end
-local HUB = { alive = true, conns = {}, ready = false, version = "1.2.5" }
+local HUB = { alive = true, conns = {}, ready = false, version = "1.2.7" }
 GENV.__AtsukoHubInstance = HUB
 local function hubConn(c)
 	HUB.conns[#HUB.conns + 1] = c
@@ -6960,6 +6960,8 @@ do
 end
 
 Core.CHANGELOG = {
+	{ version = "1.2.7", notes = { "the dubstep gun runs on the hub's Reanimate now instead of patchma, so the roblox change that broke patchma (ConnectDiedSignalBackend) doesn't matter anymore", "emotes work with the dubstep gun, and the gun stays in your hand while you dance", "it wears the same rig hats as studio dummy (plus the ones Reanimate already knows), the gun hats, aura and bullet hat line up like before", "deanimate cleans the dubstep gun up fully now, no rejoin needed", "if a dubstep gun song can't download, it plays without it instead of stopping with an error" } },
+	{ version = "1.2.6", notes = { "the dubstep gun runs again: roblox removed ConnectDiedSignalBackend, and the patchma v48 it loads still looked it up, so it errored right away. it now skips that one signal (roblox had already patched it to do nothing), the rest of patchma is untouched" } },
 	{ version = "1.2.5", notes = { "gun alignment saves by itself now: a second after you stop nudging, when you close the alignment window, and when the script stops. nothing gets lost on a stop or a rejoin anymore", "switching guns saves the old gun's spot before loading the new one", "emotes are honest with scripts that bring their own reanimate (like the Dubstep Gun): the hub says they can't dance instead of saying emotes work", "dances never freeze on a song that won't play or gets stuck, they keep their own beat instead" } },
 	{ version = "1.2.4", notes = { "added the Dubstep Gun by Supr14 to Atsuko Script", "it runs on its own FDless / Patchma reanimate, so it works but stands apart from Reanimate, alignment and emotes. deanimate cleans up what it can, a rejoin fully removes it", "works with lists the dubstep gun's hats like the other scripts", "credited FDless / Patchma (and Supr14) in settings > about" } },
 	{ version = "1.2.3", notes = { "youtube music works on way more executors now: it comes through a converter as an mp3 and plays through a Sound, instead of the webm that only some executors could play", "the hub uses a free converter by default, so youtube music just works out of the box. turn it off in music > more to go back to the straight-from-youtube webm way", "paste your own converter in music > more for the best speed (a cobalt server, new or old, or any link with {id} or {url}), or host your own", "any converter the hub finds that's down just falls back to the next one, then to webm, so music keeps working" } },
@@ -19198,7 +19200,7 @@ Core.CREDITS = {
 	{ "MLG Super Killer", "Made the original Snake Banisher", nil },
 	{ "Epic", "Converted Snake Banisher, the V3 the hub runs", nil },
 	{ "Supr14", "Made the Dubstep Gun", nil },
-	{ "MyWorld & rqz", "FDless / Patchma reanimate, the Dubstep Gun runs on it", "https://discord.com/invite/QMy5f6DrbH" },
+	{ "MyWorld & rqz", "FDless / Patchma reanimate, the Dubstep Gun was made for it", "https://discord.com/invite/QMy5f6DrbH" },
 	{ "STEVETHEREALONE", "Uhhhhhh: the dances, their songs and the reanimate style Reanimate and Emotes are built on", "https://discord.gg/NASNUKRBVM" },
 	{ "Dubmood & Solary-3", "Some of the Uhhhhhh dance songs and animations", nil },
 	{ "Edge & the Infinite Yield team", "Lots of the commands came from Infinite Yield (Moon, Zwolf, Sleaze, Toon, Peyton, ATP)", "https://discord.gg/78ZuWSq" },
