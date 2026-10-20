@@ -1,5 +1,5 @@
 --[[
-	atsuko hub beta v1.2.4
+	atsuko hub beta v1.2.5
 	by atsukohakari
 
 	icons from lucide.dev (ISC), license in Hub/LUCIDE_LICENSE.txt
@@ -13,7 +13,7 @@ Core.SELF = SELF_CHUNK
 Core.OWNER_TAG = "Atsuko Hakari"
 Core.BETA = "Beta v"
 
-local HUB_VERSION = "1.2.4"
+local HUB_VERSION = "1.2.5"
 local HUB_DIR = "Hub"
 local SRC = { owner = "atsukohakari", repo = "Atsuko", branch = "main" }
 local HOME_REPO = "https://raw.githubusercontent.com/" .. SRC.owner .. "/" .. SRC.repo .. "/" .. SRC.branch .. "/"
@@ -111,7 +111,7 @@ do
 	end
 	if type(old) == "table" and type(old.Destroy) == "function" then pcall(old.Destroy) end
 end
-local HUB = { alive = true, conns = {}, ready = false, version = "1.2.4" }
+local HUB = { alive = true, conns = {}, ready = false, version = "1.2.5" }
 GENV.__AtsukoHubInstance = HUB
 local function hubConn(c)
 	HUB.conns[#HUB.conns + 1] = c
@@ -6960,6 +6960,7 @@ do
 end
 
 Core.CHANGELOG = {
+	{ version = "1.2.5", notes = { "gun alignment saves by itself now: a second after you stop nudging, when you close the alignment window, and when the script stops. nothing gets lost on a stop or a rejoin anymore", "switching guns saves the old gun's spot before loading the new one", "emotes are honest with scripts that bring their own reanimate (like the Dubstep Gun): the hub says they can't dance instead of saying emotes work", "dances never freeze on a song that won't play or gets stuck, they keep their own beat instead" } },
 	{ version = "1.2.4", notes = { "added the Dubstep Gun by Supr14 to Atsuko Script", "it runs on its own FDless / Patchma reanimate, so it works but stands apart from Reanimate, alignment and emotes. deanimate cleans up what it can, a rejoin fully removes it", "works with lists the dubstep gun's hats like the other scripts", "credited FDless / Patchma (and Supr14) in settings > about" } },
 	{ version = "1.2.3", notes = { "youtube music works on way more executors now: it comes through a converter as an mp3 and plays through a Sound, instead of the webm that only some executors could play", "the hub uses a free converter by default, so youtube music just works out of the box. turn it off in music > more to go back to the straight-from-youtube webm way", "paste your own converter in music > more for the best speed (a cobalt server, new or old, or any link with {id} or {url}), or host your own", "any converter the hub finds that's down just falls back to the next one, then to webm, so music keeps working" } },
 	{ version = "1.2.2", notes = { "the scripts don't carry credit text anymore, everyone is credited in settings > about", "credits without a discord server just say what they made", "the old reanimate is gone, the scripts and the hub only use Reanimate now" } },
@@ -11422,7 +11423,7 @@ function Scripts.paintReanim()
 		if sel and sel.path ~= cur then
 			Scripts.rSub.Text = "Selected: " .. sel.name .. "  ·  deanimate to switch"
 		else
-			Scripts.rSub.Text = canAlign and "Round button: align guns" or "Emotes work now, open the Emotes tab"
+			Scripts.rSub.Text = canAlign and "Round button: align guns" or (R.on() and "Emotes work now, open the Emotes tab" or "It uses its own reanimate, so no emotes here")
 		end
 	else
 		t.Text, t.TextColor3 = "* Reanimate *", T.ink
@@ -11486,6 +11487,9 @@ do
 			maxH = 760,
 			build = function(w, body) A.build(w, body, a) end,
 			onClose = function()
+				pcall(function()
+					if a.dirty and a.save then a.save() end
+				end)
 				pcall(function() a.open = false end)
 				if A.unwatch then pcall(A.unwatch) end
 				A.unwatch = nil
@@ -11750,6 +11754,9 @@ do
 					end)
 					return
 				end
+				if what == "saved" then
+					A.say("Saved by itself", T.green)
+				end
 				if what == "gun" and a.gun and a.gun() then
 					A.undo = {}
 					A.say("Gun: " .. tostring(a.gun()) .. ", its own spot is saved just for this gun", accentColor(), true)
@@ -11920,7 +11927,7 @@ do
 		if E then now, wait = E.playing() end
 		if now then return "Emotes", "Dancing: " .. now end
 		if wait then return "Emotes", "Getting " .. wait .. " ready" end
-		if not Core.Reanim.on() then return "Emotes", "Reanimate a script to dance" end
+		if not Core.Reanim.on() then return "Emotes", Core.Reanim.current() and "Your script can't dance" or "Reanimate a script to dance" end
 		local n = E and E.ready() and #E.all() or 0
 		if n > 0 then return "Emotes", n .. (n == 1 and " dance ready" or " dances ready") end
 		return "Emotes", "Dances from Uhhhhhh"
@@ -12035,10 +12042,20 @@ do
 		if EP.lib then EP.lib.setPalette({ ink = T.text, soft = T.sub, dim = T.dim, card2 = T.card2, accent = accentColor(), font = FONT_M, bold = FONT_B }) end
 	end
 
+	function EP.blocked()
+		local R = Core.Reanim
+		local cur = R.current()
+		if cur and not R.on() then
+			notify("Emotes", R.name(cur) .. " uses its own reanimate, so it can't dance", "info", 4)
+			return true
+		end
+		return false
+	end
+
 	function EP.random()
 		EP.ensure()
 		local E = EP.lib
-		if not E then return end
+		if not E or EP.blocked() then return end
 		if not E.ready() then return notify("Emotes", "Still getting the dances, one sec", "info", 2) end
 		E.random()
 	end
@@ -12067,7 +12084,8 @@ do
 			local w, total = E.pendingInfo()
 			EP.barSub.Text = "Getting " .. wait .. " ready" .. ((w and total and total > 0) and ("  ·  " .. (total - w) .. " of " .. total) or "...")
 		elseif not on then
-			EP.barSub.Text = "Reanimate a script in Atsuko Script first"
+			local cur = Core.Reanim.current()
+			EP.barSub.Text = cur and (Core.Reanim.name(cur) .. " uses its own reanimate, no emotes") or "Reanimate a script in Atsuko Script first"
 		elseif E and E.hostName() then
 			EP.barSub.Text = "With " .. E.hostName()
 		elseif Core.Reanim.current() then
@@ -12137,7 +12155,7 @@ do
 			local a, b = E.playing()
 			if a == info.name or b == info.name then
 				E.stop()
-			else
+			elseif not EP.blocked() then
 				E.play(info.name)
 			end
 		end)

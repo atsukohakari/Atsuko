@@ -1,3 +1,9 @@
+Beta v1.2.5
+- gun alignment saves by itself now: a second after you stop nudging, when you close the alignment window, and when the script stops. nothing gets lost on a stop or a rejoin anymore
+- switching guns saves the old gun's spot before loading the new one
+- emotes are honest with scripts that bring their own reanimate (like the Dubstep Gun): the hub says they can't dance instead of saying emotes work
+- dances never freeze on a song that won't play or gets stuck, they keep their own beat instead
+
 Beta v1.2.4
 - added the Dubstep Gun by Supr14 to Atsuko Script
 - it runs on its own FDless / Patchma reanimate, so it works but stands apart from Reanimate, alignment and emotes. deanimate cleans up what it can, a rejoin fully removes it

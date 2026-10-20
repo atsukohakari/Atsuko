@@ -429,6 +429,7 @@ local function SetOverrideDanceMusic(id, name, volume, region)
 		Music.region = region
 		Music.vol = volume or 1
 		Music.on, Music.vt, Music.speed, Music.synced = true, 0, 1, false
+		Music.stuck, Music.stall, Music.last = false, 0, nil
 		pcall(function()
 			s.PlaybackRegionsEnabled = region ~= nil
 			if region then
@@ -458,7 +459,7 @@ local function realMusic()
 	return ok and type(len) == "number" and len > 0
 end
 local function GetOverrideDanceMusicTime()
-	if realMusic() then
+	if realMusic() and not Music.stuck then
 		return Music.sound.TimePosition
 	end
 	return Music.vt
@@ -486,9 +487,26 @@ function Music.tick(dt)
 			if Music.vt > 0.05 then
 				s.TimePosition = Music.vt
 			end
+			Music.last, Music.stall = s.TimePosition, 0
 		end
-		Music.vt = s.TimePosition
-		return
+		local pos = s.TimePosition
+		if pos ~= Music.last then
+			if Music.stuck then
+				Music.stuck = false
+				s.TimePosition = Music.vt
+				pos = Music.vt
+			end
+			Music.stall, Music.last = 0, pos
+		else
+			Music.stall = (Music.stall or 0) + dt
+			if Music.stall > 0.5 then
+				Music.stuck = true
+			end
+		end
+		if not Music.stuck then
+			Music.vt = pos
+			return
+		end
 	end
 	local vt = Music.vt + dt * Music.speed
 	local r = Music.region
