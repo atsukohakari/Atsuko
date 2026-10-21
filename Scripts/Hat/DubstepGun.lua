@@ -126,12 +126,17 @@ local patchma=(function()
 	M.cfAdd=function(a,b) return a+b end
 	M.cfGet=function(a,b) return a[b] end
 	M.v3Get=function(a,b) return a[b] end
-	local rig,doll,conns=nil,nil,{}
+	local rig,doll,conns,alignStop=nil,nil,{},nil
 	local function finish()
 		for _,c in ipairs(conns) do
 			pcall(function() c:Disconnect() end)
 		end
 		table.clear(conns)
+		if alignStop then
+			local f=alignStop
+			alignStop=nil
+			pcall(f)
+		end
 		if doll then
 			local d=doll
 			doll=nil
@@ -167,8 +172,14 @@ local patchma=(function()
 			error("couldn't reanimate",0)
 		end
 		local live=R.current()
+		local function ready()
+			if type(live.isReady)=="function" then
+				return live.isReady()
+			end
+			return lp.Character==live.rig
+		end
 		local deadline=os.clock()+8
-		while R.current()==live and lp.Character~=live.rig and os.clock()<deadline do
+		while R.current()==live and not ready() and os.clock()<deadline do
 			task.wait()
 		end
 		if R.current()~=live then
@@ -267,7 +278,56 @@ local patchma=(function()
 		for _,n in ipairs({"RootJoint","Neck","Right Shoulder","Left Shoulder","Right Hip","Left Hip"}) do
 			fj[n]=fd.getJoint(n)
 		end
+		local HS=game:GetService("HttpService")
+		local FILE="DubstepGunAlign.json"
+		local KEYS={"gun","aura"}
+		local VAL={{0,0,0,0,0,0},{0,0,0,0,0,0}}
+		local OFF={CFI,CFI}
+		local function rebuild(i)
+			local x=VAL[i]
+			OFF[i]=CFrame.new(x[1],x[2],x[3])*CFrame.Angles(math.rad(x[4]),math.rad(x[5]),math.rad(x[6]))
+		end
+		local function loadAlign()
+			if not (isfile and readfile) then
+				return false,"your executor can't read files"
+			end
+			local ok,has=pcall(isfile,FILE)
+			if not ok or not has then
+				return false,"no saved alignment yet"
+			end
+			local ok2,data=pcall(function()
+				return HS:JSONDecode(readfile(FILE))
+			end)
+			if not ok2 or type(data)~="table" then
+				return false,FILE.." is damaged"
+			end
+			for i,k in ipairs(KEYS) do
+				local t=data[k]
+				if type(t)=="table" then
+					for n=1,6 do
+						local x=tonumber(t[n])
+						if x and x==x and math.abs(x)<1e5 then
+							VAL[i][n]=x
+						end
+					end
+				end
+				rebuild(i)
+			end
+			return true
+		end
+		local function saveAlign()
+			if not writefile then
+				return false,"your executor can't save files"
+			end
+			local ok,e=pcall(writefile,FILE,HS:JSONEncode({gun=VAL[1],aura=VAL[2]}))
+			if not ok then
+				return false,tostring(e)
+			end
+			return true
+		end
+		loadAlign()
 		local pend,used,retry={},{},0
+		local aligned,slotFor,slots={},{},0
 		local function tryAlign(a)
 			local e=fd.getPartFromMesh(a[1],a[2],used)
 			local j=e and fd.getPartJoint(e)
@@ -275,14 +335,24 @@ local patchma=(function()
 				return false
 			end
 			used[#used+1]=e
+			local slot=slotFor[a[4]]
+			if not slot then
+				slots+=1
+				slot=math.min(slots,2)
+				slotFor[a[4]]=slot
+			end
 			j.Part1=v(a[4])
 			j.C0=a[3]
-			j.C1=CFI
+			j.C1=OFF[slot]
+			aligned[#aligned+1]={j=j,e=e,slot=slot}
 			return true
 		end
 		local function frame(_,dt)
 			if not doll then
 				return
+			end
+			for _,r in ipairs(aligned) do
+				r.j.C1=OFF[r.slot]
 			end
 			fj.RootJoint.C0=rel(dp.Torso,dp.HumanoidRootPart,CFI)*fj.RootJoint.C1
 			for name,mn in pairs(MOTOR) do
@@ -380,6 +450,9 @@ local patchma=(function()
 			return R.rootCF() or CFI
 		end
 		api.getDir=function()
+			if type(fd.getMoveDirection)=="function" then
+				return fd.getMoveDirection()
+			end
 			return live.humanoid.MoveDirection
 		end
 		api.align=function(m,t,c,part)
@@ -389,6 +462,121 @@ local patchma=(function()
 			end
 		end
 		api.stopreanimate=M.stopreanimate
+		local genv2=(typeof(getgenv)=="function" and getgenv()) or _G
+		local watchers={}
+		local function fire(what)
+			for _,f in ipairs(table.clone(watchers)) do
+				pcall(f,what)
+			end
+		end
+		local AL={version=1,title="Dubstep Gun",tabs={"Gun","Aura"},file=FILE,dirty=false,open=false,marker=false,hint="Gun moves every gun hat together. Tap Alignment on the Atsuko Script bar to open it again."}
+		function AL.alive()
+			return doll~=nil
+		end
+		function AL.get(i)
+			return VAL[i] and table.clone(VAL[i]) or nil
+		end
+		function AL.later()
+			AL.tok=(AL.tok or 0)+1
+			local my=AL.tok
+			task.delay(1.5,function()
+				if my==AL.tok and AL.dirty and doll and AL.save() then
+					fire("saved")
+				end
+			end)
+		end
+		function AL.set(i,k,n)
+			local x=VAL[i]
+			n=tonumber(n)
+			if not x or not n or n~=n or math.abs(n)>=1e5 then
+				return nil
+			end
+			if k>3 then
+				n=((n+180)%360)-180
+				n=math.floor(n*10+0.5)/10
+			else
+				n=math.floor(n*1000+0.5)/1000
+			end
+			x[k]=n
+			rebuild(i)
+			AL.dirty=true
+			AL.later()
+			return n
+		end
+		function AL.put(i,vals)
+			if not VAL[i] or type(vals)~="table" then
+				return
+			end
+			for k=1,6 do
+				VAL[i][k]=tonumber(vals[k]) or 0
+			end
+			rebuild(i)
+			AL.dirty=true
+			AL.later()
+		end
+		function AL.reset(i)
+			AL.put(i,{0,0,0,0,0,0})
+		end
+		function AL.save()
+			AL.tok=(AL.tok or 0)+1
+			local ok,e=saveAlign()
+			if ok then
+				AL.dirty=false
+			end
+			return ok,e
+		end
+		function AL.load()
+			local ok,e=loadAlign()
+			if ok then
+				AL.dirty=false
+			end
+			fire("load")
+			return ok,e
+		end
+		function AL.watch(f)
+			watchers[#watchers+1]=f
+			return function()
+				local i=table.find(watchers,f)
+				if i then
+					table.remove(watchers,i)
+				end
+			end
+		end
+		function AL.found()
+			local g,a=0,0
+			for _,r in ipairs(aligned) do
+				if rawget(r.e,"p") then
+					if r.slot==1 then
+						g+=1
+					else
+						a+=1
+					end
+				end
+			end
+			return "Gun hats worn: "..g.."   |   Aura hats worn: "..a
+		end
+		alignStop=function()
+			if AL.dirty then
+				pcall(saveAlign)
+				AL.dirty=false
+			end
+			AL.open=false
+			if genv2.AtsukoAlign==AL then
+				genv2.AtsukoAlign=nil
+			end
+			fire("stop")
+			local h=genv2.AtsukoHub
+			if type(h)=="table" and type(h.AlignReady)=="function" then
+				pcall(h.AlignReady)
+			end
+		end
+		genv2.AtsukoAlign=AL
+		do
+			local h=genv2.AtsukoHub
+			if type(h)=="table" and type(h.AlignReady)=="function" then
+				pcall(h.AlignReady)
+			end
+		end
 		return api
 	end
 	return M
