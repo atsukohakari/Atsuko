@@ -1,3 +1,19 @@
+Beta v1.2.9
+- alignment is easy to find now: while a script you can line up is running, an Alignment strip sits right above the reanimate bar on atsuko script. tap it to open or close the window (it says what you can line up)
+- the dubstep gun has alignment too: Gun moves every gun hat together in your hand, Aura moves the aura hats. it saves by itself like the others
+- fixed hats that hang off a part the script moves by itself (like the dubstep gun's aura) not following it
+
+Beta v1.2.8
+- Reanimate moves your body the FDless way now: no physics on the body, it finds the ground with a raycast and stands 3 studs over it, and gravity, jumping and walking work like FDless
+- emotes don't make you walk by yourself or float around anymore (the body can't be pushed by its own poses now)
+- no more antivoid teleports: with no ground under you, you just hover like FDless
+- turning toward something (setCfr) doesn't stop you while you walk anymore, so studio dummy and the others can aim and move at the same time
+- -size lifts your body properly, and flying with zero gravity stays perfectly steady
+- moving works on mobile during the respawn moment too
+- FDless scripts: joints chain at any depth both ways, refreshjoints works, and a hat that isn't loaded yet gives a placeholder the hat snaps onto when it loads
+- like FDless, the body doesn't bump into walls
+- studio dummy's -antivoid off still lets you fall into the void, and nothing keeps walking or jumping by itself while you respawn
+
 Beta v1.2.7
 - the dubstep gun runs on the hub's Reanimate now instead of patchma, so the roblox change that broke patchma (ConnectDiedSignalBackend) doesn't matter anymore
 - emotes work with the dubstep gun, and the gun stays in your hand while you dance

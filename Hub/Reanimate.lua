@@ -247,7 +247,7 @@ local function reanimate(settings)
 	local sine = clock()
 	local alpha = 0
 	local rotLocked = false
-	local autoRotate = true
+	local turnLock = false
 	local lastErr = nil
 	local camConn = nil
 	local camLocked = false
@@ -329,8 +329,9 @@ local function reanimate(settings)
 	end
 
 	local root = newPart("HumanoidRootPart", V3(2, 2, 1), false)
-	local torso = newPart("Torso", V3(2, 2, 1), true)
-	local head = newPart("Head", V3(2, 1, 1), true)
+	local torso = newPart("Torso", V3(2, 2, 1), false)
+	local head = newPart("Head", V3(2, 1, 1), false)
+	root.Anchored = true
 	local rightArm = newPart("Right Arm", V3(1, 2, 1), false)
 	local leftArm = newPart("Left Arm", V3(1, 2, 1), false)
 	local rightLeg = newPart("Right Leg", V3(1, 2, 1), false)
@@ -371,38 +372,24 @@ local function reanimate(settings)
 	hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
 	hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
 	hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+	pcall(function()
+		hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
+	end)
 	hum.Parent = rig
 
 	local ghostFolder = Instance.new("Folder")
 	ghostFolder.Name = randomName()
 	ghostFolder.Parent = rig
 
-	local gravAttach = Instance.new("Attachment")
-	gravAttach.Name = randomName()
-	gravAttach.Parent = root
-	local gravForce = Instance.new("VectorForce")
-	gravForce.Name = randomName()
-	gravForce.Attachment0 = gravAttach
-	gravForce.RelativeTo = Enum.ActuatorRelativeTo.World
-	gravForce.ApplyAtCenterOfMass = true
-	gravForce.Force = ZERO
-	gravForce.Enabled = false
-	gravForce.Parent = root
-
-	local gravity = Workspace.Gravity
-	local customGravity = false
-	local function applyGravity()
-		local diff = Workspace.Gravity - gravity
-		if customGravity and abs(diff) > 0.001 then
-			gravForce.Force = V3(0, root.AssemblyMass * diff, 0)
-			gravForce.Enabled = true
-		else
-			gravForce.Enabled = false
-		end
-	end
-
-	local safeCF = startCF
-	local lastSafe = 0
+	local gravity = 196.2
+	local kinCF = startCF
+	local kinPos = startCF.Position
+	local yVel = 0
+	local xzVel = ZERO
+	local onGround = false
+	local walking = false
+	local hipExtra = 0
+	local moveDir = ZERO
 	local lastFilter = 0
 
 	local seenChars = {}
@@ -486,7 +473,7 @@ local function reanimate(settings)
 	local claimedHandles = {}
 	local fdc = nil
 	if opt.compat then
-		fdc = {cframes = {}, joints = {}, v = {}, real = {}, entries = {}, motor = {}, slotOf = {}, accOf = {}, aligns = {}, characters = {}, shift = false, antivoid = true, blocker = nil, hipWas = nil}
+		fdc = {cframes = {}, joints = {}, v = {}, real = {}, entries = {}, motor = {}, slotOf = {}, accOf = {}, aligns = {}, characters = {}, held = {}, done = {}, child = {}, shift = false, antivoid = true, blocker = nil, hipWas = nil}
 		for name, p in pairs(parts) do
 			local vp = {Name = name}
 			fdc.v[name] = vp
@@ -502,6 +489,69 @@ local function reanimate(settings)
 			local j = {Name = name, Part0 = fdc.v[m.Part0.Name], Part1 = fdc.v[m.Part1.Name], C0 = m.C0, C1 = m.C1}
 			fdc.motor[j] = m
 			fdc.joints[#fdc.joints + 1] = j
+		end
+		function fdc.solve(seeds, withMotors)
+			local cfs, done = fdc.cframes, fdc.done
+			table.clear(done)
+			for k in pairs(seeds) do
+				done[k] = true
+			end
+			local more, rounds = true, 0
+			while more and rounds < 32 do
+				more = false
+				rounds = rounds + 1
+				for _, j in ipairs(fdc.joints) do
+					if withMotors or not fdc.motor[j] then
+						local a, b = rawget(j, "Part0"), rawget(j, "Part1")
+						if a and b and a ~= b then
+							local c0, c1 = rawget(j, "C0"), rawget(j, "C1")
+							if typeof(c0) == "CFrame" and typeof(c1) == "CFrame" then
+								if done[b] and not done[a] then
+									local bcf = cfs[b]
+									if typeof(bcf) == "CFrame" then
+										cfs[a] = bcf * c1 * c0:Inverse()
+										done[a] = true
+										more = true
+									end
+								elseif done[a] and not done[b] then
+									local acf = cfs[a]
+									if typeof(acf) == "CFrame" then
+										cfs[b] = acf * c0 * c1:Inverse()
+										done[b] = true
+										more = true
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+			local child = fdc.child
+			table.clear(child)
+			for _, j in ipairs(fdc.joints) do
+				local a, b = rawget(j, "Part0"), rawget(j, "Part1")
+				if a and b and a ~= b then
+					child[a] = true
+				end
+			end
+			more, rounds = true, 0
+			while more and rounds < 32 do
+				more = false
+				rounds = rounds + 1
+				for _, j in ipairs(fdc.joints) do
+					if withMotors or not fdc.motor[j] then
+						local a, b = rawget(j, "Part0"), rawget(j, "Part1")
+						if a and b and a ~= b and not done[a] and (done[b] or not child[b]) then
+							local bcf, c0, c1 = cfs[b], rawget(j, "C0"), rawget(j, "C1")
+							if typeof(bcf) == "CFrame" and typeof(c0) == "CFrame" and typeof(c1) == "CFrame" then
+								cfs[a] = bcf * c1 * c0:Inverse()
+								done[a] = true
+								more = true
+							end
+						end
+					end
+				end
+			end
 		end
 		for _, a in ipairs(type(settings.aligns) == "table" and settings.aligns or {}) do
 			if type(a) == "table" then
@@ -678,10 +728,43 @@ local function reanimate(settings)
 							break
 						end
 					end
+					local held = nil
+					if not e then
+						for i, x in ipairs(fdc.held) do
+							if has(mesh, rawget(x, "m") or "") and has(tex, rawget(x, "t") or "") then
+								held = x
+								table.remove(fdc.held, i)
+								break
+							end
+						end
+					end
 					if e then
 						e.p = h
 						e.l = h.Position
 						attach(fdc.slotOf[e], h)
+					elseif held then
+						e = held
+						e.Name = h.Name
+						e.l = h.Position
+						e.m = mesh
+						e.t = tex
+						e.p = h
+						fdc.accOf[e] = acc.Name
+						local j = rawget(e, "j") or {Part0 = e, C0 = ID, C1 = ID}
+						e.j = nil
+						if rawget(j, "Part1") == nil then
+							local d = compatJoint(e, h, acc.Name)
+							j.Part1, j.C0, j.C1 = d.Part1, d.C0, d.C1
+						end
+						fdc.joints[#fdc.joints + 1] = j
+						if fdc.cframes[e] == nil then
+							fdc.cframes[e] = h.CFrame
+						end
+						local s = makeSlot(nil, nil, ID, ID, mesh, tex, acc.Name)
+						s.entry = e
+						fdc.slotOf[e] = s
+						fdc.entries[#fdc.entries + 1] = e
+						attach(s, h)
 					else
 						e = {Name = h.Name, l = h.Position, m = mesh, t = tex, p = h}
 						fdc.accOf[e] = acc.Name
@@ -937,36 +1020,87 @@ local function reanimate(settings)
 		end
 	end
 
-	local function manualDrive()
+	local controls, controlsTried = nil, false
+	local function getControls()
+		if not controlsTried then
+			controlsTried = true
+			pcall(function()
+				local ps = lp:FindFirstChildOfClass("PlayerScripts")
+				local pm = ps and ps:FindFirstChild("PlayerModule")
+				if pm then
+					controls = require(pm):GetControls()
+				end
+			end)
+		end
+		return controls
+	end
+
+	local function camAxes()
+		local look, right = V3(0, 0, -1), V3(1, 0, 0)
+		local cam = Workspace.CurrentCamera
+		if cam then
+			local l = cam.CFrame.LookVector * XZ
+			if l.Magnitude > 0.001 then
+				look = l.Unit
+				right = V3(-look.Z, 0, look.X)
+			end
+		end
+		return look, right
+	end
+
+	local function moveInput()
 		if UserInputService:GetFocusedTextBox() then
-			hum:Move(ZERO, true)
-		else
-			local x, z = 0, 0
-			if UserInputService:IsKeyDown(Enum.KeyCode.D) then
-				x = x + 1
-			end
-			if UserInputService:IsKeyDown(Enum.KeyCode.A) then
-				x = x - 1
-			end
-			if UserInputService:IsKeyDown(Enum.KeyCode.S) then
-				z = z + 1
-			end
-			if UserInputService:IsKeyDown(Enum.KeyCode.W) then
-				z = z - 1
-			end
-			hum:Move(V3(x, 0, z), true)
-			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-				hum.Jump = true
+			return ZERO
+		end
+		if native then
+			local md = hum.MoveDirection * XZ
+			if md.Magnitude > 0.01 then
+				return md.Magnitude > 1 and md.Unit or md
 			end
 		end
-		if jumpQueued then
-			hum.Jump = true
+		local look, right = camAxes()
+		local c = getControls()
+		if c then
+			local ok, v = pcall(function()
+				return c:GetMoveVector()
+			end)
+			if ok and typeof(v) == "Vector3" and v.Magnitude > 0.01 then
+				local w = right * v.X - look * v.Z
+				return w.Magnitude > 1 and w.Unit or w
+			end
 		end
+		local x, z = 0, 0
+		if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+			x = x + 1
+		end
+		if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+			x = x - 1
+		end
+		if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+			z = z + 1
+		end
+		if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+			z = z - 1
+		end
+		if x == 0 and z == 0 then
+			return ZERO
+		end
+		return (right * x - look * z).Unit
+	end
+
+	local function jumpInput()
+		if jumpQueued or (native and hum.Jump) then
+			return true
+		end
+		if UserInputService:GetFocusedTextBox() then
+			return false
+		end
+		return UserInputService:IsKeyDown(Enum.KeyCode.Space)
 	end
 
 	local function raycastlegs()
-		local rcf = root.CFrame
-		local hh = max(hum.HipHeight, 0)
+		local rcf = kinCF
+		local hh = max(hipExtra, 0)
 		local baseY = rcf.Y - 3 - hh
 		local dir = V3(0, -(2.5 + hh), 0)
 		local r = Workspace:Raycast((rcf * CF(1, -1, 0)).Position, dir, rayParams)
@@ -981,26 +1115,26 @@ local function reanimate(settings)
 		if speed == 0 then
 			return 0, 0
 		end
-		local v = root.AssemblyLinearVelocity * XZ
-		local rcf = root.CFrame
+		local v = xzVel
+		local rcf = kinCF
 		return rcf.LookVector:Dot(v) / speed, rcf.RightVector:Dot(v) / speed
 	end
 
 	local lastFlatVel = ZERO
 	local flatChange = ZERO
 	local function velchgbycfrvec()
-		local v = root.AssemblyLinearVelocity * XZ
+		local v = xzVel
 		flatChange = flatChange + (lastFlatVel - v)
 		lastFlatVel = v
 		flatChange = flatChange - flatChange * (alpha / 2)
-		local rcf = root.CFrame
+		local rcf = kinCF
 		return rcf.LookVector:Dot(flatChange) / 32, rcf.RightVector:Dot(flatChange) / 32
 	end
 
 	local lastYVel = 0
 	local yChange = 0
 	local function velYchg()
-		local vy = root.AssemblyLinearVelocity.Y
+		local vy = yVel
 		yChange = clamp(yChange + (lastYVel - vy), -50, 50)
 		lastYVel = vy
 		yChange = yChange - yChange * (alpha / 2)
@@ -1008,14 +1142,16 @@ local function reanimate(settings)
 	end
 
 	local function rotToMouse(a)
-		local p = root.Position
+		local p = kinPos
 		local h = mouse.Hit.Position
 		local flat = V3(h.X, p.Y, h.Z)
 		if (flat - p).Magnitude < 0.001 then
 			return
 		end
 		rotLocked = true
-		root.CFrame = root.CFrame:Lerp(CFrame.lookAt(p, flat), a or alpha)
+		kinCF = kinCF:Lerp(CFrame.lookAt(p, flat), a or alpha)
+		kinPos = kinCF.Position
+		root.CFrame = kinCF
 	end
 
 	local function glitchJoint(joint, target, delayFrom, delayTo, radFrom, radTo)
@@ -1036,34 +1172,33 @@ local function reanimate(settings)
 	end
 
 	local function setGravity(n)
-		if type(n) == "number" then
-			gravity = n
-			customGravity = true
-		else
-			gravity = Workspace.Gravity
-			customGravity = false
-		end
-		applyGravity()
+		gravity = num(n, 196.2)
 	end
 
 	local function setHipHeight(n)
-		hum.HipHeight = num(n, 0)
+		hipExtra = num(n, 0)
 	end
 
 	local function setCfr(v)
 		if typeof(v) == "CFrame" then
-			root.CFrame = v
+			if v ~= v then
+				return
+			end
+			kinCF = v
 		elseif typeof(v) == "Vector3" then
-			root.CFrame = root.CFrame.Rotation + v
+			if v ~= v then
+				return
+			end
+			kinCF = kinCF.Rotation + v
 		else
 			return
 		end
-		root.AssemblyLinearVelocity = ZERO
-		root.AssemblyAngularVelocity = ZERO
+		kinPos = kinCF.Position
+		root.CFrame = kinCF
 	end
 
 	local function getVel()
-		return root.AssemblyLinearVelocity
+		return xzVel + V3(0, yVel, 0)
 	end
 
 	local function getCamCF()
@@ -1109,15 +1244,15 @@ local function reanimate(settings)
 	end
 
 	local function isOnGround()
-		return hum.FloorMaterial ~= Enum.Material.Air
+		return onGround
 	end
 
 	local function isWalking()
-		return hum.MoveDirection.Magnitude > 0.01
+		return walking
 	end
 
 	local function YvelSign()
-		return root.AssemblyLinearVelocity.Y > 0
+		return yVel > 0
 	end
 
 	local limbCF = {}
@@ -1222,37 +1357,84 @@ local function reanimate(settings)
 		rotLocked = false
 		native = lp.Character == rig
 
-		if root.Position.Y < voidY and not (fdc and not fdc.antivoid and root.Position.Y > fpdh + 2) then
-			root.CFrame = safeCF
-			root.AssemblyLinearVelocity = ZERO
-			root.AssemblyAngularVelocity = ZERO
-		elseif sine - lastSafe > 0.5 and hum.FloorMaterial ~= Enum.Material.Air then
-			safeCF = root.CFrame
-			lastSafe = sine
-		end
-
 		if sine - lastFilter > 0.5 then
 			lastFilter = sine
 			refreshFilter()
 		end
 
-		if not native then
-			manualDrive()
-		end
+		local pos = kinPos
+		local hh = 3 + hipExtra
+		local wantJump = jumpInput()
 		jumpQueued = false
-
-		local state = hum:GetState()
-		local which
-		if hum.FloorMaterial == Enum.Material.Air or state == Enum.HumanoidStateType.Jumping or state == Enum.HumanoidStateType.Freefall then
-			if root.AssemblyLinearVelocity.Y > 0 then
-				which = "jump"
+		local hit = Workspace:Raycast(pos, V3(0, min(fpdh - pos.Y, -0.1), 0), rayParams)
+		if hit then
+			local gy = hit.Position.Y
+			onGround = pos.Y - gy < hh + 0.01
+			if onGround then
+				yVel = 0
+				pos = V3(pos.X, pos.Y + (gy + hh - pos.Y) * min(dt * 20, 1), pos.Z)
+				if wantJump and hum.JumpPower > 0 then
+					yVel = hum.JumpPower
+					onGround = false
+				end
 			else
-				which = "fall"
+				yVel = yVel - gravity * dt
+				if pos.Y + yVel * dt < gy then
+					yVel = 0
+					pos = V3(pos.X, gy + hh, pos.Z)
+				end
 			end
-		elseif hum.WalkSpeed > 0 and hum.MoveDirection.Magnitude > 0.01 then
-			which = "walk"
 		else
-			which = "idle"
+			onGround = false
+			if fdc and fdc.antivoid == false then
+				yVel = yVel - gravity * dt
+			else
+				yVel = 0
+			end
+		end
+
+		local dir = moveInput()
+		moveDir = dir
+		local speed = hum.WalkSpeed
+		walking = dir.Magnitude > 0.01 and speed > 0
+		xzVel = walking and dir * speed or ZERO
+		pos = pos + (xzVel + V3(0, onGround and 0 or yVel, 0)) * dt
+		if pos.Y < fpdh + 5 then
+			pos = V3(pos.X, fpdh + 5, pos.Z)
+			yVel = max(yVel, 0)
+		end
+
+		local rot = kinCF.Rotation
+		local cam = Workspace.CurrentCamera
+		local faceCam = (fdc and fdc.shift) or UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter or isFirstPerson()
+		if faceCam and cam then
+			local l = cam.CFrame.LookVector * XZ
+			if l.Magnitude > 0.001 then
+				rot = CFrame.lookAt(ZERO, l.Unit)
+			end
+			if fdc and fdc.shift and (not UserInputService.TouchEnabled or UserInputService.KeyboardEnabled) then
+				UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+			end
+		elseif walking and not turnLock then
+			rot = rot:Lerp(CFrame.lookAt(ZERO, xzVel.Unit), alpha)
+		end
+		kinPos = pos
+		kinCF = rot + pos
+		root.CFrame = kinCF
+		if fdc then
+			local vr = fdc.v.HumanoidRootPart
+			if vr then
+				fdc.cframes[vr] = kinCF
+			end
+		end
+
+		local which
+		if onGround then
+			which = walking and "walk" or "idle"
+		elseif yVel > 0 then
+			which = "jump"
+		else
+			which = "fall"
 		end
 
 		local mode = currentKey and modes[currentKey]
@@ -1262,20 +1444,6 @@ local function reanimate(settings)
 		end
 
 		if fdc then
-			if fdc.shift then
-				local cam = Workspace.CurrentCamera
-				if cam then
-					local lv = cam.CFrame.LookVector * XZ
-					if lv.Magnitude > 0.001 then
-						local p = root.Position
-						root.CFrame = CFrame.lookAt(p, p + lv.Unit)
-						rotLocked = true
-					end
-				end
-				if not UserInputService.TouchEnabled or UserInputService.KeyboardEnabled then
-					UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
-				end
-			end
 			for j, m in pairs(fdc.motor) do
 				local c0, c1 = rawget(j, "C0"), rawget(j, "C1")
 				if typeof(c0) == "CFrame" and m.C0 ~= c0 then
@@ -1306,13 +1474,12 @@ local function reanimate(settings)
 			end
 		end
 
-		local wantRotate = not rotLocked
-		if wantRotate ~= autoRotate then
-			autoRotate = wantRotate
-			hum.AutoRotate = wantRotate
+		turnLock = rotLocked
+		if root.CFrame ~= kinCF then
+			root.CFrame = kinCF
 		end
 
-		local rcf = root.CFrame
+		local rcf = kinCF
 		limbCF[root] = rcf
 		local tcf = rcf * rootJoint.C0 * rootJoint.C1:Inverse()
 		limbCF[torso] = tcf
@@ -1329,18 +1496,7 @@ local function reanimate(settings)
 					cfs[vp] = c
 				end
 			end
-			for _ = 1, 2 do
-				for _, j in ipairs(fdc.joints) do
-					if not fdc.motor[j] then
-						local e, base = rawget(j, "Part0"), rawget(j, "Part1")
-						local bcf = base and cfs[base]
-						local c0, c1 = rawget(j, "C0"), rawget(j, "C1")
-						if e and bcf and typeof(c0) == "CFrame" and typeof(c1) == "CFrame" then
-							cfs[e] = bcf * c1 * c0:Inverse()
-						end
-					end
-				end
-			end
+			fdc.solve(fdc.real, false)
 		end
 
 		local t = sine * 15
@@ -1420,7 +1576,6 @@ local function reanimate(settings)
 		processCharacter(startChar)
 	end
 	rig.Parent = Workspace
-	applyGravity()
 	refreshFilter()
 	pcall(function()
 		mouse.TargetFilter = rig
@@ -1475,13 +1630,6 @@ local function reanimate(settings)
 		jumpQueued = true
 	end)
 
-	on(Workspace:GetPropertyChangedSignal("Gravity"), function()
-		if not customGravity then
-			gravity = Workspace.Gravity
-		end
-		applyGravity()
-	end)
-
 	on(RunService.Heartbeat, step)
 
 	if opt.hideHealthGui then
@@ -1503,11 +1651,7 @@ local function reanimate(settings)
 	end
 
 	local function moveRoot(v)
-		if typeof(v) == "CFrame" then
-			root.CFrame = v
-		elseif typeof(v) == "Vector3" then
-			root.CFrame = root.CFrame.Rotation + v
-		end
+		setCfr(v)
 	end
 
 	local api = nil
@@ -1542,6 +1686,10 @@ local function reanimate(settings)
 			if fdc.cframes[x] == nil then
 				return nil
 			end
+			local held = type(x) == "table" and rawget(x, "j")
+			if held then
+				return held
+			end
 			for _, j in ipairs(fdc.joints) do
 				if rawget(j, "Part0") == x then
 					return j
@@ -1555,12 +1703,22 @@ local function reanimate(settings)
 			return nil
 		end
 		local function getPartFromMesh(m, t, blacklist)
+			m, t = tostring(m or ""), tostring(t or "")
 			for _, e in ipairs(fdc.entries) do
-				if not (blacklist and table.find(blacklist, e)) and has(rawget(e, "m") or "", m or "") and has(rawget(e, "t") or "", t or "") then
+				if not (blacklist and table.find(blacklist, e)) and has(rawget(e, "m") or "", m) and has(rawget(e, "t") or "", t) then
 					return e
 				end
 			end
-			return nil
+			for _, e in ipairs(fdc.held) do
+				if not (blacklist and table.find(blacklist, e)) and rawget(e, "m") == m and rawget(e, "t") == t then
+					return e
+				end
+			end
+			local e = {m = m, t = t}
+			e.j = {C0 = ID, C1 = ID, Part0 = e}
+			fdc.cframes[e] = kinCF
+			fdc.held[#fdc.held + 1] = e
+			return e
 		end
 		local function refreshCharacters()
 			for k, v in pairs(fdc.characters) do
@@ -1598,7 +1756,14 @@ local function reanimate(settings)
 				local e = getPartFromMesh(m, t)
 				return e and getPartJoint(e) or nil
 			end,
-			refreshjoints = function() end,
+			refreshjoints = function(x)
+				if x ~= nil and fdc.cframes[x] ~= nil then
+					fdc.solve({[x] = true}, true)
+				end
+			end,
+			getMoveDirection = function()
+				return moveDir
+			end,
 			refreshrayfilter = function()
 				refreshCharacters()
 				refreshFilter()
@@ -1672,6 +1837,9 @@ local function reanimate(settings)
 		end,
 		getPartJoint = getPartJoint,
 		refreshjoints = function() end,
+		getMoveDirection = function()
+			return moveDir
+		end,
 		raycastlegs = raycastlegs,
 		velbycfrvec = velbycfrvec,
 		velchgbycfrvec = velchgbycfrvec,

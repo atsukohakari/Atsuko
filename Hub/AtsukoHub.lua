@@ -1,5 +1,5 @@
 --[[
-	atsuko hub beta v1.2.7
+	atsuko hub beta v1.2.9
 	by atsukohakari
 
 	icons from lucide.dev (ISC), license in Hub/LUCIDE_LICENSE.txt
@@ -13,7 +13,7 @@ Core.SELF = SELF_CHUNK
 Core.OWNER_TAG = "Atsuko Hakari"
 Core.BETA = "Beta v"
 
-local HUB_VERSION = "1.2.7"
+local HUB_VERSION = "1.2.9"
 local HUB_DIR = "Hub"
 local SRC = { owner = "atsukohakari", repo = "Atsuko", branch = "main" }
 local HOME_REPO = "https://raw.githubusercontent.com/" .. SRC.owner .. "/" .. SRC.repo .. "/" .. SRC.branch .. "/"
@@ -111,7 +111,7 @@ do
 	end
 	if type(old) == "table" and type(old.Destroy) == "function" then pcall(old.Destroy) end
 end
-local HUB = { alive = true, conns = {}, ready = false, version = "1.2.7" }
+local HUB = { alive = true, conns = {}, ready = false, version = "1.2.9" }
 GENV.__AtsukoHubInstance = HUB
 local function hubConn(c)
 	HUB.conns[#HUB.conns + 1] = c
@@ -6960,6 +6960,8 @@ do
 end
 
 Core.CHANGELOG = {
+	{ version = "1.2.9", notes = { "alignment is easy to find now: while a script you can line up is running, an Alignment strip sits right above the reanimate bar on atsuko script. tap it to open or close the window (it says what you can line up)", "the dubstep gun has alignment too: Gun moves every gun hat together in your hand, Aura moves the aura hats. it saves by itself like the others", "fixed hats that hang off a part the script moves by itself (like the dubstep gun's aura) not following it" } },
+	{ version = "1.2.8", notes = { "Reanimate moves your body the FDless way now: no physics on the body, it finds the ground with a raycast and stands 3 studs over it, and gravity, jumping and walking work like FDless", "emotes don't make you walk by yourself or float around anymore (the body can't be pushed by its own poses now)", "no more antivoid teleports: with no ground under you, you just hover like FDless", "turning toward something (setCfr) doesn't stop you while you walk anymore, so studio dummy and the others can aim and move at the same time", "-size lifts your body properly, and flying with zero gravity stays perfectly steady", "moving works on mobile during the respawn moment too", "FDless scripts: joints chain at any depth both ways, refreshjoints works, and a hat that isn't loaded yet gives a placeholder the hat snaps onto when it loads", "like FDless, the body doesn't bump into walls", "studio dummy's -antivoid off still lets you fall into the void, and nothing keeps walking or jumping by itself while you respawn" } },
 	{ version = "1.2.7", notes = { "the dubstep gun runs on the hub's Reanimate now instead of patchma, so the roblox change that broke patchma (ConnectDiedSignalBackend) doesn't matter anymore", "emotes work with the dubstep gun, and the gun stays in your hand while you dance", "it wears the same rig hats as studio dummy (plus the ones Reanimate already knows), the gun hats, aura and bullet hat line up like before", "deanimate cleans the dubstep gun up fully now, no rejoin needed", "if a dubstep gun song can't download, it plays without it instead of stopping with an error" } },
 	{ version = "1.2.6", notes = { "the dubstep gun runs again: roblox removed ConnectDiedSignalBackend, and the patchma v48 it loads still looked it up, so it errored right away. it now skips that one signal (roblox had already patched it to do nothing), the rest of patchma is untouched" } },
 	{ version = "1.2.5", notes = { "gun alignment saves by itself now: a second after you stop nudging, when you close the alignment window, and when the script stops. nothing gets lost on a stop or a rejoin anymore", "switching guns saves the old gun's spot before loading the new one", "emotes are honest with scripts that bring their own reanimate (like the Dubstep Gun): the hub says they can't dance instead of saying emotes work", "dances never freeze on a song that won't play or gets stuck, they keep their own beat instead" } },
@@ -11384,14 +11386,26 @@ do
 	Scripts.rBtn.Activated:Connect(function()
 		Core.Reanim.toggle()
 	end)
-	local ab = UI.button(bar, { Name = "Align", BackgroundColor3 = T.card2, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -142, 0.5, 0), Size = UDim2.fromOffset(36, 36), ZIndex = 3, Visible = false })
-	UI.corner(ab, 18)
-	UI.icon("crosshair", 15, T.text, ab, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), ZIndex = 4 })
-	UI.pressable(ab, 0.9)
-	ab.Activated:Connect(function()
+	local strip = UI.button(Scripts.frame, { Name = "AlignStrip", BackgroundColor3 = T.card, AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 1, -64), Size = UDim2.new(1, 0, 0, 42), ZIndex = 2, Visible = false })
+	UI.corner(strip, 14)
+	UI.stroke(strip, T.stroke, 1, 0.4)
+	local sib = UI.new("Frame", { BackgroundTransparency = 0.78, Position = UDim2.fromOffset(8, 7), Size = UDim2.fromOffset(28, 28), ZIndex = 3 }, strip)
+	UI.corner(sib, 9)
+	UI.accent(sib, "BackgroundColor3")
+	UI.accent(UI.icon("crosshair", 14, T.text, sib, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), ZIndex = 4 }), "ImageColor3")
+	local stTitle = UI.label(strip, { Text = "Alignment", Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(44, 5), Size = UDim2.new(1, -124, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 3 })
+	local stSub = UI.label(strip, { Text = "", TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(44, 21), Size = UDim2.new(1, -124, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 3 })
+	local pill = UI.new("Frame", { Name = "Pill", BackgroundColor3 = T.card2, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0), Size = UDim2.fromOffset(68, 28), ZIndex = 3 }, strip)
+	UI.corner(pill, 14)
+	local pillText = UI.label(pill, { Text = "Open", Font = FONT_B, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromScale(1, 1), ZIndex = 4 })
+	UI.pressable(strip, 0.98)
+	strip.Activated:Connect(function()
 		if Core.Align then Core.Align.toggle() end
+		task.delay(0.05, function()
+			if Scripts.paintReanim then Scripts.paintReanim() end
+		end)
 	end)
-	Scripts.aBtn = ab
+	Scripts.aStrip, Scripts.aTitle, Scripts.aSub, Scripts.aPill = strip, stTitle, stSub, pillText
 end
 
 function Scripts.paintReanim()
@@ -11400,11 +11414,25 @@ function Scripts.paintReanim()
 	local cur = R.current()
 	local sel = R.entry(S.reanimSel)
 	Scripts.rTitle.Text = "Running: " .. (cur and R.name(cur) or "NONE")
-	local canAlign = cur ~= nil and not R.busy and Core.Align ~= nil and Core.Align.api() ~= nil
-	if Scripts.aBtn then
-		Scripts.aBtn.Visible = canAlign
-		Scripts.rTitle.Size = UDim2.new(1, canAlign and -240 or -196, 0, 18)
-		Scripts.rSub.Size = UDim2.new(1, canAlign and -240 or -196, 0, 15)
+	local al = (cur ~= nil and not R.busy and Core.Align ~= nil) and Core.Align.api() or nil
+	local canAlign = al ~= nil
+	if Scripts.aStrip then
+		Scripts.aStrip.Visible = canAlign
+		if al then
+			Scripts.aTitle.Text = "Alignment  ·  " .. tostring(al.title or "your script")
+			local names = {}
+			if type(al.tabs) == "table" then
+				for _, n in ipairs(al.tabs) do
+					names[#names + 1] = tostring(n)
+				end
+			end
+			Scripts.aSub.Text = #names > 0 and ("Line up: " .. table.concat(names, ", ")) or "Line up your guns"
+			Scripts.aPill.Text = Win.isOpen("align") and "Close" or "Open"
+		end
+		local h = canAlign and -152 or -106
+		for _, v in ipairs(Scripts.views) do
+			if v.Size.Y.Offset ~= h then v.Size = UDim2.new(1, 0, 1, h) end
+		end
 	end
 	local b, t, st = Scripts.rBtn, Scripts.rText, Scripts.rStroke
 	local acc = accentColor()
@@ -11425,7 +11453,7 @@ function Scripts.paintReanim()
 		if sel and sel.path ~= cur then
 			Scripts.rSub.Text = "Selected: " .. sel.name .. "  ·  deanimate to switch"
 		else
-			Scripts.rSub.Text = canAlign and "Round button: align guns" or (R.on() and "Emotes work now, open the Emotes tab" or "It uses its own reanimate, so no emotes here")
+			Scripts.rSub.Text = canAlign and "Alignment is just above" or (R.on() and "Emotes work now, open the Emotes tab" or "It uses its own reanimate, so no emotes here")
 		end
 	else
 		t.Text, t.TextColor3 = "* Reanimate *", T.ink
@@ -11743,7 +11771,11 @@ do
 				end)
 			end
 		end
-		u.hint = "The red ball shows the muzzle while this is open. " .. (Core.mobile() and "Say -align to open it again." or ("Press " .. tostring(a.key or "J") .. " or say -align to open it again."))
+		if type(a.hint) == "string" and a.hint ~= "" then
+			u.hint = a.hint
+		else
+			u.hint = (a.marker ~= false and "The red ball shows the muzzle while this is open. " or "") .. (Core.mobile() and "Say -align to open it again." or ("Press " .. tostring(a.key or "J") .. " or say -align to open it again."))
+		end
 		u.status = Ctl.note(body, 30, u.hint)
 		if a.watch then
 			A.unwatch = a.watch(function(what)
@@ -11790,6 +11822,7 @@ do
 			end
 		end))
 		A.paint()
+		task.defer(Bus.fire, "align")
 	end
 end
 
@@ -19200,7 +19233,7 @@ Core.CREDITS = {
 	{ "MLG Super Killer", "Made the original Snake Banisher", nil },
 	{ "Epic", "Converted Snake Banisher, the V3 the hub runs", nil },
 	{ "Supr14", "Made the Dubstep Gun", nil },
-	{ "MyWorld & rqz", "FDless / Patchma reanimate, the Dubstep Gun was made for it", "https://discord.com/invite/QMy5f6DrbH" },
+	{ "MyWorld & rqz", "FDless / Patchma reanimate: Reanimate moves your body the FDless way, and the Dubstep Gun was made for it", "https://discord.com/invite/QMy5f6DrbH" },
 	{ "STEVETHEREALONE", "Uhhhhhh: the dances, their songs and the reanimate style Reanimate and Emotes are built on", "https://discord.gg/NASNUKRBVM" },
 	{ "Dubmood & Solary-3", "Some of the Uhhhhhh dance songs and animations", nil },
 	{ "Edge & the Infinite Yield team", "Lots of the commands came from Infinite Yield (Moon, Zwolf, Sleaze, Toon, Peyton, ATP)", "https://discord.gg/78ZuWSq" },
