@@ -11,7 +11,7 @@ local StarterGui = game:GetService("StarterGui")
 local Workspace = game:GetService("Workspace")
 
 local env = (typeof(getgenv) == "function" and getgenv()) or _G
-local VERSION = 2
+local VERSION = 3
 local prior = env.LumenReanim
 if type(prior) == "table" and type(prior.reanimate) == "function" and (tonumber(prior.version) or 1) >= VERSION then
 	return prior
@@ -40,6 +40,7 @@ local lp = Players.LocalPlayer
 local mouse = lp:GetMouse()
 local replicateSignal = replicatesignal or replicate_signal
 local isOwner = isnetworkowner or is_network_owner
+local setHidden = sethiddenproperty or set_hidden_property
 
 local function randomName()
 	local chars = table.create(12)
@@ -233,17 +234,20 @@ local function reanimate(settings)
 		speedCap = num(settings.speedCap, 3000),
 		netY = num(settings.netY, 25.1),
 		appearanceWait = num(settings.appearanceWait, 3),
-		parkTime = num(settings.parkTime, 0.35),
+		parkTime = num(settings.parkTime, 0.3),
 		hideHealthGui = settings.hideHealthGui ~= false,
 		resetStops = settings.resetStops ~= false,
 		presets = settings.presets ~= false and settings.compat ~= true,
 		accessories = settings.accessories == true,
 		compat = settings.compat == true,
+		ctrltp = settings.ctrltp ~= false,
+		simrad = settings.simrad ~= false,
+		touch = settings.touch ~= false,
 	}
 
 	local active = true
-	local native = false
 	local jumpQueued = false
+	local ctl = {ready = false, fly = false, speed = 60, lift = 0, vel = ZERO, inf = false, jumpWas = false, stick = nil, from = ZERO, vec = ZERO, jt = nil, jumping = false, radius = 1000, sim = nil, frozen = {}, still = false}
 	local sine = clock()
 	local alpha = 0
 	local rotLocked = false
@@ -372,9 +376,6 @@ local function reanimate(settings)
 	hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
 	hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
 	hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
-	pcall(function()
-		hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
-	end)
 	hum.Parent = rig
 
 	local ghostFolder = Instance.new("Folder")
@@ -410,12 +411,14 @@ local function reanimate(settings)
 		for _, c in ipairs(gone) do
 			seenChars[c] = nil
 		end
-		for _, plr in ipairs(Players:GetPlayers()) do
+		local all = Players:GetPlayers()
+		for _, plr in ipairs(all) do
 			local c = plr.Character
 			if c and c ~= rig and not seenChars[c] then
 				list[#list + 1] = c
 			end
 		end
+		ctl.radius = 1000 + 1000 * #all
 		rayParams.FilterDescendantsInstances = list
 	end
 
@@ -904,16 +907,11 @@ local function reanimate(settings)
 		end
 	end
 
-	local function takeCharacter()
+	local function settle()
 		if not active then
 			return
 		end
-		if lp.Character ~= rig then
-			pcall(function()
-				lp.Character = rig
-			end)
-		end
-		native = lp.Character == rig
+		ctl.ready = true
 		focusRig()
 	end
 
@@ -939,6 +937,7 @@ local function reanimate(settings)
 		if realRoot and realRoot:IsA("BasePart") then
 			hold(realRoot, spot)
 		end
+		focusRig()
 		task.defer(focusRig)
 		task.spawn(function()
 			local h = char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid", 5)
@@ -971,7 +970,7 @@ local function reanimate(settings)
 				end
 				assignHandles(found)
 			end
-			takeCharacter()
+			settle()
 		end)
 	end
 
@@ -989,8 +988,8 @@ local function reanimate(settings)
 			if not active or s == hum then
 				return
 			end
-			if s == nil or s == rig or seenChars[s.Parent] then
-				task.defer(focusRig)
+			if s == nil or s == rig or s == lp.Character or seenChars[s] or seenChars[s.Parent] or s.Parent == lp.Character then
+				focusRig()
 			end
 		end)
 		focusRig()
@@ -1048,26 +1047,38 @@ local function reanimate(settings)
 		return look, right
 	end
 
-	local function moveInput()
+	local function controlsJump()
+		local c = getControls()
+		if not c then
+			return false
+		end
+		local ok, j = pcall(function()
+			local t = c.touchJumpController
+			if t and t:GetIsJumping() then
+				return true
+			end
+			local a = c.activeController
+			return a ~= nil and a:GetIsJumping() == true
+		end)
+		return ok and j == true
+	end
+
+	local function rawMove()
 		if UserInputService:GetFocusedTextBox() then
 			return ZERO
 		end
-		if native then
-			local md = hum.MoveDirection * XZ
-			if md.Magnitude > 0.01 then
-				return md.Magnitude > 1 and md.Unit or md
-			end
-		end
-		local look, right = camAxes()
 		local c = getControls()
 		if c then
 			local ok, v = pcall(function()
 				return c:GetMoveVector()
 			end)
 			if ok and typeof(v) == "Vector3" and v.Magnitude > 0.01 then
-				local w = right * v.X - look * v.Z
-				return w.Magnitude > 1 and w.Unit or w
+				return v.Magnitude > 1 and v.Unit or v
 			end
+		end
+		local s = ctl.vec
+		if s.Magnitude > 0.01 then
+			return V3(s.X, 0, s.Y)
 		end
 		local x, z = 0, 0
 		if UserInputService:IsKeyDown(Enum.KeyCode.D) then
@@ -1085,17 +1096,54 @@ local function reanimate(settings)
 		if x == 0 and z == 0 then
 			return ZERO
 		end
-		return (right * x - look * z).Unit
+		return V3(x, 0, z).Unit
+	end
+
+	local function moveInput(v)
+		if v.Magnitude < 0.01 then
+			return ZERO
+		end
+		local look, right = camAxes()
+		local w = right * v.X - look * v.Z
+		if w.Magnitude < 0.001 then
+			return ZERO
+		end
+		return w.Magnitude > 1 and w.Unit or w
 	end
 
 	local function jumpInput()
-		if jumpQueued or (native and hum.Jump) then
+		if jumpQueued or ctl.jumping then
 			return true
 		end
 		if UserInputService:GetFocusedTextBox() then
 			return false
 		end
-		return UserInputService:IsKeyDown(Enum.KeyCode.Space)
+		return controlsJump() or UserInputService:IsKeyDown(Enum.KeyCode.Space)
+	end
+
+	local stickEnd, stickTop, stickSize = 0, 0, 60
+	local jx0, jy0, jx1, jy1 = 0, 0, 0, 0
+	local function touchRegions()
+		local sX, sY = mouse.ViewSizeX, mouse.ViewSizeY
+		local small = min(sX, sY) <= 500
+		pcall(function()
+			sY = sY + GuiService.TopbarInset.Height
+		end)
+		stickEnd = sX * 0.4
+		stickTop = sY * 0.333
+		if small then
+			stickSize = 35
+			jx0, jy0 = sX - 95, sY - 90
+			jx1, jy1 = jx0 + 70, jy0 + 70
+		else
+			stickSize = 60
+			jx0, jy0 = sX - 170, sY - 210
+			jx1, jy1 = jx0 + 120, jy0 + 120
+		end
+	end
+
+	local function inJump(p)
+		return p.X > jx0 and p.X < jx1 and p.Y > jy0 and p.Y < jy1
 	end
 
 	local function raycastlegs()
@@ -1177,6 +1225,31 @@ local function reanimate(settings)
 
 	local function setHipHeight(n)
 		hipExtra = num(n, 0)
+	end
+
+	local function setFly(b, speed)
+		b = b == true
+		ctl.speed = clamp(num(speed, ctl.speed), 1, 1000)
+		if ctl.fly == b then
+			return
+		end
+		ctl.fly = b
+		ctl.vel = ZERO
+		ctl.lift = 0
+		yVel = 0
+	end
+
+	local function setFlyLift(n)
+		ctl.lift = clamp(num(n, 0), -1, 1)
+	end
+
+	local function setInfJump(b)
+		ctl.inf = b == true
+	end
+
+	local function setFrozen(b, who)
+		ctl.frozen[who or "script"] = b == true or nil
+		ctl.still = next(ctl.frozen) ~= nil
 	end
 
 	local function setCfr(v)
@@ -1355,19 +1428,43 @@ local function reanimate(settings)
 		sine = clock()
 		alpha = min(dt * 10, 1)
 		rotLocked = false
-		native = lp.Character == rig
 
 		if sine - lastFilter > 0.5 then
 			lastFilter = sine
 			refreshFilter()
 		end
 
+		if not root.Anchored then
+			root.Anchored = true
+		end
+		local was = root.CFrame
+		if (was.Position - kinPos).Magnitude > 0.01 or (was.LookVector - kinCF.LookVector).Magnitude > 0.001 then
+			local look = was.LookVector * XZ
+			if look.Magnitude < 0.001 then
+				look = kinCF.LookVector * XZ
+			end
+			if look.Magnitude < 0.001 then
+				look = V3(0, 0, -1)
+			end
+			kinPos = was.Position
+			kinCF = CFrame.lookAt(kinPos, kinPos + look.Unit)
+			yVel = 0
+			ctl.vel = ZERO
+		end
+
 		local pos = kinPos
 		local hh = 3 + hipExtra
-		local wantJump = jumpInput()
+		local still = ctl.still
+		local wantJump = jumpInput() and not still
 		jumpQueued = false
 		local hit = Workspace:Raycast(pos, V3(0, min(fpdh - pos.Y, -0.1), 0), rayParams)
-		if hit then
+		if still then
+			onGround = hit ~= nil and pos.Y - hit.Position.Y < hh + 0.01
+			yVel = 0
+		elseif ctl.fly then
+			onGround = false
+			yVel = 0
+		elseif hit then
 			local gy = hit.Position.Y
 			onGround = pos.Y - gy < hh + 0.01
 			if onGround then
@@ -1393,12 +1490,45 @@ local function reanimate(settings)
 			end
 		end
 
-		local dir = moveInput()
+		if ctl.inf and not ctl.fly and not onGround and wantJump and not ctl.jumpWas and hum.JumpPower > 0 then
+			yVel = hum.JumpPower
+		end
+		ctl.jumpWas = wantJump
+
+		local raw = still and ZERO or rawMove()
+		local dir = moveInput(raw)
 		moveDir = dir
-		local speed = hum.WalkSpeed
-		walking = dir.Magnitude > 0.01 and speed > 0
-		xzVel = walking and dir * speed or ZERO
-		pos = pos + (xzVel + V3(0, onGround and 0 or yVel, 0)) * dt
+		if still then
+			walking = false
+			xzVel = ZERO
+			ctl.vel = ZERO
+		elseif ctl.fly then
+			local cam = Workspace.CurrentCamera
+			local ccf = cam and cam.CFrame or kinCF
+			local up = ctl.lift
+			if wantJump then
+				up = up + 1
+			end
+			if not UserInputService:GetFocusedTextBox() and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+				up = up - 1
+			end
+			local f = ccf.RightVector * raw.X - ccf.LookVector * raw.Z + V3(0, clamp(up, -1, 1), 0)
+			if f.Magnitude > 1 then
+				f = f.Unit
+			end
+			ctl.vel = ctl.vel:Lerp(f * ctl.speed, alpha)
+			walking = raw.Magnitude > 0.01
+			xzVel = ctl.vel * XZ
+			pos = pos + ctl.vel * dt
+			if hit and pos.Y < hit.Position.Y + hh then
+				pos = V3(pos.X, hit.Position.Y + hh, pos.Z)
+			end
+		else
+			local speed = hum.WalkSpeed
+			walking = dir.Magnitude > 0.01 and speed > 0
+			xzVel = walking and dir * speed or ZERO
+			pos = pos + (xzVel + V3(0, onGround and 0 or yVel, 0)) * dt
+		end
 		if pos.Y < fpdh + 5 then
 			pos = V3(pos.X, fpdh + 5, pos.Z)
 			yVel = max(yVel, 0)
@@ -1415,7 +1545,7 @@ local function reanimate(settings)
 			if fdc and fdc.shift and (not UserInputService.TouchEnabled or UserInputService.KeyboardEnabled) then
 				UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
 			end
-		elseif walking and not turnLock then
+		elseif walking and not turnLock and xzVel.Magnitude > 0.01 then
 			rot = rot:Lerp(CFrame.lookAt(ZERO, xzVel.Unit), alpha)
 		end
 		kinPos = pos
@@ -1429,7 +1559,7 @@ local function reanimate(settings)
 		end
 
 		local which
-		if onGround then
+		if onGround or ctl.fly then
 			which = walking and "walk" or "idle"
 		elseif yVel > 0 then
 			which = "jump"
@@ -1505,6 +1635,9 @@ local function reanimate(settings)
 		for _, s in ipairs(slots) do
 			safeCall(updateSlot, s, dt, wobble, spin)
 		end
+		if ctl.sim then
+			ctl.sim()
+		end
 	end
 
 	stop = function()
@@ -1553,17 +1686,11 @@ local function reanimate(settings)
 		if healthWas ~= nil then
 			pcall(StarterGui.SetCoreGuiEnabled, StarterGui, Enum.CoreGuiType.Health, healthWas)
 		end
-		local real = nil
-		if lastReal and lastReal.Parent then
+		local real = lp.Character
+		if not (real and real.Parent) and lastReal and lastReal.Parent then
 			real = lastReal
 		end
-		local wasRig = lp.Character == rig
 		rig:Destroy()
-		if wasRig then
-			pcall(function()
-				lp.Character = real
-			end)
-		end
 		local cam = Workspace.CurrentCamera
 		local realHum = real and real:FindFirstChildOfClass("Humanoid")
 		if cam and realHum then
@@ -1582,7 +1709,7 @@ local function reanimate(settings)
 	end)
 	watchCamera()
 	if not startChar then
-		takeCharacter()
+		settle()
 	end
 
 	on(Workspace:GetPropertyChangedSignal("CurrentCamera"), watchCamera)
@@ -1593,7 +1720,7 @@ local function reanimate(settings)
 			return
 		end
 		if seenChars[c] then
-			task.defer(takeCharacter)
+			focusRig()
 		else
 			processCharacter(c)
 		end
@@ -1629,6 +1756,89 @@ local function reanimate(settings)
 	on(UserInputService.JumpRequest, function()
 		jumpQueued = true
 	end)
+
+	if opt.touch then
+		on(UserInputService.TouchStarted, function(input, processed)
+			if processed or GuiService.MenuIsOpen or UserInputService:GetFocusedTextBox() then
+				return
+			end
+			touchRegions()
+			local p = input.Position
+			if not ctl.stick and p.X < stickEnd and p.Y > stickTop then
+				ctl.stick = input
+				ctl.from = p
+				ctl.vec = ZERO
+			elseif not ctl.jt and inJump(p) then
+				ctl.jt = input
+				ctl.jumping = true
+			end
+		end)
+		on(UserInputService.TouchMoved, function(input)
+			if input == ctl.stick then
+				local d = input.Position - ctl.from
+				local m = d.Magnitude / stickSize
+				if m > 0.05 then
+					ctl.vec = d.Unit * min(1, (m - 0.05) / 0.95)
+				else
+					ctl.vec = ZERO
+				end
+			elseif input == ctl.jt then
+				ctl.jumping = inJump(input.Position)
+			end
+		end)
+		on(UserInputService.TouchEnded, function(input)
+			if input == ctl.stick then
+				ctl.stick = nil
+				ctl.vec = ZERO
+			elseif input == ctl.jt then
+				ctl.jt = nil
+				ctl.jumping = false
+			end
+		end)
+		on(UserInputService.WindowFocusReleased, function()
+			ctl.stick, ctl.jt = nil, nil
+			ctl.vec = ZERO
+			ctl.jumping = false
+		end)
+	end
+
+	if opt.ctrltp then
+		on(mouse.Button1Down, function()
+			if not active or GuiService.MenuIsOpen or UserInputService:GetFocusedTextBox() then
+				return
+			end
+			if not (UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)) then
+				return
+			end
+			if not mouse.Target then
+				return
+			end
+			local p = mouse.Hit.Position + V3(0, 3, 0)
+			local look = camAxes()
+			setCfr(CFrame.lookAt(p, p + look))
+			yVel = 0
+			xzVel = ZERO
+			ctl.vel = ZERO
+		end)
+	end
+
+	if opt.simrad then
+		local function direct(n)
+			lp.SimulationRadius = n
+		end
+		ctl.sim = function()
+			if pcall(direct, ctl.radius) then
+				return
+			end
+			if setHidden and pcall(setHidden, lp, "SimulationRadius", ctl.radius) then
+				ctl.sim = function()
+					pcall(setHidden, lp, "SimulationRadius", ctl.radius)
+				end
+				return
+			end
+			ctl.sim = nil
+		end
+	end
 
 	on(RunService.Heartbeat, step)
 
@@ -1786,6 +1996,13 @@ local function reanimate(settings)
 			setJumpPower = setJumpPower,
 			setGravity = setGravity,
 			setHipHeight = setHipHeight,
+			setFly = setFly,
+			setFlyLift = setFlyLift,
+			setInfJump = setInfJump,
+			setFrozen = setFrozen,
+			isFlying = function()
+				return ctl.fly
+			end,
 			setCfr = moveRoot,
 			getVel = getVel,
 			getCamCF = getCamCF,
@@ -1850,6 +2067,22 @@ local function reanimate(settings)
 		setJumpPower = setJumpPower,
 		setGravity = setGravity,
 		setHipHeight = setHipHeight,
+		setFly = setFly,
+		setFlyLift = setFlyLift,
+		setInfJump = setInfJump,
+		setFrozen = setFrozen,
+		isFrozen = function()
+			return ctl.still
+		end,
+		isFlying = function()
+			return ctl.fly
+		end,
+		isReady = function()
+			return ctl.ready
+		end,
+		realCharacter = function()
+			return lastReal
+		end,
 		setCfr = setCfr,
 		getVel = getVel,
 		getCamCF = getCamCF,

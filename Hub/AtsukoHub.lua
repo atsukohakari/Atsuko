@@ -1,5 +1,5 @@
 --[[
-	atsuko hub beta v1.2.9
+	atsuko hub beta v1.3.0
 	by atsukohakari
 
 	icons from lucide.dev (ISC), license in Hub/LUCIDE_LICENSE.txt
@@ -13,7 +13,7 @@ Core.SELF = SELF_CHUNK
 Core.OWNER_TAG = "Atsuko Hakari"
 Core.BETA = "Beta v"
 
-local HUB_VERSION = "1.2.9"
+local HUB_VERSION = "1.3.0"
 local HUB_DIR = "Hub"
 local SRC = { owner = "atsukohakari", repo = "Atsuko", branch = "main" }
 local HOME_REPO = "https://raw.githubusercontent.com/" .. SRC.owner .. "/" .. SRC.repo .. "/" .. SRC.branch .. "/"
@@ -111,7 +111,7 @@ do
 	end
 	if type(old) == "table" and type(old.Destroy) == "function" then pcall(old.Destroy) end
 end
-local HUB = { alive = true, conns = {}, ready = false, version = "1.2.9" }
+local HUB = { alive = true, conns = {}, ready = false, version = "1.3.0" }
 GENV.__AtsukoHubInstance = HUB
 local function hubConn(c)
 	HUB.conns[#HUB.conns + 1] = c
@@ -5394,6 +5394,7 @@ Core.ICON_DATA = {
 	["crosshair"] = "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",
 	["flip-horizontal"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADN0lEQVR4nOybu2tUQRTGv41pfGAlKNiIFgYVo0ZERcOKQhSttBC0CeQP8IlYiGJhoSAq/gFiIWJhShFUEEEQlbCxiBJMiI0Gy8VnoZvvsJuw2Zy5j72Ps3DnBx9z98zcnZlz75x797DTjYLTjYJj6oBardYjZalU+gQjumAAJ76Kes/DjyI5plbAABMHkFNUX9NnOT4DAyIvAV6hAyy2UBuoNQh23i/qGW/tW476rYptI9x9n2Oxn1oCN/+pKWqMqrDv54hAqAPY+TIW96mjiMchnrudAzmp1FUV21/o/T9gcQIx4XmPWAyx/59B7bpCvmQdC1mrcSc/ywCScxjtcZyS2LI2qJHTATxxEYthaj3axyrGzCJPmeHGXFSCBniV2oxkPEFyniIZvdRlV2VQDDjrsMv6HUU96LiQIPiC6+8mkjNIjVD7qMUB7eRiymSXK3USRK9oJ6kO4C2zx9HZ+ZQm9VWxfdMasr8/LG40FArHfoHF9RbzUtp38rvetLZ3LYGyYnub0uSFe5j/JKg2bInhGMVRH5SqstbetQQ2KbYvSAkOcpRXRIJrT8M0Rtt3pMc4FsavXq2hywHOqJkWnPA0i2nkhzon/2sQBcc7AIb4fIDPB8zR+fmAlImVD8gSKwdEzgdkjX8KoOB4B6DgWDkgcj4ga6zeAzLLB8TF5A7IIR8QGbMYYJAPUPFBEAXHOwCG+HyAzwfM4fMB8PkAnw8wwTsABcc7ADb4fAB8PsDnA3w+oBPwDkDBcTngH3Igw3xATbGpc3I9BicV20qkRA75gNWKbUJr6HJARbH1c5B9SIfM8gEc4y4Wu5WqEa29awlUHHa5Uq+g32LNhP1VNu5+Afn3ZxnB+wWEEtXvqIvuAA58nJ0+5uExpdrVQSuyX2Cb1X6BFh5yHFNaRdCr8CD1GclIY7/AESRD5jDkqnQ6gB77weIg9Q62hC23IGTsA5zLb1eDwB9DPHGC2sHDS2iPpP/1T/IdF2Xs1GRQo0gvQvySa1yLd1EPRHtRj9phm6by3i8g+xfkir+mXrLvKiJQggF05m3UH4XN3OGgTyNnCp8PMLkDBHkbRAfkA8wc0CkU/tfgDAAAAP//2yt+5gAAAAZJREFUAwADRSDXX7XofgAAAABJRU5ErkJggg==",
 	["heart-handshake"] = "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",
+	["move-3d"] = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAADUklEQVR4nOxbT4hNURz+HpNELJAUWSBZ0FDT2KAZCflXZBTSbC0oG5uxtRrJynbSUDIzNmShEFlgNAmlRESaRspGMWE83y93pufdc9675865f37d+9XX773zu/e++333nHvOPfe8FhQcLSg4SgNQcBTegBkuG1er1VbyETlGXiWd9s8jKlE3pNgNDCN1+3wiV1YqlZ9QikhXkOJXMdxB2LBl5CDzs6AUTQ0IxD8kF1g22QfFJjQ0oEb8EjSGWhOsBjiIn4RKE4wGUMRquImfhJgwpMmEUC8Q48qbcIPs0tA7/FcDPIkXqGkOUwbwZOcy3IZd/Iil/LOlXEzoRc5RWwMOkyss20mVPm/JbSLHLLmTNHYecoxaA75ZtrlJdpETpiTb+VuGLTCbME7+Qo5Ra8AQ+aouL1f+YLObGfNvGDYjbMI55saRY0w9DfJEJ1hdd/LjRXI+OUz2sPx3lANJTeD+7XX7n0XO4fIwdIjhWugABBSjnBBBwVEagIKjNAAFR2kACo7SABQc5ZshpAyZeCHX5+WtUqonQdE7GEbJZ+QTfl+MjJGaARR7gOEW/j0qC9rIy8gYqRgQiB8gZ9altjO3EBki8ZsgBe6HWbzgPfkVGSJRAwLxgzCL/0Ee4XxKFRkisSZA8TItbrvy38k9FP8YGSORGhCIv245vojfS/H3kAN4NyBN8fyt5RJ5vI+ICa9NIGXxFxg+CPm5N+7AypsBKYs/znCqpug02RfHBC8GZNDmjxrKuhHDhGkbkNENb9hSLiZccjHBRw3I4m5/hnxuyR2Dgwk+DEi9qwveN24lX1o2ERP6o5iQxEAolX6ex5chdAfsJsh9oqkJvg1IdZDjwwSXgVCUMfsc8i5/EDmCmNBKrjMlXWrAIujFWl6UK6aESw1og250mgpdasBT6MaoqdBpcQOrkawOXwp9+EO286YZWunmvLqDJpxgWEM+IL8ge4iGHnKbJf+O3EXxr207q0XQvfXD/GwgkO6xI+gujVD7YsSHeIHmv7z0wS7+BSKIF6isAcF8QLclLeI7o4gXaG0Cja58ZPECrU3ANB8gj8dO4gUqewE2gdkM98mNQZFMr+92FS9Q2w0G/0WQFe6yGHsg6pLeeqgeB/hA4RdI/AUAAP//WoCkxwAAAAZJREFUAwB5mU5gcd8E1AAAAABJRU5ErkJggg==",
 }
 local ICONS = {}
 Core.GLYPHS = {
@@ -6960,6 +6961,7 @@ do
 end
 
 Core.CHANGELOG = {
+	{ version = "1.3.0", notes = { "Reanimate respawns the FDless way now: your character is never swapped for the reanimate, so roblox's controls, camera and jump button don't reset every time you respawn (that's what made it buggy on mobile)", "mobile: the jump button shows and works while you're reanimated, and you keep walking right through a respawn. if roblox's touch controls vanish for a moment, an FDless style touch stick and jump spot take over", "the camera stays on you when a new body spawns, it can't jump over to it anymore", "a new body waits 0.3 seconds under the map like FDless (once your avatar loads), then gets knocked down and its hats come straight to you", "new from FDless: ctrl + click teleports you on pc, and your simulation radius goes up when your executor allows it", "hub commands work on the reanimate: speed, jump power, fly, smooth fly, infinite jump, freeze, freecam, click teleport, go to, spin and save / load spot. they stay on through respawns and move back to your own body when you deanimate", "teleports from commands or other scripts stick now instead of snapping back", "the alignment button moved to the top right corner of atsuko script with a new logo. it lights up when the running script has something to line up, tap it to open or close the window" } },
 	{ version = "1.2.9", notes = { "alignment is easy to find now: while a script you can line up is running, an Alignment strip sits right above the reanimate bar on atsuko script. tap it to open or close the window (it says what you can line up)", "the dubstep gun has alignment too: Gun moves every gun hat together in your hand, Aura moves the aura hats. it saves by itself like the others", "fixed hats that hang off a part the script moves by itself (like the dubstep gun's aura) not following it" } },
 	{ version = "1.2.8", notes = { "Reanimate moves your body the FDless way now: no physics on the body, it finds the ground with a raycast and stands 3 studs over it, and gravity, jumping and walking work like FDless", "emotes don't make you walk by yourself or float around anymore (the body can't be pushed by its own poses now)", "no more antivoid teleports: with no ground under you, you just hover like FDless", "turning toward something (setCfr) doesn't stop you while you walk anymore, so studio dummy and the others can aim and move at the same time", "-size lifts your body properly, and flying with zero gravity stays perfectly steady", "moving works on mobile during the respawn moment too", "FDless scripts: joints chain at any depth both ways, refreshjoints works, and a hat that isn't loaded yet gives a placeholder the hat snaps onto when it loads", "like FDless, the body doesn't bump into walls", "studio dummy's -antivoid off still lets you fall into the void, and nothing keeps walking or jumping by itself while you respawn" } },
 	{ version = "1.2.7", notes = { "the dubstep gun runs on the hub's Reanimate now instead of patchma, so the roblox change that broke patchma (ConnectDiedSignalBackend) doesn't matter anymore", "emotes work with the dubstep gun, and the gun stays in your hand while you dance", "it wears the same rig hats as studio dummy (plus the ones Reanimate already knows), the gun hats, aura and bullet hat line up like before", "deanimate cleans the dubstep gun up fully now, no rejoin needed", "if a dubstep gun song can't download, it plays without it instead of stopping with an error" } },
@@ -7639,6 +7641,7 @@ function Panel.header(pg)
 	for _, other in pairs(Pages) do
 		if other.tools then other.tools.Visible = other == pg and not Shell.narrow end
 	end
+	if Core.paintAlignBtn then Core.paintAlignBtn(pg) end
 	updateSpin()
 end
 
@@ -10989,9 +10992,10 @@ Home.onShow = function()
 end
 
 Core.libs = {}
-function Core.loadLib(name, key)
+Core.REANIM_NEED = 3
+function Core.loadLib(name, key, need)
 	local have = GENV[key]
-	if type(have) == "table" then return have end
+	if type(have) == "table" and (not need or (tonumber(have.version) or 0) >= need) then return have end
 	local slot = Core.libs[name]
 	if slot and slot.busy then
 		local t0 = os.clock()
@@ -11102,7 +11106,8 @@ do
 		task.spawn(function()
 			local cur = R.current()
 			if cur and cur ~= e.path then R.stopNow(cur) end
-			if not R.lumen() then Core.loadLib("Reanimate", "LumenReanim") end
+			local L = R.lumen()
+			if not L or (tonumber(L.version) or 0) < Core.REANIM_NEED then Core.loadLib("Reanimate", "LumenReanim", Core.REANIM_NEED) end
 			if not R.active(e.path) then
 				Runner.run(e)
 				waitFor(function()
@@ -11386,26 +11391,53 @@ do
 	Scripts.rBtn.Activated:Connect(function()
 		Core.Reanim.toggle()
 	end)
-	local strip = UI.button(Scripts.frame, { Name = "AlignStrip", BackgroundColor3 = T.card, AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 1, -64), Size = UDim2.new(1, 0, 0, 42), ZIndex = 2, Visible = false })
-	UI.corner(strip, 14)
-	UI.stroke(strip, T.stroke, 1, 0.4)
-	local sib = UI.new("Frame", { BackgroundTransparency = 0.78, Position = UDim2.fromOffset(8, 7), Size = UDim2.fromOffset(28, 28), ZIndex = 3 }, strip)
-	UI.corner(sib, 9)
-	UI.accent(sib, "BackgroundColor3")
-	UI.accent(UI.icon("crosshair", 14, T.text, sib, { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), ZIndex = 4 }), "ImageColor3")
-	local stTitle = UI.label(strip, { Text = "Alignment", Font = FONT_B, TextSize = 12, Position = UDim2.fromOffset(44, 5), Size = UDim2.new(1, -124, 0, 16), TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 3 })
-	local stSub = UI.label(strip, { Text = "", TextSize = 10, TextColor3 = T.sub, Position = UDim2.fromOffset(44, 21), Size = UDim2.new(1, -124, 0, 14), TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 3 })
-	local pill = UI.new("Frame", { Name = "Pill", BackgroundColor3 = T.card2, AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0), Size = UDim2.fromOffset(68, 28), ZIndex = 3 }, strip)
-	UI.corner(pill, 14)
-	local pillText = UI.label(pill, { Text = "Open", Font = FONT_B, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Center, Size = UDim2.fromScale(1, 1), ZIndex = 4 })
-	UI.pressable(strip, 0.98)
-	strip.Activated:Connect(function()
-		if Core.Align then Core.Align.toggle() end
+	local ab = Core.headerButton("AlignBtn", 12)
+	UI.setIcon(ab.icon, "move-3d")
+	ab.btn.Activated:Connect(function()
+		local al = Core.Align and Core.Align.api()
+		if not al then
+			local R = Core.Reanim
+			local cur = R.current()
+			if R.busy then
+				notify("Alignment", "Hold on, it's still starting", "info", 2)
+			elseif cur then
+				notify("Alignment", R.name(cur) .. " has nothing to line up", "info", 3)
+			else
+				notify("Alignment", "Reanimate Studio Dummy, Snake Banisher or the Dubstep Gun first", "info", 3)
+			end
+			return
+		end
+		Core.Align.toggle()
 		task.delay(0.05, function()
-			if Scripts.paintReanim then Scripts.paintReanim() end
+			if Core.paintAlignBtn then Core.paintAlignBtn() end
 		end)
 	end)
-	Scripts.aStrip, Scripts.aTitle, Scripts.aSub, Scripts.aPill = strip, stTitle, stSub, pillText
+	UI.onHover(ab.btn, function()
+		task.defer(function()
+			if Core.paintAlignBtn then Core.paintAlignBtn(nil, true) end
+		end)
+	end)
+	Scripts.alignBtn = ab
+end
+
+function Core.paintAlignBtn(pg, force)
+	local ab = Scripts.alignBtn
+	if not ab then return end
+	if pg == nil then pg = Panel.open and Panel.page and Pages[Panel.page] or nil end
+	local show = pg == Scripts
+	if ab.btn.Visible ~= show then
+		ab.btn.Visible = show
+		if Core.fitHead then Core.fitHead() end
+	end
+	if not show then return end
+	local R = Core.Reanim
+	local al = (R.current() ~= nil and not R.busy and Core.Align ~= nil) and Core.Align.api() or nil
+	local col = al and (Win.isOpen("align") and accentColor() or T.text) or T.dim
+	if force or ab.col ~= col then
+		ab.col = col
+		UI.tint(ab.icon, col, 0.15)
+	end
+	if not force then ab.btn.BackgroundColor3 = (al and Win.isOpen("align")) and T.card2 or T.side end
 end
 
 function Scripts.paintReanim()
@@ -11416,24 +11448,7 @@ function Scripts.paintReanim()
 	Scripts.rTitle.Text = "Running: " .. (cur and R.name(cur) or "NONE")
 	local al = (cur ~= nil and not R.busy and Core.Align ~= nil) and Core.Align.api() or nil
 	local canAlign = al ~= nil
-	if Scripts.aStrip then
-		Scripts.aStrip.Visible = canAlign
-		if al then
-			Scripts.aTitle.Text = "Alignment  ·  " .. tostring(al.title or "your script")
-			local names = {}
-			if type(al.tabs) == "table" then
-				for _, n in ipairs(al.tabs) do
-					names[#names + 1] = tostring(n)
-				end
-			end
-			Scripts.aSub.Text = #names > 0 and ("Line up: " .. table.concat(names, ", ")) or "Line up your guns"
-			Scripts.aPill.Text = Win.isOpen("align") and "Close" or "Open"
-		end
-		local h = canAlign and -152 or -106
-		for _, v in ipairs(Scripts.views) do
-			if v.Size.Y.Offset ~= h then v.Size = UDim2.new(1, 0, 1, h) end
-		end
-	end
+	Core.paintAlignBtn()
 	local b, t, st = Scripts.rBtn, Scripts.rText, Scripts.rStroke
 	local acc = accentColor()
 	if R.busy == "starting" then
@@ -11453,7 +11468,7 @@ function Scripts.paintReanim()
 		if sel and sel.path ~= cur then
 			Scripts.rSub.Text = "Selected: " .. sel.name .. "  ·  deanimate to switch"
 		else
-			Scripts.rSub.Text = canAlign and "Alignment is just above" or (R.on() and "Emotes work now, open the Emotes tab" or "It uses its own reanimate, so no emotes here")
+			Scripts.rSub.Text = canAlign and "Line it up with the button up top" or (R.on() and "Emotes work now, open the Emotes tab" or "It uses its own reanimate, so no emotes here")
 		end
 	else
 		t.Text, t.TextColor3 = "* Reanimate *", T.ink
@@ -11502,12 +11517,12 @@ do
 	function A.open()
 		local a = A.api()
 		if not a then
-			notify("Alignment", "Reanimate Studio Dummy or Snake Banisher first, then tap Align", "info", 3)
+			notify("Alignment", "Reanimate Studio Dummy, Snake Banisher or the Dubstep Gun first", "info", 3)
 			return nil
 		end
 		return Win.show("align", {
 			title = "Alignment",
-			icon = "crosshair",
+			icon = "move-3d",
 			sub = tostring(a.title or "Script"),
 			w = 300,
 			h = math.max(260, math.min(480, L.H - 130)),
@@ -14493,18 +14508,31 @@ do
 	local TeleportService = game:GetService("TeleportService")
 	local KC = Enum.KeyCode
 
+	local function liveBody()
+		local L = GENV.LumenReanim
+		if type(L) ~= "table" or type(L.current) ~= "function" then return nil end
+		local ok, live = pcall(L.current)
+		if not ok or type(live) ~= "table" then return nil end
+		local r, h = live.root, live.humanoid
+		if typeof(r) == "Instance" and r.Parent and typeof(h) == "Instance" and h.Parent then return live end
+		return nil
+	end
 	local function hum()
+		local b = liveBody()
+		if b then return b.humanoid end
 		local c = LP.Character
 		return c and c:FindFirstChildOfClass("Humanoid") or nil
 	end
 	local function root()
+		local b = liveBody()
+		if b then return b.root end
 		local c = LP.Character
 		if not c then return nil end
 		local h = c:FindFirstChildOfClass("Humanoid")
 		local r = (h and h.RootPart) or c:FindFirstChild("HumanoidRootPart") or c.PrimaryPart
 		return r
 	end
-	Cmd.hum, Cmd.root = hum, root
+	Cmd.hum, Cmd.root, Cmd.body = hum, root, liveBody
 
 	function Cmd.val(id, key, default)
 		local t = S.cmd[id]
@@ -14638,7 +14666,7 @@ do
 			Bus.fire("cmd", id)
 			return false
 		end
-		Cmd.on[id] = { arg = arg, t = os.clock() }
+		Cmd.on[id] = { arg = arg, t = os.clock(), body = liveBody() }
 		say(def, def.label and def.label() or "On", "ok", quiet)
 		Bus.fire("cmd", id)
 		return true
@@ -14709,33 +14737,73 @@ do
 		return n
 	end
 
-	hubConn(LP.CharacterAdded:Connect(function(c)
-		for _, def in ipairs(Cmd.list) do
-			local st = Cmd.on[def.id]
-			if st and def.char then
+	local function ready(now, c)
+		return function()
+			local b = liveBody()
+			if b ~= now then return false end
+			if b then return true end
+			local ch = LP.Character
+			if c and ch ~= c then return false end
+			return ch ~= nil and ch:FindFirstChildOfClass("Humanoid") ~= nil and (ch:FindFirstChild("HumanoidRootPart") or ch.PrimaryPart) ~= nil
+		end
+	end
+
+	local function again(def, st, ok)
+		st.tok = (st.tok or 0) + 1
+		local my = st.tok
+		if not S.keepCmds then
+			Cmd.on[def.id] = nil
+			Bus.fire("cmd", def.id)
+			return
+		end
+		task.spawn(function()
+			local t0 = os.clock()
+			while os.clock() - t0 < 8 and HUB.alive and not ok() do
+				task.wait(0.1)
+			end
+			task.wait(0.4)
+			if Cmd.on[def.id] ~= st or st.tok ~= my or not HUB.alive then return end
+			if not ok() then
+				Cmd.on[def.id] = nil
+				Bus.fire("cmd", def.id)
+				return
+			end
+			st.body = liveBody()
+			local good, res = pcall(def.start, st.arg)
+			if not good or res == false then
+				Cmd.on[def.id] = nil
 				unbindAll(def.id)
 				pcall(def.stop)
-				if S.keepCmds then
-					task.spawn(function()
-						local t0 = os.clock()
-						while os.clock() - t0 < 8 and HUB.alive do
-							if c:FindFirstChildOfClass("Humanoid") and (c:FindFirstChild("HumanoidRootPart") or c.PrimaryPart) then break end
-							task.wait(0.1)
-						end
-						task.wait(0.4)
-						if Cmd.on[def.id] ~= st or LP.Character ~= c or not HUB.alive then return end
-						local ok, res = pcall(def.start, st.arg)
-						if not ok or res == false then
-							Cmd.on[def.id] = nil
-							unbindAll(def.id)
-							pcall(def.stop)
-							Bus.fire("cmd", def.id)
-						end
-					end)
-				else
-					Cmd.on[def.id] = nil
-					Bus.fire("cmd", def.id)
-				end
+				Bus.fire("cmd", def.id)
+			end
+		end)
+	end
+
+	function Cmd.rebody()
+		local now = liveBody()
+		for _, def in ipairs(Cmd.list) do
+			local st = Cmd.on[def.id]
+			if st and (def.char or def.body) and st.body ~= now then
+				unbindAll(def.id)
+				pcall(def.stop)
+				st.body = now
+				again(def, st, ready(now, nil))
+			end
+		end
+	end
+	Bus.on("reanim", function()
+		task.defer(Cmd.rebody)
+	end)
+
+	hubConn(LP.CharacterAdded:Connect(function(c)
+		local now = liveBody()
+		for _, def in ipairs(Cmd.list) do
+			local st = Cmd.on[def.id]
+			if st and def.char and not (now and st.body == now) then
+				unbindAll(def.id)
+				pcall(def.stop)
+				st.body = now
+				again(def, st, ready(now, c))
 			end
 		end
 	end))
@@ -14782,10 +14850,24 @@ do
 		desc = "Fly where you look. Move with WASD or the stick, E or Space goes up, Q or Ctrl goes down. On mobile use the Up and Down buttons here.",
 		label = function() return "On  ·  speed " .. Cmd.val("fly", "speed", 60) end,
 		start = function(arg)
-			local r, h = root(), hum()
-			if not (r and h) then return false, "No character right now" end
 			local v = tonumber(arg)
 			if v then Cmd.setVal("fly", "speed", math.clamp(math.floor(v), 1, 500)) end
+			local live = liveBody()
+			if live and type(live.setFly) == "function" then
+				Fly.live = live
+				live.setFly(true, Cmd.val("fly", "speed", 60))
+				bind("fly", RunService.RenderStepped:Connect(function()
+					local up = Fly.up - Fly.down
+					if not UserInputService:GetFocusedTextBox() then
+						if UserInputService:IsKeyDown(KC.E) then up += 1 end
+						if UserInputService:IsKeyDown(KC.Q) then up -= 1 end
+					end
+					pcall(live.setFlyLift, up)
+				end))
+				return true
+			end
+			local r, h = root(), hum()
+			if not (r and h) then return false, "No character right now" end
 			local att = Instance.new("Attachment")
 			att.Name = "AtsukoFly"
 			att.Parent = r
@@ -14831,8 +14913,13 @@ do
 		update = function(arg)
 			local v = tonumber(arg)
 			if v then Cmd.setVal("fly", "speed", math.clamp(math.floor(v), 1, 500)) end
+			if Fly.live then pcall(Fly.live.setFly, true, Cmd.val("fly", "speed", 60)) end
 		end,
 		stop = function()
+			if Fly.live then
+				pcall(Fly.live.setFly, false)
+				Fly.live = nil
+			end
 			for _, p in ipairs(Fly.parts or {}) do
 				pcall(function() p:Destroy() end)
 			end
@@ -14845,7 +14932,9 @@ do
 			Fly.up, Fly.down = 0, 0
 		end,
 		opts = function(w, body, order)
-			slider(w, body, order, "fly", "speed", "Speed", 10, 300, 5, 60)
+			slider(w, body, order, "fly", "speed", "Speed", 10, 300, 5, 60, nil, function(v)
+				if Fly.live then pcall(Fly.live.setFly, true, v) end
+			end)
 			local row = UI.new("Frame", { Name = "UpDown", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 40), LayoutOrder = order + 1 }, body)
 			local held = {}
 			for i, it in ipairs({ { "arrow-up", "Up", "up" }, { "arrow-down", "Down", "down" } }) do
@@ -14979,10 +15068,16 @@ do
 	end)
 
 	Cmd.add({
-		id = "infjump", name = "Infinite jump", icon = "infinity", cat = "Movement", kind = "toggle",
+		id = "infjump", name = "Infinite jump", icon = "infinity", cat = "Movement", kind = "toggle", body = true,
 		usage = "infjump", aliases = { "infinitejump" }, offNames = { "uninfjump" },
 		desc = "Jump again while you're in the air, as many times as you want.",
 		start = function()
+			local live = liveBody()
+			if live and type(live.setInfJump) == "function" then
+				Cmd.infLive = live
+				live.setInfJump(true)
+				return true
+			end
 			local last = 0
 			bind("infjump", UserInputService.JumpRequest:Connect(function()
 				local h = hum()
@@ -14994,7 +15089,12 @@ do
 			end))
 			return true
 		end,
-		stop = function() end,
+		stop = function()
+			if Cmd.infLive then
+				pcall(Cmd.infLive.setInfJump, false)
+				Cmd.infLive = nil
+			end
+		end,
 	})
 
 	local ClickTP = {}
@@ -15449,10 +15549,10 @@ do
 	})
 
 	Cmd.add({
-		id = "align", name = "Alignment", icon = "crosshair", cat = "Utility", kind = "action",
+		id = "align", name = "Alignment", icon = "move-3d", cat = "Utility", kind = "action",
 		usage = "align", aliases = { "gunalign" }, desc = "Line up the guns and parts of the Atsuko script you're running.",
 		run = function()
-			if not Core.Align.api() then return false, "Reanimate Studio Dummy or Snake Banisher first" end
+			if not Core.Align.api() then return false, "Reanimate Studio Dummy, Snake Banisher or the Dubstep Gun first" end
 			task.defer(Core.Align.toggle)
 			return true
 		end,
@@ -16066,10 +16166,16 @@ do
 				FC.rx, FC.ry = cam.CFrame:ToOrientation()
 				FC.pos = cam.CFrame.Position
 				cam.CameraType = Enum.CameraType.Scriptable
-				local r = root()
-				if r and not r.Anchored then
-					FC.anchored = r
-					r.Anchored = true
+				local live = Cmd.body()
+				if live and type(live.setFrozen) == "function" then
+					FC.live = live
+					live.setFrozen(true, "freecam")
+				else
+					local r = root()
+					if r and not r.Anchored then
+						FC.anchored = r
+						r.Anchored = true
+					end
 				end
 				local controls = Fly.controls()
 				bind("freecam", RunService.RenderStepped:Connect(function(dt)
@@ -16123,7 +16229,8 @@ do
 				end
 				pcall(function() UserInputService.MouseBehavior = FC.mb or Enum.MouseBehavior.Default end)
 				if FC.anchored then pcall(function() FC.anchored.Anchored = false end) end
-				FC.cam, FC.anchored = nil, nil
+				if FC.live then pcall(FC.live.setFrozen, false, "freecam") end
+				FC.cam, FC.anchored, FC.live = nil, nil, nil
 			end,
 			opts = function(w, body, order)
 				slider(w, body, order, "freecam", "speed", "Speed", 5, 300, 5, 40)
@@ -16340,6 +16447,20 @@ do
 			start = function(arg)
 				local v = tonumber(arg)
 				if v then Cmd.setVal("smoothfly", "speed", math.clamp(math.floor(v), 1, 1000)) end
+				local live = liveBody()
+				if live and type(live.setFly) == "function" then
+					SF.live = live
+					live.setFly(true, Cmd.val("smoothfly", "speed", 60))
+					bind("smoothfly", RunService.RenderStepped:Connect(function()
+						local up = 0
+						if not UserInputService:GetFocusedTextBox() then
+							if UserInputService:IsKeyDown(Enum.KeyCode.E) then up += 1 end
+							if UserInputService:IsKeyDown(Enum.KeyCode.Q) then up -= 1 end
+						end
+						pcall(live.setFlyLift, up)
+					end))
+					return true
+				end
 				local h, r = hum(), root()
 				if not (h and r and h.Health > 0) then return false, "No character right now" end
 				local att = Instance.new("Attachment")
@@ -16417,8 +16538,13 @@ do
 			update = function(arg)
 				local v = tonumber(arg)
 				if v then Cmd.setVal("smoothfly", "speed", math.clamp(math.floor(v), 1, 1000)) end
+				if SF.live then pcall(SF.live.setFly, true, Cmd.val("smoothfly", "speed", 60)) end
 			end,
 			stop = function()
+				if SF.live then
+					pcall(SF.live.setFly, false)
+					SF.live = nil
+				end
 				local st = SF.st
 				SF.st = nil
 				if not st then return end
@@ -16460,6 +16586,12 @@ do
 			usage = "freeze", offNames = { "unfreeze", "thaw" },
 			desc = "Locks your character in place until you turn it off.",
 			start = function()
+				local live = Cmd.body()
+				if live and type(live.setFrozen) == "function" then
+					FZ.live = live
+					live.setFrozen(true, "freeze")
+					return true
+				end
 				local r = root()
 				if not r then return false, "No character right now" end
 				FZ.r, FZ.was = r, r.Anchored
@@ -16467,6 +16599,10 @@ do
 				return true
 			end,
 			stop = function()
+				if FZ.live then
+					pcall(FZ.live.setFrozen, false, "freeze")
+					FZ.live = nil
+				end
 				local r = FZ.r
 				FZ.r = nil
 				if r and r.Parent then pcall(function() r.Anchored = FZ.was == true end) end

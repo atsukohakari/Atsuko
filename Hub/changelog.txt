@@ -1,3 +1,13 @@
+Beta v1.3.0
+- Reanimate respawns the FDless way now: your character is never swapped for the reanimate, so roblox's controls, camera and jump button don't reset every time you respawn (that's what made it buggy on mobile)
+- mobile: the jump button shows and works while you're reanimated, and you keep walking right through a respawn. if roblox's touch controls vanish for a moment, an FDless style touch stick and jump spot take over
+- the camera stays on you when a new body spawns, it can't jump over to it anymore
+- a new body waits 0.3 seconds under the map like FDless (once your avatar loads), then gets knocked down and its hats come straight to you
+- new from FDless: ctrl + click teleports you on pc, and your simulation radius goes up when your executor allows it
+- hub commands work on the reanimate: speed, jump power, fly, smooth fly, infinite jump, freeze, freecam, click teleport, go to, spin and save / load spot. they stay on through respawns and move back to your own body when you deanimate
+- teleports from commands or other scripts stick now instead of snapping back
+- the alignment button moved to the top right corner of atsuko script with a new logo. it lights up when the running script has something to line up, tap it to open or close the window
+
 Beta v1.2.9
 - alignment is easy to find now: while a script you can line up is running, an Alignment strip sits right above the reanimate bar on atsuko script. tap it to open or close the window (it says what you can line up)
 - the dubstep gun has alignment too: Gun moves every gun hat together in your hand, Aura moves the aura hats. it saves by itself like the others
