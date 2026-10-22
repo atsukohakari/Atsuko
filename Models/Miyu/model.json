@@ -2,7 +2,7 @@
  "name": "Miyu",
  "title": "[Blue Archive] Kasumizawa Miyu",
  "credit": "model by Onerui(momo) on Sketchfab, CC-BY-4.0: https://sketchfab.com/3d-models/blue-archivekasumizawa-miyu-108d81dfd5a44dab92e4dccf0cc51a02",
- "format": 2,
+ "format": 3,
  "height": 5.646,
  "segments": [
   {
@@ -66,6 +66,15 @@
     0.39618,
     3.25854,
     -0.07296
+   ]
+  },
+  {
+   "name": "Hand_R",
+   "parent": "LowerArm_R",
+   "pivot": [
+    0.34351,
+    2.79179,
+    -0.39038
    ]
   },
   {
@@ -196,6 +205,28 @@
   },
   {
    "segment": "Hips",
+   "mesh": "Hips_body_ol.mesh",
+   "tex": null,
+   "offset": [
+    -0.00489,
+    0.09334,
+    0.01581
+   ],
+   "size": [
+    0.8881,
+    0.8841,
+    0.6506
+   ],
+   "tris": 984,
+   "outline": true,
+   "color": [
+    0.294,
+    0.259,
+    0.236
+   ]
+  },
+  {
+   "segment": "Hips",
    "mesh": "Hips_cloth.mesh",
    "tex": "tex_cloth.png",
    "offset": [
@@ -209,6 +240,28 @@
     0.7887
    ],
    "tris": 4350
+  },
+  {
+   "segment": "Hips",
+   "mesh": "Hips_cloth_ol.mesh",
+   "tex": null,
+   "offset": [
+    0.05771,
+    0.12295,
+    -0.04232
+   ],
+   "size": [
+    1.0341,
+    0.9438,
+    0.8438
+   ],
+   "tris": 2175,
+   "outline": true,
+   "color": [
+    0.132,
+    0.167,
+    0.218
+   ]
   },
   {
    "segment": "Torso",
@@ -225,6 +278,28 @@
     0.6056
    ],
    "tris": 1082
+  },
+  {
+   "segment": "Torso",
+   "mesh": "Torso_body_ol.mesh",
+   "tex": null,
+   "offset": [
+    -0.02463,
+    0.45477,
+    -0.0478
+   ],
+   "size": [
+    0.8847,
+    1.3995,
+    0.6572
+   ],
+   "tris": 1082,
+   "outline": true,
+   "color": [
+    0.294,
+    0.259,
+    0.236
+   ]
   },
   {
    "segment": "Torso",
@@ -260,6 +335,28 @@
   },
   {
    "segment": "Torso",
+   "mesh": "Torso_cloth_ol.mesh",
+   "tex": null,
+   "offset": [
+    -0.02333,
+    0.49547,
+    -0.11562
+   ],
+   "size": [
+    0.9771,
+    1.4004,
+    0.8989
+   ],
+   "tris": 8837,
+   "outline": true,
+   "color": [
+    0.132,
+    0.167,
+    0.218
+   ]
+  },
+  {
+   "segment": "Torso",
    "mesh": "Torso_head.mesh",
    "tex": "tex_head.png",
    "offset": [
@@ -273,6 +370,28 @@
     0.2258
    ],
    "tris": 44
+  },
+  {
+   "segment": "Torso",
+   "mesh": "Torso_head_ol.mesh",
+   "tex": null,
+   "offset": [
+    -0.01057,
+    1.09526,
+    -0.00173
+   ],
+   "size": [
+    0.2268,
+    0.1819,
+    0.2682
+   ],
+   "tris": 44,
+   "outline": true,
+   "color": [
+    0.287,
+    0.227,
+    0.208
+   ]
   },
   {
    "segment": "Head",
@@ -292,6 +411,28 @@
   },
   {
    "segment": "Head",
+   "mesh": "Head_body_ol.mesh",
+   "tex": null,
+   "offset": [
+    0.00956,
+    -0.04049,
+    -0.02406
+   ],
+   "size": [
+    0.4137,
+    0.1894,
+    0.3214
+   ],
+   "tris": 20,
+   "outline": true,
+   "color": [
+    0.294,
+    0.259,
+    0.236
+   ]
+  },
+  {
+   "segment": "Head",
    "mesh": "Head_cloth.mesh",
    "tex": "tex_cloth.png",
    "offset": [
@@ -305,6 +446,28 @@
     0.3725
    ],
    "tris": 1698
+  },
+  {
+   "segment": "Head",
+   "mesh": "Head_cloth_ol.mesh",
+   "tex": null,
+   "offset": [
+    0.00935,
+    0.48925,
+    -0.06942
+   ],
+   "size": [
+    0.7167,
+    1.1862,
+    0.4241
+   ],
+   "tris": 849,
+   "outline": true,
+   "color": [
+    0.132,
+    0.167,
+    0.218
+   ]
   },
   {
    "segment": "Head",
@@ -324,6 +487,28 @@
   },
   {
    "segment": "Head",
+   "mesh": "Head_hair_ol.mesh",
+   "tex": null,
+   "offset": [
+    0.01734,
+    0.47,
+    -0.07024
+   ],
+   "size": [
+    0.8545,
+    1.2116,
+    0.9139
+   ],
+   "tris": 3044,
+   "outline": true,
+   "color": [
+    0.124,
+    0.109,
+    0.141
+   ]
+  },
+  {
+   "segment": "Head",
    "mesh": "Head_head.mesh",
    "tex": "tex_head.png",
    "offset": [
@@ -340,6 +525,28 @@
   },
   {
    "segment": "Head",
+   "mesh": "Head_head_ol.mesh",
+   "tex": null,
+   "offset": [
+    0.00172,
+    0.37684,
+    -0.11806
+   ],
+   "size": [
+    0.7009,
+    0.9457,
+    0.6709
+   ],
+   "tris": 4788,
+   "outline": true,
+   "color": [
+    0.287,
+    0.227,
+    0.208
+   ]
+  },
+  {
+   "segment": "Head",
    "mesh": "Head_misc.mesh",
    "tex": "tex_misc.png",
    "offset": [
@@ -353,6 +560,28 @@
     0.5507
    ],
    "tris": 207
+  },
+  {
+   "segment": "Head",
+   "mesh": "Head_misc_ol.mesh",
+   "tex": null,
+   "offset": [
+    0.12318,
+    0.61743,
+    -0.19709
+   ],
+   "size": [
+    0.6694,
+    0.4659,
+    0.6057
+   ],
+   "tris": 207,
+   "outline": true,
+   "color": [
+    0.133,
+    0.158,
+    0.158
+   ]
   },
   {
    "segment": "HairBack",
@@ -372,6 +601,28 @@
   },
   {
    "segment": "HairBack",
+   "mesh": "HairBack_hair_ol.mesh",
+   "tex": null,
+   "offset": [
+    -0.00219,
+    -1.03887,
+    0.14675
+   ],
+   "size": [
+    1.3643,
+    2.3291,
+    0.9271
+   ],
+   "tris": 2508,
+   "outline": true,
+   "color": [
+    0.124,
+    0.109,
+    0.141
+   ]
+  },
+  {
+   "segment": "HairBack",
    "mesh": "HairBack_head.mesh",
    "tex": "tex_head.png",
    "offset": [
@@ -388,6 +639,28 @@
   },
   {
    "segment": "HairBack",
+   "mesh": "HairBack_head_ol.mesh",
+   "tex": null,
+   "offset": [
+    0.21229,
+    -0.31739,
+    -0.05384
+   ],
+   "size": [
+    0.0994,
+    0.1738,
+    0.1263
+   ],
+   "tris": 6,
+   "outline": true,
+   "color": [
+    0.287,
+    0.227,
+    0.208
+   ]
+  },
+  {
+   "segment": "HairBack",
    "mesh": "HairBack_misc.mesh",
    "tex": "tex_misc.png",
    "offset": [
@@ -401,6 +674,28 @@
     0.4548
    ],
    "tris": 366
+  },
+  {
+   "segment": "HairBack",
+   "mesh": "HairBack_misc_ol.mesh",
+   "tex": null,
+   "offset": [
+    -0.05442,
+    -0.96539,
+    0.1514
+   ],
+   "size": [
+    1.2065,
+    1.3296,
+    0.4493
+   ],
+   "tris": 366,
+   "outline": true,
+   "color": [
+    0.133,
+    0.158,
+    0.158
+   ]
   },
   {
    "segment": "Halo",
@@ -436,6 +731,28 @@
   },
   {
    "segment": "UpperArm_R",
+   "mesh": "UpperArm_R_body_ol.mesh",
+   "tex": null,
+   "offset": [
+    0.07342,
+    -0.32888,
+    0.01921
+   ],
+   "size": [
+    0.3276,
+    1.0524,
+    0.4134
+   ],
+   "tris": 287,
+   "outline": true,
+   "color": [
+    0.294,
+    0.259,
+    0.236
+   ]
+  },
+  {
+   "segment": "UpperArm_R",
    "mesh": "UpperArm_R_cloth.mesh",
    "tex": "tex_cloth.png",
    "offset": [
@@ -451,36 +768,262 @@
    "tris": 1324
   },
   {
+   "segment": "UpperArm_R",
+   "mesh": "UpperArm_R_cloth_ol.mesh",
+   "tex": null,
+   "offset": [
+    0.11028,
+    -0.32473,
+    -0.00793
+   ],
+   "size": [
+    0.4411,
+    1.0532,
+    0.5471
+   ],
+   "tris": 662,
+   "outline": true,
+   "color": [
+    0.132,
+    0.167,
+    0.218
+   ]
+  },
+  {
    "segment": "LowerArm_R",
    "mesh": "LowerArm_R_body.mesh",
    "tex": "tex_body.png",
    "offset": [
-    -0.10505,
-    -0.28755,
-    -0.13834
+    -0.02869,
+    -0.15762,
+    -0.13065
    ],
    "size": [
-    0.3901,
-    0.9679,
-    0.499
+    0.2374,
+    0.7081,
+    0.4836
    ],
-   "tris": 1315
+   "tris": 252
+  },
+  {
+   "segment": "LowerArm_R",
+   "mesh": "LowerArm_R_body_ol.mesh",
+   "tex": null,
+   "offset": [
+    -0.02391,
+    -0.15795,
+    -0.13091
+   ],
+   "size": [
+    0.2828,
+    0.7087,
+    0.5377
+   ],
+   "tris": 252,
+   "outline": true,
+   "color": [
+    0.294,
+    0.259,
+    0.236
+   ]
   },
   {
    "segment": "LowerArm_R",
    "mesh": "LowerArm_R_cloth.mesh",
    "tex": "tex_cloth.png",
    "offset": [
-    -0.05941,
-    -0.27914,
+    -0.00491,
+    -0.16473,
     -0.1406
    ],
    "size": [
-    0.4872,
-    0.989,
+    0.3782,
+    0.7602,
     0.5934
    ],
-   "tris": 3116
+   "tris": 834
+  },
+  {
+   "segment": "LowerArm_R",
+   "mesh": "LowerArm_R_cloth_ol.mesh",
+   "tex": null,
+   "offset": [
+    -0.00541,
+    -0.17726,
+    -0.141
+   ],
+   "size": [
+    0.433,
+    0.7839,
+    0.6482
+   ],
+   "tris": 417,
+   "outline": true,
+   "color": [
+    0.132,
+    0.167,
+    0.218
+   ]
+  },
+  {
+   "segment": "Hand_R",
+   "mesh": "Hand_R_body_grip.mesh",
+   "tex": "tex_body.png",
+   "offset": [
+    -0.07511,
+    -0.1164,
+    0.04301
+   ],
+   "size": [
+    0.3446,
+    0.3767,
+    0.2268
+   ],
+   "tris": 1117,
+   "variant": "grip"
+  },
+  {
+   "segment": "Hand_R",
+   "mesh": "Hand_R_body_grip_ol.mesh",
+   "tex": null,
+   "offset": [
+    -0.07393,
+    -0.12109,
+    0.04249
+   ],
+   "size": [
+    0.3981,
+    0.4219,
+    0.2806
+   ],
+   "tris": 1117,
+   "variant": "grip",
+   "outline": true,
+   "color": [
+    0.294,
+    0.259,
+    0.236
+   ]
+  },
+  {
+   "segment": "Hand_R",
+   "mesh": "Hand_R_body_open.mesh",
+   "tex": "tex_body.png",
+   "offset": [
+    -0.08058,
+    -0.19802,
+    0.01142
+   ],
+   "size": [
+    0.4313,
+    0.54,
+    0.1559
+   ],
+   "tris": 1117,
+   "variant": "open"
+  },
+  {
+   "segment": "Hand_R",
+   "mesh": "Hand_R_body_open_ol.mesh",
+   "tex": null,
+   "offset": [
+    -0.07983,
+    -0.20026,
+    0.01098
+   ],
+   "size": [
+    0.4804,
+    0.5802,
+    0.2107
+   ],
+   "tris": 1117,
+   "variant": "open",
+   "outline": true,
+   "color": [
+    0.294,
+    0.259,
+    0.236
+   ]
+  },
+  {
+   "segment": "Hand_R",
+   "mesh": "Hand_R_cloth_grip.mesh",
+   "tex": "tex_cloth.png",
+   "offset": [
+    -0.07502,
+    -0.11178,
+    0.04283
+   ],
+   "size": [
+    0.3506,
+    0.3902,
+    0.2327
+   ],
+   "tris": 2282,
+   "variant": "grip"
+  },
+  {
+   "segment": "Hand_R",
+   "mesh": "Hand_R_cloth_grip_ol.mesh",
+   "tex": null,
+   "offset": [
+    -0.07389,
+    -0.12241,
+    0.04231
+   ],
+   "size": [
+    0.4042,
+    0.4235,
+    0.2863
+   ],
+   "tris": 1141,
+   "variant": "grip",
+   "outline": true,
+   "color": [
+    0.132,
+    0.167,
+    0.218
+   ]
+  },
+  {
+   "segment": "Hand_R",
+   "mesh": "Hand_R_cloth_open.mesh",
+   "tex": "tex_cloth.png",
+   "offset": [
+    -0.0805,
+    -0.19359,
+    0.01134
+   ],
+   "size": [
+    0.4369,
+    0.5539,
+    0.1621
+   ],
+   "tris": 2282,
+   "variant": "open"
+  },
+  {
+   "segment": "Hand_R",
+   "mesh": "Hand_R_cloth_open_ol.mesh",
+   "tex": null,
+   "offset": [
+    -0.07978,
+    -0.20172,
+    0.01092
+   ],
+   "size": [
+    0.4858,
+    0.5821,
+    0.2169
+   ],
+   "tris": 1141,
+   "variant": "open",
+   "outline": true,
+   "color": [
+    0.132,
+    0.167,
+    0.218
+   ]
   },
   {
    "segment": "UpperArm_L",
@@ -500,6 +1043,28 @@
   },
   {
    "segment": "UpperArm_L",
+   "mesh": "UpperArm_L_body_ol.mesh",
+   "tex": null,
+   "offset": [
+    -0.05585,
+    -0.28797,
+    -0.0393
+   ],
+   "size": [
+    0.3199,
+    0.9976,
+    0.5352
+   ],
+   "tris": 287,
+   "outline": true,
+   "color": [
+    0.294,
+    0.259,
+    0.236
+   ]
+  },
+  {
+   "segment": "UpperArm_L",
    "mesh": "UpperArm_L_cloth.mesh",
    "tex": "tex_cloth.png",
    "offset": [
@@ -513,6 +1078,28 @@
     0.6161
    ],
    "tris": 1348
+  },
+  {
+   "segment": "UpperArm_L",
+   "mesh": "UpperArm_L_cloth_ol.mesh",
+   "tex": null,
+   "offset": [
+    -0.10173,
+    -0.29294,
+    -0.05945
+   ],
+   "size": [
+    0.4408,
+    1.0069,
+    0.6672
+   ],
+   "tris": 674,
+   "outline": true,
+   "color": [
+    0.132,
+    0.167,
+    0.218
+   ]
   },
   {
    "segment": "LowerArm_L",
@@ -532,6 +1119,28 @@
   },
   {
    "segment": "LowerArm_L",
+   "mesh": "LowerArm_L_body_ol.mesh",
+   "tex": null,
+   "offset": [
+    -0.00153,
+    -0.36951,
+    -0.14844
+   ],
+   "size": [
+    0.288,
+    0.9922,
+    0.5691
+   ],
+   "tris": 1319,
+   "outline": true,
+   "color": [
+    0.294,
+    0.259,
+    0.236
+   ]
+  },
+  {
+   "segment": "LowerArm_L",
    "mesh": "LowerArm_L_cloth.mesh",
    "tex": "tex_cloth.png",
    "offset": [
@@ -545,6 +1154,28 @@
     0.5616
    ],
    "tris": 3116
+  },
+  {
+   "segment": "LowerArm_L",
+   "mesh": "LowerArm_L_cloth_ol.mesh",
+   "tex": null,
+   "offset": [
+    -0.0416,
+    -0.35821,
+    -0.12737
+   ],
+   "size": [
+    0.4005,
+    1.0199,
+    0.6173
+   ],
+   "tris": 1558,
+   "outline": true,
+   "color": [
+    0.132,
+    0.167,
+    0.218
+   ]
   },
   {
    "segment": "Weapon",
@@ -561,6 +1192,28 @@
     0.9035
    ],
    "tris": 3510
+  },
+  {
+   "segment": "Weapon",
+   "mesh": "Weapon_weapon_ol.mesh",
+   "tex": null,
+   "offset": [
+    -0.62439,
+    -0.3645,
+    -0.17873
+   ],
+   "size": [
+    2.9013,
+    1.821,
+    0.9555
+   ],
+   "tris": 3510,
+   "outline": true,
+   "color": [
+    0.223,
+    0.216,
+    0.212
+   ]
   },
   {
    "segment": "UpperLeg_R",
@@ -580,6 +1233,28 @@
   },
   {
    "segment": "UpperLeg_R",
+   "mesh": "UpperLeg_R_body_ol.mesh",
+   "tex": null,
+   "offset": [
+    0.00296,
+    -0.53733,
+    -0.03227
+   ],
+   "size": [
+    0.4559,
+    1.3457,
+    0.6781
+   ],
+   "tris": 456,
+   "outline": true,
+   "color": [
+    0.294,
+    0.259,
+    0.236
+   ]
+  },
+  {
+   "segment": "UpperLeg_R",
    "mesh": "UpperLeg_R_cloth.mesh",
    "tex": "tex_cloth.png",
    "offset": [
@@ -593,6 +1268,28 @@
     0.6549
    ],
    "tris": 1466
+  },
+  {
+   "segment": "UpperLeg_R",
+   "mesh": "UpperLeg_R_cloth_ol.mesh",
+   "tex": null,
+   "offset": [
+    0.00165,
+    -0.5387,
+    -0.04015
+   ],
+   "size": [
+    0.4788,
+    1.3484,
+    0.7012
+   ],
+   "tris": 733,
+   "outline": true,
+   "color": [
+    0.132,
+    0.167,
+    0.218
+   ]
   },
   {
    "segment": "LowerLeg_R",
@@ -612,6 +1309,28 @@
   },
   {
    "segment": "LowerLeg_R",
+   "mesh": "LowerLeg_R_body_ol.mesh",
+   "tex": null,
+   "offset": [
+    0.02271,
+    -0.59484,
+    0.06338
+   ],
+   "size": [
+    0.3943,
+    1.4964,
+    0.4152
+   ],
+   "tris": 359,
+   "outline": true,
+   "color": [
+    0.294,
+    0.259,
+    0.236
+   ]
+  },
+  {
+   "segment": "LowerLeg_R",
    "mesh": "LowerLeg_R_cloth.mesh",
    "tex": "tex_cloth.png",
    "offset": [
@@ -625,6 +1344,28 @@
     0.4478
    ],
    "tris": 1802
+  },
+  {
+   "segment": "LowerLeg_R",
+   "mesh": "LowerLeg_R_cloth_ol.mesh",
+   "tex": null,
+   "offset": [
+    0.02099,
+    -0.58407,
+    0.06334
+   ],
+   "size": [
+    0.404,
+    1.543,
+    0.5012
+   ],
+   "tris": 901,
+   "outline": true,
+   "color": [
+    0.132,
+    0.167,
+    0.218
+   ]
   },
   {
    "segment": "Foot_R",
@@ -644,6 +1385,28 @@
   },
   {
    "segment": "Foot_R",
+   "mesh": "Foot_R_body_ol.mesh",
+   "tex": null,
+   "offset": [
+    0.03976,
+    -0.18906,
+    -0.17704
+   ],
+   "size": [
+    0.426,
+    0.5625,
+    0.7221
+   ],
+   "tris": 716,
+   "outline": true,
+   "color": [
+    0.294,
+    0.259,
+    0.236
+   ]
+  },
+  {
+   "segment": "Foot_R",
    "mesh": "Foot_R_cloth.mesh",
    "tex": "tex_cloth.png",
    "offset": [
@@ -657,6 +1420,28 @@
     0.7428
    ],
    "tris": 2244
+  },
+  {
+   "segment": "Foot_R",
+   "mesh": "Foot_R_cloth_ol.mesh",
+   "tex": null,
+   "offset": [
+    0.02904,
+    -0.18333,
+    -0.1644
+   ],
+   "size": [
+    0.4701,
+    0.5817,
+    0.7968
+   ],
+   "tris": 1122,
+   "outline": true,
+   "color": [
+    0.132,
+    0.167,
+    0.218
+   ]
   },
   {
    "segment": "UpperLeg_L",
@@ -676,6 +1461,28 @@
   },
   {
    "segment": "UpperLeg_L",
+   "mesh": "UpperLeg_L_body_ol.mesh",
+   "tex": null,
+   "offset": [
+    -0.00508,
+    -0.58135,
+    -1e-05
+   ],
+   "size": [
+    0.4807,
+    1.4462,
+    0.6259
+   ],
+   "tris": 456,
+   "outline": true,
+   "color": [
+    0.294,
+    0.259,
+    0.236
+   ]
+  },
+  {
+   "segment": "UpperLeg_L",
    "mesh": "UpperLeg_L_cloth.mesh",
    "tex": "tex_cloth.png",
    "offset": [
@@ -689,6 +1496,28 @@
     0.5802
    ],
    "tris": 912
+  },
+  {
+   "segment": "UpperLeg_L",
+   "mesh": "UpperLeg_L_cloth_ol.mesh",
+   "tex": null,
+   "offset": [
+    -0.00799,
+    -0.5812,
+    0.00026
+   ],
+   "size": [
+    0.4957,
+    1.4464,
+    0.6335
+   ],
+   "tris": 456,
+   "outline": true,
+   "color": [
+    0.132,
+    0.167,
+    0.218
+   ]
   },
   {
    "segment": "LowerLeg_L",
@@ -708,6 +1537,28 @@
   },
   {
    "segment": "LowerLeg_L",
+   "mesh": "LowerLeg_L_body_ol.mesh",
+   "tex": null,
+   "offset": [
+    -0.00034,
+    -0.54215,
+    0.05206
+   ],
+   "size": [
+    0.3534,
+    1.4814,
+    0.4066
+   ],
+   "tris": 359,
+   "outline": true,
+   "color": [
+    0.294,
+    0.259,
+    0.236
+   ]
+  },
+  {
+   "segment": "LowerLeg_L",
    "mesh": "LowerLeg_L_cloth.mesh",
    "tex": "tex_cloth.png",
    "offset": [
@@ -721,6 +1572,28 @@
     0.3931
    ],
    "tris": 1028
+  },
+  {
+   "segment": "LowerLeg_L",
+   "mesh": "LowerLeg_L_cloth_ol.mesh",
+   "tex": null,
+   "offset": [
+    0.00453,
+    -0.55205,
+    0.03736
+   ],
+   "size": [
+    0.3694,
+    1.5012,
+    0.4419
+   ],
+   "tris": 514,
+   "outline": true,
+   "color": [
+    0.132,
+    0.167,
+    0.218
+   ]
   },
   {
    "segment": "Foot_L",
@@ -740,6 +1613,28 @@
   },
   {
    "segment": "Foot_L",
+   "mesh": "Foot_L_body_ol.mesh",
+   "tex": null,
+   "offset": [
+    -0.00473,
+    -0.20594,
+    -0.18922
+   ],
+   "size": [
+    0.485,
+    0.5812,
+    0.7149
+   ],
+   "tris": 716,
+   "outline": true,
+   "color": [
+    0.294,
+    0.259,
+    0.236
+   ]
+  },
+  {
+   "segment": "Foot_L",
    "mesh": "Foot_L_cloth.mesh",
    "tex": "tex_cloth.png",
    "offset": [
@@ -753,6 +1648,28 @@
     0.7219
    ],
    "tris": 2244
+  },
+  {
+   "segment": "Foot_L",
+   "mesh": "Foot_L_cloth_ol.mesh",
+   "tex": null,
+   "offset": [
+    0.00014,
+    -0.20786,
+    -0.16935
+   ],
+   "size": [
+    0.5613,
+    0.617,
+    0.7773
+   ],
+   "tris": 1122,
+   "outline": true,
+   "color": [
+    0.132,
+    0.167,
+    0.218
+   ]
   },
   {
    "segment": "SkirtF",
@@ -771,6 +1688,28 @@
    "tris": 1034
   },
   {
+   "segment": "SkirtF",
+   "mesh": "SkirtF_cloth_ol.mesh",
+   "tex": null,
+   "offset": [
+    0.00325,
+    -0.35043,
+    -0.11333
+   ],
+   "size": [
+    1.0787,
+    0.8907,
+    0.6033
+   ],
+   "tris": 517,
+   "outline": true,
+   "color": [
+    0.132,
+    0.167,
+    0.218
+   ]
+  },
+  {
    "segment": "SkirtB",
    "mesh": "SkirtB_cloth.mesh",
    "tex": "tex_cloth.png",
@@ -787,6 +1726,28 @@
    "tris": 1114
   },
   {
+   "segment": "SkirtB",
+   "mesh": "SkirtB_cloth_ol.mesh",
+   "tex": null,
+   "offset": [
+    -0.00828,
+    -0.32142,
+    0.08674
+   ],
+   "size": [
+    1.076,
+    0.8811,
+    0.6484
+   ],
+   "tris": 557,
+   "outline": true,
+   "color": [
+    0.132,
+    0.167,
+    0.218
+   ]
+  },
+  {
    "segment": "Bottle",
    "mesh": "Bottle_misc.mesh",
    "tex": "tex_misc.png",
@@ -801,6 +1762,28 @@
     0.3348
    ],
    "tris": 564
+  },
+  {
+   "segment": "Bottle",
+   "mesh": "Bottle_misc_ol.mesh",
+   "tex": null,
+   "offset": [
+    0.0112,
+    -1.01254,
+    -0.69077
+   ],
+   "size": [
+    0.2636,
+    0.7289,
+    0.3904
+   ],
+   "tris": 564,
+   "outline": true,
+   "color": [
+    0.133,
+    0.158,
+    0.158
+   ]
   }
  ],
  "can": {
