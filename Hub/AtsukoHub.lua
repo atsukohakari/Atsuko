@@ -428,6 +428,7 @@ local DEFAULTS = {
 	musicBar = true,
 	font = "Gotham",
 	openOnLoad = true,
+	miyu = false,
 	homeFit = true,
 	chatOn = true,
 	chatNotify = "server",
@@ -528,6 +529,7 @@ function Core.normalizeSettings()
 	S.animSpeed = math.clamp(tonumber(S.animSpeed) or 1, 0.5, 2)
 	S.toastTime = math.clamp(tonumber(S.toastTime) or 3.2, 1.5, 8)
 	S.fpsCap = math.clamp(math.floor(tonumber(S.fpsCap) or 0), 0, 360)
+	S.miyu = S.miyu == true
 	if S.toastPos ~= "top" and S.toastPos ~= "bottom" then S.toastPos = "top" end
 	if Util.trim(S.chatPrefix) == "" then S.chatPrefix = ";" end
 	S.chatPrefix = string.sub(Util.trim(S.chatPrefix), 1, 3)
@@ -7906,6 +7908,10 @@ end
 function Panel.unhide()
 	if not HUB.hidden then return end
 	HUB.hidden = false
+	if Core.Miyu and Core.Miyu.paused then
+		Core.Miyu.paused = false
+		Core.Miyu.apply()
+	end
 	Pill.frame.Visible = S.statsBar
 	Shell.layout()
 end
@@ -11035,6 +11041,56 @@ function Core.loadLib(name, key, need)
 	slot.busy, slot.err = false, err
 	if err then Log.add("error", "Hub", name .. ": " .. err) end
 	return out, err
+end
+
+-- Miyu on your screen: Hub/Miyu.lua, turned on and off in settings > general
+Core.MIYU_NEED = 1
+Core.Miyu = { busy = false, again = false, paused = false, toggle = nil }
+function Core.Miyu.apply()
+	local M = Core.Miyu
+	if M.busy then
+		M.again = true
+		return
+	end
+	M.busy = true
+	task.spawn(function()
+		repeat
+			M.again = false
+			local want = S.miyu and not M.paused and HUB.alive
+			local L = GENV.AtsukoMiyu
+			if want then
+				local err = nil
+				if not (type(L) == "table" and (tonumber(L.version) or 0) >= Core.MIYU_NEED) then
+					L, err = Core.loadLib("Miyu", "AtsukoMiyu", Core.MIYU_NEED)
+				end
+				local started, why = false, err
+				if type(L) == "table" and type(L.start) == "function" then
+					local ok, a, b = pcall(L.start, {
+						raw = HOME_REPO,
+						folder = LOCAL_DIR .. "/models/Miyu",
+						parent = Gui.Parent,
+						displayOrder = 999,
+						notify = function(t, x, k, d) notify(t, x, k, d) end,
+					})
+					started, why = ok and a == true, ok and b or a
+				end
+				if not started and S.miyu and not M.paused then
+					notify("Miyu", "She couldn't come: " .. tostring(why or "couldn't load Hub/Miyu.lua"), "error", 6)
+					S.miyu = false
+					saveSettings()
+					if M.toggle then pcall(M.toggle.render, true) end
+				end
+			elseif type(L) == "table" and type(L.stop) == "function" then
+				pcall(L.stop)
+			end
+		until not M.again
+		M.busy = false
+	end)
+end
+function Core.Miyu.set(on)
+	S.miyu = on == true
+	saveSettings()
+	Core.Miyu.apply()
 end
 
 Core.Reanim = { path = nil, busy = nil }
@@ -18079,6 +18135,10 @@ function Panel.panic()
 	pcall(Cmd.stopAll, true)
 	pcall(Player.stop)
 	pcall(Win.closeAll)
+	if Core.Miyu then
+		Core.Miyu.paused = true
+		Core.Miyu.apply()
+	end
 	HUB.hidden = true
 	Panel.closeAll()
 	Pill.frame.Visible = false
@@ -18671,6 +18731,11 @@ do
 			end
 		end, function(x) return x == 0 and "No cap" or tostring(x) end, false))
 	end
+
+	section(v, "Miyu", 42)
+	Core.Miyu.toggle = reg(Ctl.toggle(v, 43, "Miyu on your screen", "Miyu from Blue Archive walks around your screen. Click her to say hi, hold her to pick her up and throw her", function() return S.miyu end, function(x)
+		Core.Miyu.set(x)
+	end))
 end
 
 -- Themes ---------------------------------------------------------------------------------------------
@@ -19369,6 +19434,7 @@ Core.CREDITS = {
 	{ "MLG Super Killer", "Made the original Snake Banisher", nil },
 	{ "Epic", "Converted Snake Banisher, the V3 the hub runs", nil },
 	{ "Supr14", "Made the Dubstep Gun", nil },
+	{ "Onerui (momo)", "The Miyu 3D model (Sketchfab, CC-BY-4.0)", nil },
 	{ "MyWorld & rqz", "FDless / Patchma reanimate: Reanimate moves your body the FDless way, and the Dubstep Gun was made for it", "https://discord.com/invite/QMy5f6DrbH" },
 	{ "STEVETHEREALONE", "Uhhhhhh: the dances, their songs and the reanimate style Reanimate and Emotes are built on", "https://discord.gg/NASNUKRBVM" },
 	{ "Dubmood & Solary-3", "Some of the Uhhhhhh dance songs and animations", nil },
@@ -24420,6 +24486,10 @@ function HUB.Destroy()
 	pcall(PlayersPage.clearFx)
 	pcall(Cmd.pal.close)
 	pcall(Chat.stop)
+	pcall(function()
+		local L = GENV.AtsukoMiyu
+		if type(L) == "table" and type(L.stop) == "function" then L.stop() end
+	end)
 	HUB.alive = false
 	for _, snd in pairs(Sfx.cache) do
 		pcall(function() snd:Destroy() end)
@@ -24452,6 +24522,7 @@ applyLayout()
 Core.updateBadge()
 Pill.update(60, nil, 0)
 if S.fpsCap > 0 then Core.applyFpsCap() end
+if S.miyu then task.defer(Core.Miyu.apply) end
 
 Core.autoRan = false
 function Core.autorun()
