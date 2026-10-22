@@ -1,1 +1,11 @@
+Miyu 3D model
 
+"[Blue Archive]Kasumizawa Miyu" by Onerui(momo)
+https://sketchfab.com/3d-models/blue-archivekasumizawa-miyu-108d81dfd5a44dab92e4dccf0cc51a02
+licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+
+changes made for Atsuko Hub: the left leg was straightened, the model was cut into
+body parts by its bones (skirt front, skirt back and water bottle are their own parts
+so they can swing), the outline meshes and ground were left out, the hidden trash can
+was split into can / lid / window, textures were resized to 1024, and everything was
+converted to Roblox mesh files (version 2.00) plus model.json.

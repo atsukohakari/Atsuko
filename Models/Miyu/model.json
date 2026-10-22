@@ -1,0 +1,859 @@
+{
+ "name": "Miyu",
+ "title": "[Blue Archive] Kasumizawa Miyu",
+ "credit": "model by Onerui(momo) on Sketchfab, CC-BY-4.0: https://sketchfab.com/3d-models/blue-archivekasumizawa-miyu-108d81dfd5a44dab92e4dccf0cc51a02",
+ "format": 2,
+ "height": 5.646,
+ "segments": [
+  {
+   "name": "Hips",
+   "parent": null,
+   "pivot": [
+    -0.0,
+    2.89932,
+    -0.0
+   ]
+  },
+  {
+   "name": "Torso",
+   "parent": "Hips",
+   "pivot": [
+    0.01185,
+    3.28853,
+    -0.04942
+   ]
+  },
+  {
+   "name": "Head",
+   "parent": "Torso",
+   "pivot": [
+    0.00086,
+    4.38884,
+    -0.01038
+   ]
+  },
+  {
+   "name": "HairBack",
+   "parent": "Head",
+   "pivot": [
+    0.01598,
+    5.15932,
+    0.14023
+   ]
+  },
+  {
+   "name": "Halo",
+   "parent": "Head",
+   "pivot": [
+    0.01827,
+    0.21432,
+    -0.2414
+   ]
+  },
+  {
+   "name": "UpperArm_R",
+   "parent": "Torso",
+   "pivot": [
+    0.27646,
+    4.06569,
+    -0.00398
+   ]
+  },
+  {
+   "name": "LowerArm_R",
+   "parent": "UpperArm_R",
+   "pivot": [
+    0.39618,
+    3.25854,
+    -0.07296
+   ]
+  },
+  {
+   "name": "UpperArm_L",
+   "parent": "Torso",
+   "pivot": [
+    -0.31803,
+    4.08408,
+    -0.1078
+   ]
+  },
+  {
+   "name": "LowerArm_L",
+   "parent": "UpperArm_L",
+   "pivot": [
+    -0.41518,
+    3.34608,
+    -0.2849
+   ]
+  },
+  {
+   "name": "Weapon",
+   "parent": "LowerArm_L",
+   "pivot": [
+    0.21976,
+    2.55919,
+    -0.32495
+   ]
+  },
+  {
+   "name": "UpperLeg_R",
+   "parent": "Hips",
+   "pivot": [
+    0.20827,
+    2.86051,
+    0.00817
+   ]
+  },
+  {
+   "name": "LowerLeg_R",
+   "parent": "UpperLeg_R",
+   "pivot": [
+    0.14445,
+    1.77058,
+    -0.21893
+   ]
+  },
+  {
+   "name": "Foot_R",
+   "parent": "LowerLeg_R",
+   "pivot": [
+    0.12373,
+    0.52197,
+    -0.07956
+   ]
+  },
+  {
+   "name": "UpperLeg_L",
+   "parent": "Hips",
+   "pivot": [
+    -0.20351,
+    2.86454,
+    -0.04821
+   ]
+  },
+  {
+   "name": "LowerLeg_L",
+   "parent": "UpperLeg_L",
+   "pivot": [
+    -0.13551,
+    1.66387,
+    -0.20689
+   ]
+  },
+  {
+   "name": "Foot_L",
+   "parent": "LowerLeg_L",
+   "pivot": [
+    -0.11773,
+    0.49163,
+    -0.13724
+   ]
+  },
+  {
+   "name": "SkirtF",
+   "parent": "Hips",
+   "pivot": [
+    -0.0,
+    3.16378,
+    -0.0
+   ]
+  },
+  {
+   "name": "SkirtB",
+   "parent": "Hips",
+   "pivot": [
+    -0.0,
+    3.16378,
+    -0.0
+   ]
+  },
+  {
+   "name": "Bottle",
+   "parent": "Hips",
+   "pivot": [
+    -0.35399,
+    3.22377,
+    -0.07605
+   ]
+  }
+ ],
+ "parts": [
+  {
+   "segment": "Hips",
+   "mesh": "Hips_body.mesh",
+   "tex": "tex_body.png",
+   "offset": [
+    -0.00491,
+    0.09153,
+    0.01569
+   ],
+   "size": [
+    0.8323,
+    0.8771,
+    0.5948
+   ],
+   "tris": 984
+  },
+  {
+   "segment": "Hips",
+   "mesh": "Hips_cloth.mesh",
+   "tex": "tex_cloth.png",
+   "offset": [
+    0.05829,
+    0.11739,
+    -0.04273
+   ],
+   "size": [
+    0.9793,
+    0.9294,
+    0.7887
+   ],
+   "tris": 4350
+  },
+  {
+   "segment": "Torso",
+   "mesh": "Torso_body.mesh",
+   "tex": "tex_body.png",
+   "offset": [
+    -0.02477,
+    0.44628,
+    -0.04566
+   ],
+   "size": [
+    0.8302,
+    1.3773,
+    0.6056
+   ],
+   "tris": 1082
+  },
+  {
+   "segment": "Torso",
+   "mesh": "Torso_cloth_1.mesh",
+   "tex": "tex_cloth.png",
+   "offset": [
+    -0.02318,
+    0.46623,
+    -0.11428
+   ],
+   "size": [
+    0.9248,
+    1.3362,
+    0.846
+   ],
+   "tris": 9000
+  },
+  {
+   "segment": "Torso",
+   "mesh": "Torso_cloth_2.mesh",
+   "tex": "tex_cloth.png",
+   "offset": [
+    -0.01776,
+    0.59372,
+    -0.19191
+   ],
+   "size": [
+    0.5009,
+    1.1499,
+    0.692
+   ],
+   "tris": 8674
+  },
+  {
+   "segment": "Torso",
+   "mesh": "Torso_head.mesh",
+   "tex": "tex_head.png",
+   "offset": [
+    -0.00773,
+    1.0825,
+    0.00222
+   ],
+   "size": [
+    0.1944,
+    0.1801,
+    0.2258
+   ],
+   "tris": 44
+  },
+  {
+   "segment": "Head",
+   "mesh": "Head_body.mesh",
+   "tex": "tex_body.png",
+   "offset": [
+    0.008,
+    -0.05958,
+    -0.023
+   ],
+   "size": [
+    0.3918,
+    0.1884,
+    0.2774
+   ],
+   "tris": 20
+  },
+  {
+   "segment": "Head",
+   "mesh": "Head_cloth.mesh",
+   "tex": "tex_cloth.png",
+   "offset": [
+    0.00914,
+    0.48788,
+    -0.07123
+   ],
+   "size": [
+    0.6699,
+    1.1462,
+    0.3725
+   ],
+   "tris": 1698
+  },
+  {
+   "segment": "Head",
+   "mesh": "Head_hair.mesh",
+   "tex": "tex_hair.png",
+   "offset": [
+    0.01759,
+    0.46388,
+    -0.05504
+   ],
+   "size": [
+    0.8001,
+    1.1685,
+    0.8886
+   ],
+   "tris": 3044
+  },
+  {
+   "segment": "Head",
+   "mesh": "Head_head.mesh",
+   "tex": "tex_head.png",
+   "offset": [
+    0.00225,
+    0.35696,
+    -0.11798
+   ],
+   "size": [
+    0.6517,
+    0.9296,
+    0.6151
+   ],
+   "tris": 4788
+  },
+  {
+   "segment": "Head",
+   "mesh": "Head_misc.mesh",
+   "tex": "tex_misc.png",
+   "offset": [
+    0.11916,
+    0.61914,
+    -0.19726
+   ],
+   "size": [
+    0.6264,
+    0.4216,
+    0.5507
+   ],
+   "tris": 207
+  },
+  {
+   "segment": "HairBack",
+   "mesh": "HairBack_hair.mesh",
+   "tex": "tex_hair.png",
+   "offset": [
+    -0.00169,
+    -1.04227,
+    0.13696
+   ],
+   "size": [
+    1.3097,
+    2.283,
+    0.8917
+   ],
+   "tris": 2508
+  },
+  {
+   "segment": "HairBack",
+   "mesh": "HairBack_head.mesh",
+   "tex": "tex_head.png",
+   "offset": [
+    0.19264,
+    -0.31433,
+    -0.07245
+   ],
+   "size": [
+    0.0898,
+    0.1641,
+    0.1167
+   ],
+   "tris": 6
+  },
+  {
+   "segment": "HairBack",
+   "mesh": "HairBack_misc.mesh",
+   "tex": "tex_misc.png",
+   "offset": [
+    -0.05191,
+    -0.95718,
+    0.12854
+   ],
+   "size": [
+    1.1846,
+    1.292,
+    0.4548
+   ],
+   "tris": 366
+  },
+  {
+   "segment": "Halo",
+   "mesh": "Halo_hair.mesh",
+   "tex": "tex_hair.png",
+   "offset": [
+    0.0175,
+    5.20977,
+    0.11434
+   ],
+   "size": [
+    1.1027,
+    0.4438,
+    1.0904
+   ],
+   "tris": 648
+  },
+  {
+   "segment": "UpperArm_R",
+   "mesh": "UpperArm_R_body.mesh",
+   "tex": "tex_body.png",
+   "offset": [
+    0.06188,
+    -0.3365,
+    0.01635
+   ],
+   "size": [
+    0.2957,
+    1.0164,
+    0.3635
+   ],
+   "tris": 287
+  },
+  {
+   "segment": "UpperArm_R",
+   "mesh": "UpperArm_R_cloth.mesh",
+   "tex": "tex_cloth.png",
+   "offset": [
+    0.09762,
+    -0.33069,
+    -0.01025
+   ],
+   "size": [
+    0.4126,
+    1.0099,
+    0.4978
+   ],
+   "tris": 1324
+  },
+  {
+   "segment": "LowerArm_R",
+   "mesh": "LowerArm_R_body.mesh",
+   "tex": "tex_body.png",
+   "offset": [
+    -0.10505,
+    -0.28755,
+    -0.13834
+   ],
+   "size": [
+    0.3901,
+    0.9679,
+    0.499
+   ],
+   "tris": 1315
+  },
+  {
+   "segment": "LowerArm_R",
+   "mesh": "LowerArm_R_cloth.mesh",
+   "tex": "tex_cloth.png",
+   "offset": [
+    -0.05941,
+    -0.27914,
+    -0.1406
+   ],
+   "size": [
+    0.4872,
+    0.989,
+    0.5934
+   ],
+   "tris": 3116
+  },
+  {
+   "segment": "UpperArm_L",
+   "mesh": "UpperArm_L_body.mesh",
+   "tex": "tex_body.png",
+   "offset": [
+    -0.04415,
+    -0.29748,
+    -0.04029
+   ],
+   "size": [
+    0.2909,
+    0.9661,
+    0.4814
+   ],
+   "tris": 287
+  },
+  {
+   "segment": "UpperArm_L",
+   "mesh": "UpperArm_L_cloth.mesh",
+   "tex": "tex_cloth.png",
+   "offset": [
+    -0.0927,
+    -0.3073,
+    -0.06063
+   ],
+   "size": [
+    0.4042,
+    0.9813,
+    0.6161
+   ],
+   "tris": 1348
+  },
+  {
+   "segment": "LowerArm_L",
+   "mesh": "LowerArm_L_body.mesh",
+   "tex": "tex_body.png",
+   "offset": [
+    -0.00094,
+    -0.35464,
+    -0.14776
+   ],
+   "size": [
+    0.2335,
+    0.9678,
+    0.5148
+   ],
+   "tris": 1319
+  },
+  {
+   "segment": "LowerArm_L",
+   "mesh": "LowerArm_L_cloth.mesh",
+   "tex": "tex_cloth.png",
+   "offset": [
+    -0.04081,
+    -0.34284,
+    -0.12741
+   ],
+   "size": [
+    0.3479,
+    0.9965,
+    0.5616
+   ],
+   "tris": 3116
+  },
+  {
+   "segment": "Weapon",
+   "mesh": "Weapon_weapon.mesh",
+   "tex": "tex_weapon.png",
+   "offset": [
+    -0.62398,
+    -0.36474,
+    -0.17797
+   ],
+   "size": [
+    2.8462,
+    1.7685,
+    0.9035
+   ],
+   "tris": 3510
+  },
+  {
+   "segment": "UpperLeg_R",
+   "mesh": "UpperLeg_R_body.mesh",
+   "tex": "tex_body.png",
+   "offset": [
+    0.00292,
+    -0.54128,
+    -0.03127
+   ],
+   "size": [
+    0.4001,
+    1.3399,
+    0.6241
+   ],
+   "tris": 456
+  },
+  {
+   "segment": "UpperLeg_R",
+   "mesh": "UpperLeg_R_cloth.mesh",
+   "tex": "tex_cloth.png",
+   "offset": [
+    0.00146,
+    -0.54095,
+    -0.04322
+   ],
+   "size": [
+    0.4232,
+    1.3406,
+    0.6549
+   ],
+   "tris": 1466
+  },
+  {
+   "segment": "LowerLeg_R",
+   "mesh": "LowerLeg_R_body.mesh",
+   "tex": "tex_body.png",
+   "offset": [
+    0.02244,
+    -0.59625,
+    0.06495
+   ],
+   "size": [
+    0.3389,
+    1.4978,
+    0.3624
+   ],
+   "tris": 359
+  },
+  {
+   "segment": "LowerLeg_R",
+   "mesh": "LowerLeg_R_cloth.mesh",
+   "tex": "tex_cloth.png",
+   "offset": [
+    0.02067,
+    -0.58653,
+    0.0645
+   ],
+   "size": [
+    0.3487,
+    1.5447,
+    0.4478
+   ],
+   "tris": 1802
+  },
+  {
+   "segment": "Foot_R",
+   "mesh": "Foot_R_body.mesh",
+   "tex": "tex_body.png",
+   "offset": [
+    0.03991,
+    -0.17499,
+    -0.17862
+   ],
+   "size": [
+    0.3705,
+    0.5354,
+    0.6698
+   ],
+   "tris": 716
+  },
+  {
+   "segment": "Foot_R",
+   "mesh": "Foot_R_cloth.mesh",
+   "tex": "tex_cloth.png",
+   "offset": [
+    0.02895,
+    -0.17882,
+    -0.16442
+   ],
+   "size": [
+    0.4148,
+    0.5428,
+    0.7428
+   ],
+   "tris": 2244
+  },
+  {
+   "segment": "UpperLeg_L",
+   "mesh": "UpperLeg_L_body.mesh",
+   "tex": "tex_body.png",
+   "offset": [
+    -0.00509,
+    -0.58617,
+    0.00125
+   ],
+   "size": [
+    0.4249,
+    1.4411,
+    0.5725
+   ],
+   "tris": 456
+  },
+  {
+   "segment": "UpperLeg_L",
+   "mesh": "UpperLeg_L_cloth.mesh",
+   "tex": "tex_cloth.png",
+   "offset": [
+    -0.00797,
+    -0.58566,
+    0.0015
+   ],
+   "size": [
+    0.4397,
+    1.4419,
+    0.5802
+   ],
+   "tris": 912
+  },
+  {
+   "segment": "LowerLeg_L",
+   "mesh": "LowerLeg_L_body.mesh",
+   "tex": "tex_body.png",
+   "offset": [
+    0.00184,
+    -0.54023,
+    0.05198
+   ],
+   "size": [
+    0.3018,
+    1.477,
+    0.3509
+   ],
+   "tris": 359
+  },
+  {
+   "segment": "LowerLeg_L",
+   "mesh": "LowerLeg_L_cloth.mesh",
+   "tex": "tex_cloth.png",
+   "offset": [
+    0.00618,
+    -0.55072,
+    0.03387
+   ],
+   "size": [
+    0.3167,
+    1.4981,
+    0.3931
+   ],
+   "tris": 1028
+  },
+  {
+   "segment": "Foot_L",
+   "mesh": "Foot_L_body.mesh",
+   "tex": "tex_body.png",
+   "offset": [
+    -0.00547,
+    -0.19171,
+    -0.18955
+   ],
+   "size": [
+    0.4319,
+    0.5545,
+    0.6599
+   ],
+   "tris": 716
+  },
+  {
+   "segment": "Foot_L",
+   "mesh": "Foot_L_cloth.mesh",
+   "tex": "tex_cloth.png",
+   "offset": [
+    0.00161,
+    -0.20309,
+    -0.16922
+   ],
+   "size": [
+    0.5094,
+    0.5771,
+    0.7219
+   ],
+   "tris": 2244
+  },
+  {
+   "segment": "SkirtF",
+   "mesh": "SkirtF_cloth.mesh",
+   "tex": "tex_cloth.png",
+   "offset": [
+    0.00315,
+    -0.34669,
+    -0.10521
+   ],
+   "size": [
+    1.0654,
+    0.8616,
+    0.5865
+   ],
+   "tris": 1034
+  },
+  {
+   "segment": "SkirtB",
+   "mesh": "SkirtB_cloth.mesh",
+   "tex": "tex_cloth.png",
+   "offset": [
+    -0.0154,
+    -0.31765,
+    0.07248
+   ],
+   "size": [
+    1.0542,
+    0.8435,
+    0.665
+   ],
+   "tris": 1114
+  },
+  {
+   "segment": "Bottle",
+   "mesh": "Bottle_misc.mesh",
+   "tex": "tex_misc.png",
+   "offset": [
+    0.01119,
+    -1.01205,
+    -0.69077
+   ],
+   "size": [
+    0.2101,
+    0.6752,
+    0.3348
+   ],
+   "tris": 564
+  }
+ ],
+ "can": {
+  "height": 3.404,
+  "parts": [
+   {
+    "name": "Can",
+    "mesh": "Can.mesh",
+    "tex": "tex_misc.png",
+    "pivot": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "offset": [
+     0.0,
+     1.37506,
+     0.20567
+    ],
+    "tris": 648
+   },
+   {
+    "name": "CanLid",
+    "mesh": "CanLid.mesh",
+    "tex": "tex_misc.png",
+    "pivot": [
+     0.0,
+     2.61956,
+     1.1008
+    ],
+    "offset": [
+     -0.0,
+     0.31409,
+     -0.93559
+    ],
+    "tris": 426
+   },
+   {
+    "name": "CanWindow",
+    "mesh": "CanWindow.mesh",
+    "tex": "tex_misc.png",
+    "pivot": [
+     -0.0,
+     3.3024,
+     -0.35934
+    ],
+    "offset": [
+     0.0,
+     -0.214,
+     -0.22069
+    ],
+    "tris": 146
+   }
+  ]
+ }
+}
